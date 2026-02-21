@@ -6,6 +6,7 @@ import { applyAutoInstrumentationMutator } from '../capture/mutator';
 
 const PG_INSTRUMENTATION_NAME = '@opentelemetry/instrumentation-pg';
 const UNDICI_INSTRUMENTATION_NAME = '@opentelemetry/instrumentation-undici';
+const REDIS_INSTRUMENTATION_NAME = '@opentelemetry/instrumentation-redis-4';
 
 describe('applyAutoInstrumentationMutator', () => {
   it('injects custom responseHook for @opentelemetry/instrumentation-pg in returned config', () => {
@@ -91,6 +92,28 @@ describe('applyAutoInstrumentationMutator', () => {
       expect(attributes['softprobe.identifier']).toBe(
         'GET https://api.example.com/users'
       );
+    });
+  });
+
+  describe('Redis responseHook (Task 4.5)', () => {
+    it('injects responseHook for @opentelemetry/instrumentation-redis-4 in returned config', () => {
+      const redisEntry = { instrumentationName: REDIS_INSTRUMENTATION_NAME };
+      const mockGetNodeAutoInstrumentations = jest.fn(() => [redisEntry]);
+
+      const mockModule = {
+        getNodeAutoInstrumentations: mockGetNodeAutoInstrumentations,
+      };
+
+      applyAutoInstrumentationMutator(mockModule as any);
+
+      const result = mockModule.getNodeAutoInstrumentations();
+
+      const redisInstrumentation = result.find(
+        (item: { instrumentationName?: string }) =>
+          item.instrumentationName === REDIS_INSTRUMENTATION_NAME
+      );
+      expect(redisInstrumentation).toBeDefined();
+      expect(typeof (redisInstrumentation as any).responseHook).toBe('function');
     });
   });
 });
