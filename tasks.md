@@ -46,7 +46,7 @@ Capture and replay are **implemented in pairs per protocol** (see design §3.1).
 - [x] **Task 4.3: NodeSDK Hijack.** *(feat: init.ts, initCapture wraps NodeSDK.start, registers SoftprobeTraceExporter)*
   * *Action:* Create `src/capture/init.ts`. Use `shimmer` on `NodeSDK.prototype.start` to inject the `SoftprobeTraceExporter` into the span processor pipeline.
   * *Test:* Instantiate a mock NodeSDK and call start. Assert our exporter was registered internally.
-- [ ] **Task 4.4: Mutator – HTTP/Undici responseHook.** *(pair: Task 5.2)*
+- [x] **Task 4.4: Mutator – HTTP/Undici responseHook.** *(pair: Task 5.2)* *(feat: inject responseHook for @opentelemetry/instrumentation-undici, set softprobe.protocol/identifier/request/response body)*
   * *Action:* Extend mutator to inject `responseHook` for HTTP/undici instrumentation. Set `softprobe.protocol: 'http'`, identifier (e.g. method + URL), and request/response body on spans per design §3.1.
   * *Test:* Call wrapped `getNodeAutoInstrumentations`. Assert HTTP/undici instrumentation has our responseHook; (optional) assert hook sets softprobe attributes on a mock span.
 - [ ] **Task 4.5: Mutator – Redis responseHook.** *(pair: Task 5.3)*
