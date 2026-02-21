@@ -1,0 +1,23 @@
+{
+  "name": "softprobe",
+  "version": "2.0.0",
+  "description": "Topology-aware record & replay testing framework via OpenTelemetry",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "jest",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/sdk-trace-base": "^1.28.0",
+    "shimmer": "^1.2.0",
+    "undici": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^22.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.2.0",
+    "typescript": "^5.6.0"
+  }
+}
