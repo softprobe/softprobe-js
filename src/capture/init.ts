@@ -22,9 +22,10 @@ interface NodeSDKInternal {
 export function initCapture(): void {
   shimmer.wrap(NodeSDK.prototype, 'start', function (originalStart: () => unknown) {
     return function wrappedStart(this: NodeSDKInternal) {
+      const result = originalStart.apply(this, arguments as unknown as []);
       const processor = new SimpleSpanProcessor(new SoftprobeTraceExporter());
       this._tracerProvider.addSpanProcessor(processor);
-      return originalStart.apply(this, arguments as unknown as []);
+      return result;
     };
   });
 }

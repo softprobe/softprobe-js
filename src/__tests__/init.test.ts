@@ -7,10 +7,10 @@
 const addSpanProcessor = jest.fn();
 
 class MockNodeSDK {
-  _tracerProvider = { addSpanProcessor };
+  _tracerProvider: { addSpanProcessor: typeof addSpanProcessor } | undefined;
 
   start(): void {
-    // Original start (no-op for mock)
+    this._tracerProvider = { addSpanProcessor };
   }
 }
 

@@ -2,17 +2,19 @@
  * Phase 7 E2E: Task 7.3 – Redis contract alignment.
  * Uses Testcontainers to run a real Redis; asserts Redis spans have
  * softprobe.protocol, identifier, request/response body and content match.
- * Requires Docker (or compatible container runtime); test fails if unavailable.
+ *
+ * The actual capture runs in a child process (redis-capture-worker.ts) because
+ * Jest's module system bypasses require-in-the-middle, preventing OTel from
+ * instrumenting the redis module inside a Jest test.
  */
-
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { execSync } from 'child_process';
 import { RedisContainer, StartedRedisContainer } from '@testcontainers/redis';
-import { initCapture } from '../../capture/init';
-import { applyAutoInstrumentationMutator } from '../../capture/mutator';
 
 const TRACES_FILE = path.join(os.tmpdir(), `softprobe-e2e-redis-${Date.now()}-traces.json`);
+const WORKER_SCRIPT = path.join(__dirname, 'helpers', 'redis-capture-worker.ts');
 
 interface SerializedSpan {
   traceId: string;
@@ -37,43 +39,34 @@ function getRedisSpans(store: TraceStore): SerializedSpan[] {
 
 describe('E2E capture – Redis (Task 7.3)', () => {
   let redisContainer: StartedRedisContainer;
+  let captureResult: { key: string; value: string; reply: string };
 
   beforeAll(async () => {
     redisContainer = await new RedisContainer('redis:7').start();
-    process.env.REDIS_URL = redisContainer.getConnectionUrl();
-    process.env.SOFTPROBE_TRACES_FILE = TRACES_FILE;
-    initCapture();
-    applyAutoInstrumentationMutator();
-  }, 30000);
+
+    if (fs.existsSync(TRACES_FILE)) fs.unlinkSync(TRACES_FILE);
+
+    const redisKey = `softprobe:e2e:${Date.now()}`;
+    const stdout = execSync(`npx ts-node ${WORKER_SCRIPT}`, {
+      env: {
+        ...process.env,
+        REDIS_URL: redisContainer.getConnectionUrl(),
+        SOFTPROBE_TRACES_FILE: TRACES_FILE,
+        REDIS_KEY: redisKey,
+      },
+      timeout: 30_000,
+      encoding: 'utf-8',
+    });
+    captureResult = JSON.parse(stdout);
+  }, 60000);
 
   afterAll(async () => {
     await redisContainer?.stop();
-    delete process.env.REDIS_URL;
-    delete process.env.SOFTPROBE_TRACES_FILE;
     if (fs.existsSync(TRACES_FILE)) fs.unlinkSync(TRACES_FILE);
   });
 
-  it('7.3: Redis spans have protocol, identifier, request/response body; content matches', async () => {
-    if (fs.existsSync(TRACES_FILE)) fs.unlinkSync(TRACES_FILE);
-
-    process.env.SOFTPROBE_TRACES_FILE = TRACES_FILE;
-    const { NodeSDK } = require('@opentelemetry/sdk-node');
-    const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
-    const sdk = new NodeSDK({ instrumentations: getNodeAutoInstrumentations() });
-    sdk.start();
-    const { createClient } = require('redis');
-
-    const client = createClient({ url: process.env.REDIS_URL });
-    await client.connect();
-
-    const key = `softprobe:e2e:${Date.now()}`;
-    const value = 'redis-e2e-value';
-    await client.set(key, value);
-    const reply = await client.get(key);
-    await client.quit();
-
-    await new Promise((r) => setTimeout(r, 800));
-    await sdk.shutdown();
+  it('7.3: Redis spans have protocol, identifier, request/response body; content matches', () => {
+    const { key, value, reply } = captureResult;
 
     expect(fs.existsSync(TRACES_FILE)).toBe(true);
     const store = loadTraceStore();
@@ -106,5 +99,5 @@ describe('E2E capture – Redis (Task 7.3)', () => {
     const getResBody = getSpan!.attributes['softprobe.response.body'];
     expect(getResBody).toBeDefined();
     expect(JSON.parse(getResBody as string)).toBe(reply);
-  }, 15000);
+  });
 });

@@ -263,10 +263,11 @@ export function initCapture() {
   // 1. Hijack NodeSDK to force our exporter into the pipeline, regardless of user config
   shimmer.wrap(NodeSDK.prototype, 'start', function(originalStart) {
     return function wrappedStart() {
+      // IMPORTANT: call originalStart FIRST — _tracerProvider is created inside start()
+      const result = originalStart.apply(this, arguments);
       const processor = new SimpleSpanProcessor(new SoftprobeTraceExporter());
-      // Reaching into internal OTel architecture to append our processor
       this._tracerProvider.addSpanProcessor(processor);
-      return originalStart.apply(this, arguments);
+      return result;
     };
   });
 
@@ -280,7 +281,15 @@ export function initCapture() {
 
 ```
 
-### 5.3 Capture responseHook Contracts (Contract Alignment)
+**NodeSDK internals — critical ordering and env-var constraints:**
+
+1. **`_tracerProvider` lifecycle.** The `NodeSDK` creates `_tracerProvider` *inside* `start()`, not in the constructor. Any shimmer wrap of `start()` must call `originalStart()` **before** accessing `_tracerProvider`. Attempting to read it before `originalStart()` throws `TypeError: Cannot read properties of undefined`.
+
+2. **`OTEL_TRACES_EXPORTER=none` disables recording.** When this env var is set, the SDK's `TracerProviderWithEnvExporters` produces **non-recording spans** (`span.isRecording() === false`). Non-recording spans never trigger `onEnd` on any span processor, so *no* exporter (including ours) will ever see data. Softprobe capture requires at least one active trace exporter in the SDK — the default OTLP exporter is sufficient even if no collector is running (connection errors are harmless).
+
+3. **Provider class selection.** When the user passes no `spanProcessors` config, the SDK uses `TracerProviderWithEnvExporters` (auto-configures from env). When `spanProcessors` are provided, it uses plain `NodeTracerProvider`. Our `addSpanProcessor` after `start()` works with both, but only when spans are actually recording (see point 2).
+
+### 5.3 Capture Hook Contracts (Contract Alignment)
 
 Capture mode injects a `responseHook` into each protocol’s OpenTelemetry instrumentation. The **contract** is the exact shape of the second argument (`result`) that the real instrumentation passes to `responseHook(span, result)`. Our hooks must be implemented and tested against this contract so that `softprobe.*` attributes are reliably set.
 

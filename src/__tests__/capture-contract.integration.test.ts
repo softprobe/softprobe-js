@@ -67,16 +67,15 @@ describeIfRealPackage('Capture contract alignment (real auto-instrumentations)',
     expect(attributes['softprobe.response.body']).toBe(JSON.stringify({ statusCode: 200, body: { id: 1 } }));
   });
 
-  it('redis hook sets softprobe.* when called with contract-shaped result', () => {
+  it('redis hook sets softprobe.* when called with contract-shaped args', () => {
     if (!autoInstrumentations) return;
-    const result = autoInstrumentations.getNodeAutoInstrumentations() as { instrumentationName?: string; responseHook?: (s: unknown, r: unknown) => void }[];
+    const result = autoInstrumentations.getNodeAutoInstrumentations() as { instrumentationName?: string; responseHook?: (...args: unknown[]) => void }[];
     const redis = result.find((e) => e.instrumentationName === REDIS_INSTRUMENTATION_NAME);
     expect(redis?.responseHook).toBeDefined();
 
     const attributes: Record<string, unknown> = {};
     const mockSpan = { setAttribute: (k: string, v: unknown) => { attributes[k] = v; } };
-    const contractResult = { command: 'GET', args: ['user:1:cache'], reply: 'cached' };
-    redis!.responseHook!(mockSpan, contractResult);
+    redis!.responseHook!(mockSpan, 'GET', ['user:1:cache'], 'cached');
 
     expect(attributes['softprobe.protocol']).toBe('redis');
     expect(attributes['softprobe.identifier']).toBe('GET user:1:cache');

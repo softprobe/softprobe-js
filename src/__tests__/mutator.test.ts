@@ -173,15 +173,12 @@ describe('applyAutoInstrumentationMutator', () => {
       );
       const responseHook = (redisInstrumentation as any).responseHook as (
         span: unknown,
-        result: unknown
+        cmdName: string,
+        cmdArgs: string[],
+        response: unknown
       ) => void;
 
-      const mockResult = {
-        command: 'GET',
-        args: ['user:1:cache'],
-        reply: 'cached-value',
-      };
-      responseHook(mockSpan, mockResult);
+      responseHook(mockSpan, 'GET', ['user:1:cache'], 'cached-value');
 
       expect(attributes['softprobe.protocol']).toBe('redis');
       expect(attributes['softprobe.identifier']).toBe('GET user:1:cache');

@@ -7,9 +7,10 @@
  */
 
 import shimmer from 'shimmer';
-import { injectResponseHook } from './inject';
+import { injectResponseHook, injectHook } from './inject';
 import {
   PG_INSTRUMENTATION_NAME,
+  buildPostgresRequestHook,
   buildPostgresResponseHook,
 } from './postgres';
 import {
@@ -54,6 +55,7 @@ export function applyAutoInstrumentationMutator(
         const merged: Record<string, unknown> = { ...input };
         merged[PG_INSTRUMENTATION_NAME] = {
           ...((input[PG_INSTRUMENTATION_NAME] as object) ?? {}),
+          requestHook: buildPostgresRequestHook(),
           responseHook: buildPostgresResponseHook(),
         };
         merged[UNDICI_INSTRUMENTATION_NAME] = {
@@ -68,6 +70,7 @@ export function applyAutoInstrumentationMutator(
         const result = original.call(this, merged);
         // Also mutate return value for mocks that return config-like entries (unit tests).
         const arr = Array.isArray(result) ? result : [];
+        injectHook(arr, PG_INSTRUMENTATION_NAME, 'requestHook', buildPostgresRequestHook());
         injectResponseHook(arr, PG_INSTRUMENTATION_NAME, buildPostgresResponseHook());
         injectResponseHook(arr, UNDICI_INSTRUMENTATION_NAME, buildUndiciResponseHook());
         injectResponseHook(arr, REDIS_INSTRUMENTATION_NAME, buildRedisResponseHook());
