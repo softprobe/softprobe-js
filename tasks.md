@@ -43,7 +43,7 @@ Capture and replay are **implemented in pairs per protocol** (see design §3.1).
   * *Action:* Create `src/capture/mutator.ts`. Use `shimmer` to wrap `getNodeAutoInstrumentations`. Inject the `responseHook` for Postgres.
   * *Test:* Call the wrapped function. Assert the returned config object contains our custom `responseHook` for `@opentelemetry/instrumentation-pg`.
   * *(feat: mutator.ts, applyAutoInstrumentationMutator, inject Postgres responseHook; mutator.test.ts)*
-- [ ] **Task 4.3: NodeSDK Hijack.**
+- [x] **Task 4.3: NodeSDK Hijack.** *(feat: init.ts, initCapture wraps NodeSDK.start, registers SoftprobeTraceExporter)*
   * *Action:* Create `src/capture/init.ts`. Use `shimmer` on `NodeSDK.prototype.start` to inject the `SoftprobeTraceExporter` into the span processor pipeline.
   * *Test:* Instantiate a mock NodeSDK and call start. Assert our exporter was registered internally.
 - [ ] **Task 4.4: Mutator – HTTP/Undici responseHook.** *(pair: Task 5.2)*
@@ -52,9 +52,6 @@ Capture and replay are **implemented in pairs per protocol** (see design §3.1).
 - [ ] **Task 4.5: Mutator – Redis responseHook.** *(pair: Task 5.3)*
   * *Action:* Extend mutator to inject `responseHook` for Redis instrumentation. Set `softprobe.protocol: 'redis'`, identifier (command + key/args), and request/response on spans per design §3.1.
   * *Test:* Call wrapped `getNodeAutoInstrumentations`. Assert Redis instrumentation has our responseHook.
-- [ ] **Task 4.6: Mutator – AMQP responseHook (optional).** *(pair: Task 5.4)*
-  * *Action:* Extend mutator to inject `responseHook` for amqplib instrumentation. Set `softprobe.protocol: 'amqp'` and identifier/request/response per design §3.1.
-  * *Test:* Assert AMQP instrumentation has our responseHook when present.
 
 ## Phase 5: Replay Mode (Monkey Patching)
 
@@ -69,9 +66,6 @@ Each task is the **replay pair** of the same-numbered capture task in Phase 4 (e
 - [ ] **Task 5.3: Redis Replay.** *(pair: Task 4.5)*
   * *Action:* Create `src/replay/redis.ts`. Patch Redis client (e.g. `send_command` or ioredis). Call matcher with `protocol: 'redis'` and identifier matching capture; return recorded reply.
   * *Test:* Run a Redis command under replay context. Assert no live network and response comes from matcher.
-- [ ] **Task 5.4: AMQP Replay (optional).** *(pair: Task 4.6)*
-  * *Action:* Create `src/replay/amqp.ts`. Patch amqplib channel. Call matcher with `protocol: 'amqp'` and identifier matching capture; return or inject recorded payload.
-  * *Test:* Publish or consume under replay; assert response from matcher.
 
 ## Phase 6: The Universal Entry Point
 - [ ] **Task 6.1: Environment Router.**
