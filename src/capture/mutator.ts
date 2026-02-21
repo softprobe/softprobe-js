@@ -1,13 +1,25 @@
 /**
  * Auto-instrumentation mutator: wraps getNodeAutoInstrumentations to inject
- * Softprobe responseHook for Postgres, HTTP/Undici (and other protocols as needed)
- * so that capture mode records request/response payloads on spans.
+ * Softprobe responseHooks per protocol (postgres, undici, redis). Each protocol
+ * is implemented in its own module (capture/postgres.ts, undici.ts, redis.ts);
+ * this module only applies the wrap and delegates to injectResponseHook.
+ * Design §5.2, §5.3.
  */
 
 import shimmer from 'shimmer';
-
-const PG_INSTRUMENTATION_NAME = '@opentelemetry/instrumentation-pg';
-const UNDICI_INSTRUMENTATION_NAME = '@opentelemetry/instrumentation-undici';
+import { injectResponseHook } from './inject';
+import {
+  PG_INSTRUMENTATION_NAME,
+  buildPostgresResponseHook,
+} from './postgres';
+import {
+  UNDICI_INSTRUMENTATION_NAME,
+  buildUndiciResponseHook,
+} from './undici';
+import {
+  REDIS_INSTRUMENTATION_NAME,
+  buildRedisResponseHook,
+} from './redis';
 
 /** Module-like object that exposes getNodeAutoInstrumentations (for real use or tests). */
 export interface AutoInstrumentationsModule {
@@ -15,101 +27,8 @@ export interface AutoInstrumentationsModule {
 }
 
 /**
- * Builds the responseHook to attach to the Postgres instrumentation.
- * In capture mode this runs after each query and records request/response on the span.
- */
-function buildPostgresResponseHook(): (span: unknown, result: unknown) => void {
-  return (_span: unknown, _result: unknown) => {
-    // Placeholder: full capture logic (setting softprobe.* attributes) can be added later.
-  };
-}
-
-/**
- * Injects our custom responseHook into the @opentelemetry/instrumentation-pg
- * entry in the array returned by getNodeAutoInstrumentations.
- */
-function injectPostgresResponseHook(result: unknown[]): unknown[] {
-  for (const item of result) {
-    const entry = item as { instrumentationName?: string; responseHook?: unknown };
-    if (entry.instrumentationName === PG_INSTRUMENTATION_NAME) {
-      entry.responseHook = buildPostgresResponseHook();
-      break;
-    }
-  }
-  return result;
-}
-
-/** Request-like shape from undici instrumentation (method, url or origin+path). */
-interface UndiciRequestLike {
-  method?: string;
-  url?: string;
-  origin?: string;
-  path?: string;
-}
-
-/** Result-like shape passed to undici responseHook (span, result). */
-interface UndiciResultLike {
-  request?: UndiciRequestLike;
-  response?: { statusCode?: number; body?: unknown };
-}
-
-/**
- * Builds the responseHook for HTTP/Undici instrumentation.
- * Sets softprobe.protocol, softprobe.identifier (method + URL), and optional
- * request/response body on the span per design §3.1.
- */
-function buildHttpUndiciResponseHook(): (
-  span: { setAttribute: (key: string, value: unknown) => void },
-  result: UndiciResultLike
-) => void {
-  return (span, result) => {
-    const req = result?.request;
-    const method = (req?.method ?? 'GET').toUpperCase();
-    const url =
-      req?.url ??
-      (req?.origin && req?.path
-        ? `${req.origin}${req.path.startsWith('/') ? '' : '/'}${req.path}`
-        : '');
-    const identifier = `${method} ${url}`.trim() || 'GET';
-
-    span.setAttribute('softprobe.protocol', 'http');
-    span.setAttribute('softprobe.identifier', identifier);
-    if (req && typeof (req as any).body !== 'undefined') {
-      span.setAttribute(
-        'softprobe.request.body',
-        JSON.stringify((req as any).body)
-      );
-    }
-    if (result?.response != null) {
-      const payload: { statusCode?: number; body?: unknown } = {
-        statusCode: result.response.statusCode,
-      };
-      if (typeof (result.response as any).body !== 'undefined') {
-        payload.body = (result.response as any).body;
-      }
-      span.setAttribute('softprobe.response.body', JSON.stringify(payload));
-    }
-  };
-}
-
-/**
- * Injects our custom responseHook into the @opentelemetry/instrumentation-undici
- * entry in the array returned by getNodeAutoInstrumentations.
- */
-function injectHttpUndiciResponseHook(result: unknown[]): unknown[] {
-  for (const item of result) {
-    const entry = item as { instrumentationName?: string; responseHook?: unknown };
-    if (entry.instrumentationName === UNDICI_INSTRUMENTATION_NAME) {
-      entry.responseHook = buildHttpUndiciResponseHook();
-      break;
-    }
-  }
-  return result;
-}
-
-/**
  * Wraps getNodeAutoInstrumentations so that the returned config includes our
- * custom responseHook for Postgres. Pass a module object to mutate (e.g. for tests);
+ * custom responseHook for each protocol. Pass a module object to mutate (e.g. for tests);
  * if omitted, the real @opentelemetry/auto-instrumentations-node module is used.
  */
 export function applyAutoInstrumentationMutator(
@@ -126,10 +45,33 @@ export function applyAutoInstrumentationMutator(
         this: AutoInstrumentationsModule,
         options?: unknown
       ) {
-        const result = original.call(this, options);
+        // Real getNodeAutoInstrumentations(inputConfigs) creates instances from config;
+        // merge our responseHooks into the input so instances get them (E2E).
+        const input =
+          options != null && typeof options === 'object' && !Array.isArray(options)
+            ? (options as Record<string, unknown>)
+            : {};
+        const merged: Record<string, unknown> = { ...input };
+        merged[PG_INSTRUMENTATION_NAME] = {
+          ...((input[PG_INSTRUMENTATION_NAME] as object) ?? {}),
+          responseHook: buildPostgresResponseHook(),
+        };
+        merged[UNDICI_INSTRUMENTATION_NAME] = {
+          ...((input[UNDICI_INSTRUMENTATION_NAME] as object) ?? {}),
+          responseHook: buildUndiciResponseHook(),
+        };
+        merged[REDIS_INSTRUMENTATION_NAME] = {
+          ...((input[REDIS_INSTRUMENTATION_NAME] as object) ?? {}),
+          responseHook: buildRedisResponseHook(),
+        };
+
+        const result = original.call(this, merged);
+        // Also mutate return value for mocks that return config-like entries (unit tests).
         const arr = Array.isArray(result) ? result : [];
-        injectPostgresResponseHook(arr);
-        return injectHttpUndiciResponseHook(arr);
+        injectResponseHook(arr, PG_INSTRUMENTATION_NAME, buildPostgresResponseHook());
+        injectResponseHook(arr, UNDICI_INSTRUMENTATION_NAME, buildUndiciResponseHook());
+        injectResponseHook(arr, REDIS_INSTRUMENTATION_NAME, buildRedisResponseHook());
+        return arr;
       };
     }) as (original: (...args: unknown[]) => unknown) => (...args: unknown[]) => unknown
   );

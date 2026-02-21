@@ -26,7 +26,10 @@ export class SoftprobeTraceExporter implements SpanExporter {
   private readonly filePath: string;
 
   constructor(options: SoftprobeTraceExporterOptions = {}) {
-    this.filePath = options.filePath ?? './softprobe-traces.json';
+    this.filePath =
+      options.filePath ??
+      process.env.SOFTPROBE_TRACES_FILE ??
+      './softprobe-traces.json';
   }
 
   export(spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void {

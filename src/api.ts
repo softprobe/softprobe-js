@@ -1,7 +1,10 @@
 import { AsyncLocalStorage } from 'async_hooks';
+import type { SemanticMatcher } from './replay/matcher';
 
 export interface ReplayContext {
   traceId: string;
+  /** Optional matcher for replay; when set, getActiveMatcher() returns it. */
+  matcher?: SemanticMatcher;
 }
 
 const replayStorage = new AsyncLocalStorage<ReplayContext | undefined>();
@@ -40,9 +43,19 @@ export function clearReplayContext(): void {
   replayStorage.enterWith(undefined);
 }
 
+/**
+ * Returns the SemanticMatcher for the current replay context, if any.
+ * Replay interceptors (e.g. Postgres) use this to resolve live calls to recorded spans.
+ */
+export function getActiveMatcher(): SemanticMatcher | undefined {
+  const ctx = getReplayContext();
+  return ctx?.matcher;
+}
+
 export const softprobe = {
   runWithContext,
   getReplayContext,
   setReplayContext,
   clearReplayContext,
+  getActiveMatcher,
 };

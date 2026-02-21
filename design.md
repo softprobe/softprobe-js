@@ -280,6 +280,26 @@ export function initCapture() {
 
 ```
 
+### 5.3 Capture responseHook Contracts (Contract Alignment)
+
+Capture mode injects a `responseHook` into each protocol’s OpenTelemetry instrumentation. The **contract** is the exact shape of the second argument (`result`) that the real instrumentation passes to `responseHook(span, result)`. Our hooks must be implemented and tested against this contract so that `softprobe.*` attributes are reliably set.
+
+**Verification requirements:**
+
+1. **Per-protocol contract**  
+   For each instrumentation package we use, the implementation must align with the package’s actual `responseHook` callback signature and `result` shape. When adding or upgrading a protocol, read the instrumentation’s types or source and update the corresponding capture module (`src/capture/<protocol>.ts`) and tests.
+
+2. **Documented contracts**  
+   In code or in this design, document the expected `result` shape per protocol (e.g. Undici: `result.request.url`, `result.request.method`, `result.response.statusCode`, `result.response.body`) so that future changes don’t silently break capture.
+
+3. **Unit tests**  
+   Unit tests must call the injected hook with a mock `result` matching the documented contract and assert that `softprobe.protocol`, `softprobe.identifier`, `softprobe.request.body`, and `softprobe.response.body` are set correctly on the span.
+
+4. **E2E contract validation**  
+   The Phase 7 E2E test must validate **contract alignment**: after running the app in capture mode, assert that the written `softprobe-traces.json` contains the expected `softprobe.*` attributes on the relevant spans (e.g. HTTP spans have identifier and response body, Redis spans have command+args and reply). This catches drift between our hooks and the real instrumentation behavior.
+
+**Golden rule:** Capture and replay are paired per protocol; the identifier and payload semantics used in capture must match what replay expects. Any change to a capture contract must be reflected in the corresponding replay module and in the E2E assertions.
+
 ---
 
 ## 6. Replay Mode Details

@@ -1,12 +1,12 @@
 /**
- * Task 4.2 / 4.4: Auto-Instrumentation Mutator.
- * Asserts that wrapping getNodeAutoInstrumentations injects our responseHook for Postgres and HTTP/Undici.
+ * Task 4.2 / 4.4 / 4.5: Auto-Instrumentation Mutator.
+ * Asserts that wrapping getNodeAutoInstrumentations injects our responseHook for Postgres, Undici, Redis.
+ * Design §5.3: unit tests use contract-shaped mocks and assert softprobe.* attributes.
  */
 import { applyAutoInstrumentationMutator } from '../capture/mutator';
-
-const PG_INSTRUMENTATION_NAME = '@opentelemetry/instrumentation-pg';
-const UNDICI_INSTRUMENTATION_NAME = '@opentelemetry/instrumentation-undici';
-const REDIS_INSTRUMENTATION_NAME = '@opentelemetry/instrumentation-redis-4';
+import { PG_INSTRUMENTATION_NAME } from '../capture/postgres';
+import { UNDICI_INSTRUMENTATION_NAME } from '../capture/undici';
+import { REDIS_INSTRUMENTATION_NAME } from '../capture/redis';
 
 describe('applyAutoInstrumentationMutator', () => {
   it('injects custom responseHook for @opentelemetry/instrumentation-pg in returned config', () => {
@@ -93,6 +93,42 @@ describe('applyAutoInstrumentationMutator', () => {
         'GET https://api.example.com/users'
       );
     });
+
+    it('responseHook sets softprobe.request.body and softprobe.response.body when present', () => {
+      const attributes: Record<string, unknown> = {};
+      const mockSpan = {
+        setAttribute(key: string, value: unknown) {
+          attributes[key] = value;
+        },
+      };
+      const undiciEntry = { instrumentationName: UNDICI_INSTRUMENTATION_NAME };
+      const mockGetNodeAutoInstrumentations = jest.fn(() => [undiciEntry]);
+      const mockModule = {
+        getNodeAutoInstrumentations: mockGetNodeAutoInstrumentations,
+      };
+
+      applyAutoInstrumentationMutator(mockModule as any);
+      const result = mockModule.getNodeAutoInstrumentations();
+      const undiciInstrumentation = result.find(
+        (item: { instrumentationName?: string }) =>
+          item.instrumentationName === UNDICI_INSTRUMENTATION_NAME
+      );
+      const responseHook = (undiciInstrumentation as any).responseHook as (
+        span: unknown,
+        result: unknown
+      ) => void;
+
+      const mockResult = {
+        request: { method: 'POST', url: 'https://api.example.com/echo', body: { foo: 'bar' } },
+        response: { statusCode: 201, body: { id: '123', created: true } },
+      };
+      responseHook(mockSpan, mockResult);
+
+      expect(attributes['softprobe.request.body']).toBe(JSON.stringify({ foo: 'bar' }));
+      expect(attributes['softprobe.response.body']).toBe(
+        JSON.stringify({ statusCode: 201, body: { id: '123', created: true } })
+      );
+    });
   });
 
   describe('Redis responseHook (Task 4.5)', () => {
@@ -114,6 +150,43 @@ describe('applyAutoInstrumentationMutator', () => {
       );
       expect(redisInstrumentation).toBeDefined();
       expect(typeof (redisInstrumentation as any).responseHook).toBe('function');
+    });
+
+    it('responseHook sets softprobe.protocol, identifier, request and response body when result has command/args/reply', () => {
+      const attributes: Record<string, unknown> = {};
+      const mockSpan = {
+        setAttribute(key: string, value: unknown) {
+          attributes[key] = value;
+        },
+      };
+      const redisEntry = { instrumentationName: REDIS_INSTRUMENTATION_NAME };
+      const mockGetNodeAutoInstrumentations = jest.fn(() => [redisEntry]);
+      const mockModule = {
+        getNodeAutoInstrumentations: mockGetNodeAutoInstrumentations,
+      };
+
+      applyAutoInstrumentationMutator(mockModule as any);
+      const result = mockModule.getNodeAutoInstrumentations();
+      const redisInstrumentation = result.find(
+        (item: { instrumentationName?: string }) =>
+          item.instrumentationName === REDIS_INSTRUMENTATION_NAME
+      );
+      const responseHook = (redisInstrumentation as any).responseHook as (
+        span: unknown,
+        result: unknown
+      ) => void;
+
+      const mockResult = {
+        command: 'GET',
+        args: ['user:1:cache'],
+        reply: 'cached-value',
+      };
+      responseHook(mockSpan, mockResult);
+
+      expect(attributes['softprobe.protocol']).toBe('redis');
+      expect(attributes['softprobe.identifier']).toBe('GET user:1:cache');
+      expect(attributes['softprobe.request.body']).toBe(JSON.stringify(['user:1:cache']));
+      expect(attributes['softprobe.response.body']).toBe(JSON.stringify('cached-value'));
     });
   });
 });
