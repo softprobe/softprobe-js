@@ -60,10 +60,10 @@ Each task is the **replay pair** of the same-numbered capture task in Phase 4 (e
 - [x] **Task 5.1: Postgres Replay.** *(pair: Task 4.2)* *(feat: replay/postgres.ts, shimmer wrap pg.Client.query; api getActiveMatcher + ReplayContext.matcher)*
   * *Action:* Create `src/replay/postgres.ts`. Use `shimmer` on `pg.Client.prototype.query`. Connect it to the SemanticMatcher with `protocol: 'postgres'` and identifier = query text.
   * *Test:* Call `client.query`. Assert it does not hit the network and returns rows from the SemanticMatcher. Throw error if query is unmocked (AC4).
-- [ ] **Task 5.2: HTTP Undici Replay.** *(pair: Task 4.4)*
+- [x] **Task 5.2: HTTP Undici Replay.** *(pair: Task 4.4)* *(feat: replay/undici.ts, wrap undici.fetch + globalThis.fetch; matcher findMatch http, identifier method+URL)*
   * *Action:* Create `src/replay/undici.ts`. Setup `MockAgent` (or Dispatcher wrap). Use `softprobe` to get the active SemanticMatcher; resolve requests with `protocol: 'http'`, identifier = method + URL.
   * *Test:* Use `fetch`. Assert the interceptor queries the SemanticMatcher and returns the mocked response.
-- [ ] **Task 5.3: Redis Replay.** *(pair: Task 4.5)*
+- [x] **Task 5.3: Redis Replay.** *(pair: Task 4.5)* *(feat: replay/redis.ts, wrap commander attachCommands so executor is matcher-aware; identifier = command + args)*
   * *Action:* Create `src/replay/redis.ts`. Patch Redis client (e.g. `send_command` or ioredis). Call matcher with `protocol: 'redis'` and identifier matching capture; return recorded reply.
   * *Test:* Run a Redis command under replay context. Assert no live network and response comes from matcher.
 

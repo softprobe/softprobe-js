@@ -102,7 +102,7 @@ Capture and replay are **always implemented in pairs** per protocol. For each su
 | Protocol  | Capture (instrumentation / hook) | Replay (patch target) | Identifier | Request/response shape |
 |-----------|-----------------------------------|------------------------|------------|-------------------------|
 | **http**  | `@opentelemetry/instrumentation-http` (or undici) responseHook | undici `Dispatcher` / `MockAgent` | Method + URL (e.g. `GET https://api.example.com/users`) | request: optional body; response: status + body |
-| **postgres** | `@opentelemetry/instrumentation-pg` responseHook | `pg.Client.prototype.query` (shimmer) | SQL text | request: query text + values; response: `{ rows, rowCount }` or rows array |
+| **postgres** | `@opentelemetry/instrumentation-pg` requestHook + responseHook | `pg.Client.prototype.query` (shimmer) | SQL text | request: query text + values; response: `{ rows, rowCount }` |
 | **redis** | `@opentelemetry/instrumentation-redis-4` (or ioredis) responseHook | redis/ioredis command (e.g. `send_command` / `call`) | Command name + key/args (e.g. `GET user:1:cache`) | request: command + args; response: reply value |
 | **amqp**  | `@opentelemetry/instrumentation-amqplib` responseHook | amqplib channel (publish/consume) | e.g. `publish exchange routingKey` or `consume queue` | request: message payload; response: ack/nack or delivery |
 
@@ -291,18 +291,25 @@ export function initCapture() {
 
 ### 5.3 Capture Hook Contracts (Contract Alignment)
 
-Capture mode injects a `responseHook` into each protocol’s OpenTelemetry instrumentation. The **contract** is the exact shape of the second argument (`result`) that the real instrumentation passes to `responseHook(span, result)`. Our hooks must be implemented and tested against this contract so that `softprobe.*` attributes are reliably set.
+Capture mode injects hooks into each protocol's OpenTelemetry instrumentation. **Each instrumentation has a different callback signature** — there is no universal `responseHook(span, result)` shape. Our hooks must be implemented and tested against the real contract so that `softprobe.*` attributes are reliably set.
+
+**Verified per-protocol hook contracts:**
+
+- **http/undici** — `responseHook(span, { request, response })`. Single 2-arg hook. `request` has `method`, `url` (or `origin`+`path`), `body`; `response` has `statusCode`, `body`.
+- **postgres** — **Two separate hooks required.** `requestHook(span, { query: { text, values?, name? }, connection })` and `responseHook(span, { data: { rows, rowCount, command } })`. The responseHook does NOT receive query text — only the requestHook has it. Both must be injected via the mutator.
+- **redis** — `responseHook(span, cmdName, cmdArgs, response)`. **4 separate positional arguments**, not a single result object. `cmdName` is e.g. `'SET'`, `cmdArgs` is `['key', 'value']`, `response` is the reply value.
+- **amqp** — TBD. To be verified when amqp capture is implemented.
 
 **Verification requirements:**
 
 1. **Per-protocol contract**  
-   For each instrumentation package we use, the implementation must align with the package’s actual `responseHook` callback signature and `result` shape. When adding or upgrading a protocol, read the instrumentation’s types or source and update the corresponding capture module (`src/capture/<protocol>.ts`) and tests.
+   For each instrumentation package we use, the implementation must align with the package's actual hook callback signature. When adding or upgrading a protocol, read the instrumentation's `types.d.ts` and update the corresponding capture module (`src/capture/<protocol>.ts`) and tests. **Do not assume a generic 2-argument signature.**
 
 2. **Documented contracts**  
-   In code or in this design, document the expected `result` shape per protocol (e.g. Undici: `result.request.url`, `result.request.method`, `result.response.statusCode`, `result.response.body`) so that future changes don’t silently break capture.
+   The per-protocol list above is the source of truth. Update it when adding protocols or upgrading instrumentation package versions.
 
 3. **Unit tests**  
-   Unit tests must call the injected hook with a mock `result` matching the documented contract and assert that `softprobe.protocol`, `softprobe.identifier`, `softprobe.request.body`, and `softprobe.response.body` are set correctly on the span.
+   Unit tests must call the injected hook with arguments matching the documented contract and assert that `softprobe.protocol`, `softprobe.identifier`, `softprobe.request.body`, and `softprobe.response.body` are set correctly on the span.
 
 4. **E2E contract validation**  
    The Phase 7 E2E test must validate **contract alignment**: after running the app in capture mode, assert that the written `softprobe-traces.json` contains the expected `softprobe.*` attributes on the relevant spans (e.g. HTTP spans have identifier and response body, Redis spans have command+args and reply). This catches drift between our hooks and the real instrumentation behavior.
@@ -376,3 +383,19 @@ To certify this framework for production, the engineering team must satisfy the 
 * **AC4: Full Span Integrity.**
 * *Assert:* The output `softprobe-traces.json` preserves topology (parent-child relationships) and all `softprobe.*` attributes on leaf spans. The serialized format is a minimal subset (traceId, spanId, parentSpanId, name, attributes); import into Jaeger or Zipkin is best-effort unless additional OTel fields (e.g. startTime, endTime, kind) are serialized.
 
+---
+
+## 8. E2E Testing Constraints
+
+### 8.1 Jest Module System vs OTel Instrumentation
+
+OTel auto-instrumentations for CJS libraries (pg, redis, ioredis, amqplib) rely on `require-in-the-middle` to intercept `require()` calls and patch modules at load time. **Jest replaces Node's native `require` with its own module loader**, which bypasses `require-in-the-middle` entirely. This means:
+
+- **HTTP/undici works in Jest** — the undici instrumentation hooks via `diagnostics_channel` (a Node.js built-in), not `require-in-the-middle`.
+- **pg, redis, and other CJS libraries are NOT instrumented inside Jest tests** — their `require()` calls go through Jest's loader and never trigger OTel's patching hooks.
+
+**Required workaround for E2E capture tests:** For protocols that rely on `require-in-the-middle` (postgres, redis, amqp), E2E tests must run the capture workload in a **child process** (via `execSync` + `ts-node`) where native Node.js `require` is used. The test then reads and asserts on the trace file produced by the child process. See `src/__tests__/e2e/helpers/*-capture-worker.ts` for the pattern.
+
+### 8.2 `OTEL_TRACES_EXPORTER=none` in Tests
+
+Do **not** set `OTEL_TRACES_EXPORTER=none` in capture E2E test environments. As documented in §5.2, this causes the SDK to produce non-recording spans that bypass all processors. The default OTLP exporter will fail to connect (no collector running) but this is harmless — our `SoftprobeTraceExporter` still receives and writes spans.
