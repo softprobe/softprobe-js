@@ -214,35 +214,35 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
   - Test: mark query fn with `__wrapped = true`, assert throw message includes “import softprobe/init BEFORE OTel”
 
 ## 9.2 Postgres replay wrapper
-- [ ] Task 9.2.1 Wrapper tags span via PostgresSpan.tagQuery
+- [x] Task 9.2.1 Wrapper tags span via PostgresSpan.tagQuery *(feat: PostgresSpan.tagQuery in postgres wrapper; replay-postgres.test)*
   - Test: tagQuery called with SQL
-- [ ] Task 9.2.2 MOCK path returns pg-like result (promise)
+- [x] Task 9.2.2 MOCK path returns pg-like result (promise) *(feat: test asserts result shape; existing impl)*
   - Test: returns `{rows,rowCount,command}`
-- [ ] Task 9.2.3 MOCK path supports callback style
+- [x] Task 9.2.3 MOCK path supports callback style *(feat: test asserts callback async; existing impl)*
   - Test: callback receives mocked result async (nextTick)
-- [ ] Task 9.2.4 CONTINUE + STRICT throws
+- [x] Task 9.2.4 CONTINUE + STRICT throws *(feat: SOFTPROBE_STRICT_REPLAY=1 => throw "no match for pg.query")*
   - Test: env strict => throws
-- [ ] Task 9.2.5 CONTINUE + DEV passthrough calls original
+- [x] Task 9.2.5 CONTINUE + DEV passthrough calls original *(feat: no strict => original invoked; replay-postgres-passthrough.test.ts)*
   - Test: original invoked
 
 ## 9.3 Redis replay wrapper
-- [ ] Task 9.3.1 Wrapper tags span via RedisSpan.tagCommand
+- [x] Task 9.3.1 Wrapper tags span via RedisSpan.tagCommand *(feat: RedisSpan.tagCommand in redis replay; replay-redis.test 9.3.1)*
   - Test: called with cmd/args
-- [ ] Task 9.3.2 MOCK returns resolved promise payload
+- [x] Task 9.3.2 MOCK returns resolved promise payload *(feat: test 9.3.2 asserts resolved value; impl already returns Promise.resolve)*
   - Test: resolves value
-- [ ] Task 9.3.3 CONTINUE + STRICT throws
+- [x] Task 9.3.3 CONTINUE + STRICT throws *(feat: strict env => throw "no match for redis command"; replay-redis 9.3.3)*
   - Test: strict env => throws
-- [ ] Task 9.3.4 CONTINUE + DEV passthrough
+- [x] Task 9.3.4 CONTINUE + DEV passthrough *(feat: no strict => originalExecutor invoked; replay-redis 9.3.4; Task 5.3 test set strict)*
   - Test: original invoked
 
 ## 9.4 HTTP replay interceptor (MSW)
-- [ ] Task 9.4.1 Interceptor ignores configured URLs
+- [x] Task 9.4.1 Interceptor ignores configured URLs *(feat: `handleHttpReplayRequest` bypasses matcher when `shouldIgnoreUrl(url)` returns true)*
   - Test: request to ignored URL does not call matcher
-- [ ] Task 9.4.2 MOCK responds with recorded payload
+- [x] Task 9.4.2 MOCK responds with recorded payload *(feat: returns `Response` from matcher payload status/statusCode/body/headers)*
   - Test: returns Response with status/body
-- [ ] Task 9.4.3 CONTINUE + STRICT returns JSON error Response(500)
+- [x] Task 9.4.3 CONTINUE + STRICT returns JSON error Response(500) *(feat: strict mode responds JSON + `x-softprobe-error: true`)*
   - Test: header `x-softprobe-error: true`
-- [ ] Task 9.4.4 CONTINUE + DEV allows passthrough
+- [x] Task 9.4.4 CONTINUE + DEV allows passthrough *(feat: CONTINUE with strict unset does not call `respondWith`)*
   - Test: does not respond; request proceeds (mock the controller)
 
 ---
@@ -252,27 +252,27 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 > Keep capture minimal and safe. Never throw in production hooks.
 
 ## 10.1 HTTP capture stream tap (utilities)
-- [ ] Task 10.1.1 Implement `tapReadableStream` with maxPayloadSize cap
+- [x] Task 10.1.1 Implement `tapReadableStream` with maxPayloadSize cap *(feat: capture/stream-tap.ts; cap + truncated)*
   - Test: cap truncates and sets `truncated=true` (or defined field)
-- [ ] Task 10.1.2 Tap does not consume original stream
+- [x] Task 10.1.2 Tap does not consume original stream *(feat: PassThrough tee; consumer reads full)*
   - Test: original consumer still reads full stream (for small bodies)
 
 ## 10.2 HTTP inbound capture record writing
-- [ ] Task 10.2.1 Write inbound request record
+- [x] Task 10.2.1 Write inbound request record *(feat: capture/http-inbound.ts writeInboundHttpRecord)*
   - Test: store.saveRecord called with type=inbound protocol=http
-- [ ] Task 10.2.2 Write inbound response record (or embed in same record—choose one and test it)
+- [x] Task 10.2.2 Write inbound response record (or embed in same record—choose one and test it) *(feat: same record requestPayload + responsePayload)*
   - Test: responsePayload includes status/body
 
 ## 10.3 Outbound HTTP capture
-- [ ] Task 10.3.1 Capture outbound request/response into record type=outbound
+- [x] Task 10.3.1 Capture outbound request/response into record type=outbound *(feat: buildUndiciResponseHook writes to getCaptureStore; identifier METHOD url)*
   - Test: identifier matches `METHOD url`
 
 ## 10.4 Postgres capture (minimal)
-- [ ] Task 10.4.1 Capture query result rows into outbound record
+- [x] Task 10.4.1 Capture query result rows into outbound record *(feat: responseHook writes outbound record via getCaptureStore; store-accessor.ts)*
   - Test: record.responsePayload.rows matches stub
 
 ## 10.5 Redis capture (minimal)
-- [ ] Task 10.5.1 Capture command result into outbound record
+- [x] Task 10.5.1 Capture command result into outbound record *(feat: buildRedisResponseHook writes to getCaptureStore; responsePayload = response)*
   - Test: record.responsePayload equals stub
 
 ---

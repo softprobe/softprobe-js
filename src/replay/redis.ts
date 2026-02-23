@@ -8,7 +8,9 @@
  * a closure when the module loads, so we must patch before the client loads.
  */
 
+import { trace } from '@opentelemetry/api';
 import shimmer from 'shimmer';
+import { RedisSpan } from '../bindings/redis-span';
 import type { SemanticMatcher } from './matcher';
 import { softprobe } from '../api';
 
@@ -58,6 +60,9 @@ export function setupRedisReplay(): void {
               );
             }
             const { args: redisArgs } = transformCommandArguments(command, args);
+            const cmd = (redisArgs[0] != null ? String(redisArgs[0]) : 'UNKNOWN');
+            const cmdArgs = redisArgs.slice(1).map((a: unknown) => (a != null ? String(a) : ''));
+            RedisSpan.tagCommand(cmd, cmdArgs, trace.getActiveSpan());
             const identifier = buildIdentifier(redisArgs);
             let payload: unknown;
             try {
@@ -67,7 +72,16 @@ export function setupRedisReplay(): void {
                 requestBody: redisArgs,
               });
             } catch (err) {
-              return Promise.reject(err);
+              if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
+                return Promise.reject(new Error('Softprobe replay: no match for redis command'));
+              }
+              // CONTINUE + DEV: passthrough (design §9.3)
+              return (originalExecutor as (this: unknown, c: unknown, a: unknown[], n: string) => unknown).call(
+                this,
+                command,
+                args,
+                _name
+              );
             }
             const preserved = (redisArgs as { preserve?: boolean })?.preserve;
             return Promise.resolve(transformCommandReply(command, payload, preserved));

@@ -7,6 +7,7 @@
 import shimmer from 'shimmer';
 import type { SemanticMatcher } from './matcher';
 import { softprobe } from '../api';
+import { PostgresSpan } from '../bindings/postgres-span';
 
 const FATAL_IMPORT_ORDER =
   "[Softprobe FATAL] OTel already wrapped pg. Import 'softprobe/init' BEFORE OTel initialization.";
@@ -14,8 +15,10 @@ const FATAL_IMPORT_ORDER =
 /**
  * Sets up Postgres replay by wrapping pg.Client.prototype.query. When replay context
  * has a matcher, queries are intercepted and return the recorded response payload
- * (rows/rowCount). If no matcher or no match, throws per AC4 (unmocked query).
- * Throws fatally if OTel wrapped pg first (import-order guard).
+ * (rows/rowCount). Supports both promise style (query(text) / query(text, values))
+ * and callback style (query(text, cb) / query(text, values, cb)); design §9.1
+ * uses last-argument detection for callback. If no matcher or no match, throws per
+ * AC4 (unmocked query). Throws fatally if OTel wrapped pg first (import-order guard).
  */
 export function setupPostgresReplay(): void {
   const pg = require('pg');
@@ -38,8 +41,12 @@ export function setupPostgresReplay(): void {
           return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
         }
 
-        const cb = typeof args[1] === 'function' ? args[1] : typeof args[2] === 'function' ? args[2] : undefined;
-        const vals = Array.isArray(args[1]) ? args[1] : undefined;
+        // Support both promise and callback style (design §9.1: callback is last arg).
+        const lastArg = args[args.length - 1];
+        const cb = typeof lastArg === 'function' ? (lastArg as (err: Error | null, res?: unknown) => void) : undefined;
+        const valsArray = Array.isArray(args[1]) ? args[1] : undefined;
+
+        PostgresSpan.tagQuery(queryString, valsArray);
 
         let payload: unknown;
         try {
@@ -47,14 +54,20 @@ export function setupPostgresReplay(): void {
           payload = (matcher as SemanticMatcher).findMatch({
             protocol: 'postgres',
             identifier: queryString,
-            requestBody: vals,
+            requestBody: valsArray,
           });
         } catch (err) {
-          if (cb) {
-            process.nextTick(() => (cb as (err: Error | null, res?: unknown) => void)(err as Error));
-            return undefined;
+          // CONTINUE + STRICT: design §9.1 — wrapper owns strict vs dev policy.
+          if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
+            const strictErr = new Error('Softprobe replay: no match for pg.query');
+            if (cb) {
+              process.nextTick(() => (cb as (err: Error | null, res?: unknown) => void)(strictErr));
+              return undefined;
+            }
+            return Promise.reject(strictErr);
           }
-          return Promise.reject(err);
+          // CONTINUE + DEV: passthrough (Task 9.2.5).
+          return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
         }
 
         const rows = Array.isArray(payload) ? payload : (payload as { rows?: unknown[] })?.rows ?? [];

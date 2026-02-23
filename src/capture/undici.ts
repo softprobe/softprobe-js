@@ -1,7 +1,11 @@
 /**
  * Capture hook for HTTP/Undici. Pairs with replay/undici.ts (same protocol & identifier).
  * Design §3.1, §5.3: responseHook contract must match @opentelemetry/instrumentation-undici.
+ * Design §10.3: when capture store is set, writes outbound record (identifier = METHOD url).
  */
+
+import type { SoftprobeCassetteRecord } from '../types/schema';
+import { getCaptureStore } from './store-accessor';
 
 /** Request-like shape from undici instrumentation (method, url or origin+path). Contract: align with real package. */
 export interface UndiciRequestLike {
@@ -20,15 +24,24 @@ export interface UndiciResultLike {
 
 export const UNDICI_INSTRUMENTATION_NAME = '@opentelemetry/instrumentation-undici';
 
+/** Span-like shape for responseHook (context + optional attributes). */
+interface SpanLike {
+  spanContext?: () => { traceId: string; spanId: string };
+  parentSpanId?: string;
+  name?: string;
+  setAttribute?: (key: string, value: unknown) => void;
+}
+
 /**
  * Builds the responseHook for HTTP/Undici instrumentation.
  * Sets softprobe.protocol, softprobe.identifier (method + URL), and optional
  * request/response body on the span per design §3.1.
+ * When a capture store is set, writes an outbound SoftprobeCassetteRecord (Task 10.3.1).
  * Signature (span: unknown, result: unknown) for compatibility with injectResponseHook.
  */
 export function buildUndiciResponseHook(): (span: unknown, result: unknown) => void {
   return (span, result) => {
-    const s = span as { setAttribute: (key: string, value: unknown) => void };
+    const s = span as SpanLike & { setAttribute: (key: string, value: unknown) => void };
     const res = result as UndiciResultLike;
     const req = res?.request;
     const method = (req?.method ?? 'GET').toUpperCase();
@@ -39,10 +52,10 @@ export function buildUndiciResponseHook(): (span: unknown, result: unknown) => v
         : '');
     const identifier = `${method} ${url}`.trim() || 'GET';
 
-    s.setAttribute('softprobe.protocol', 'http');
-    s.setAttribute('softprobe.identifier', identifier);
+    s.setAttribute?.('softprobe.protocol', 'http');
+    s.setAttribute?.('softprobe.identifier', identifier);
     if (req && typeof req.body !== 'undefined') {
-      s.setAttribute('softprobe.request.body', JSON.stringify(req.body));
+      s.setAttribute?.('softprobe.request.body', JSON.stringify(req.body));
     }
     if (res?.response != null) {
       const payload: { statusCode?: number; body?: unknown } = {
@@ -51,7 +64,35 @@ export function buildUndiciResponseHook(): (span: unknown, result: unknown) => v
       if (typeof (res.response as { body?: unknown }).body !== 'undefined') {
         payload.body = (res.response as { body?: unknown }).body;
       }
-      s.setAttribute('softprobe.response.body', JSON.stringify(payload));
+      s.setAttribute?.('softprobe.response.body', JSON.stringify(payload));
     }
+
+    const store = getCaptureStore();
+    if (!store) return;
+
+    const ctx = s.spanContext?.() ?? { traceId: '', spanId: '' };
+    const requestPayload =
+      req && typeof req.body !== 'undefined' ? { body: req.body } : undefined;
+    const responsePayload =
+      res?.response != null
+        ? {
+            statusCode: res.response.statusCode,
+            body: (res.response as { body?: unknown }).body,
+          }
+        : undefined;
+    const record: SoftprobeCassetteRecord = {
+      version: '4.1',
+      traceId: ctx.traceId,
+      spanId: ctx.spanId,
+      parentSpanId: s.parentSpanId,
+      spanName: s.name,
+      timestamp: new Date().toISOString(),
+      type: 'outbound',
+      protocol: 'http',
+      identifier,
+      requestPayload,
+      responsePayload,
+    };
+    store.saveRecord(record);
   };
 }
