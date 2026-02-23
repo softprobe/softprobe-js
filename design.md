@@ -682,3 +682,104 @@ export function createDefaultMatcher(): MatcherFn {
   };
 }
 ```
+
+---
+
+## 14) Server-Side Integration (Inbound)
+
+### 14.1 Synchronous Initialization
+
+Because `softprobe/init` must be the first import, the logic you provided correctly uses synchronous `require` calls. This ensures that when the server (Express/Fastify) starts, the drivers are already wrapped with the necessary Capture or Replay logic.
+
+### 14.2 The Role of Environment Variables
+
+* **`SOFTPROBE_MODE=CAPTURE`**: Loads the `CassetteStore` and applies instrumentations that tap into request/response streams to write to the NDJSON side-channel.
+* **`SOFTPROBE_MODE=REPLAY`**: Loads the Matcher list and activates the shims (Postgres, Redis, HTTP) that return mocked payloads instead of making real network calls.
+
+---
+
+## 15) Automatic Mock Injection via Environment & Context
+
+By combining `process.env` with OTel's native context, we achieve a "Virtual Environment" that requires zero code changes to the application logic.
+
+### 15.1 Coordination Flow
+
+1. **Boot (Global):** The app starts with `SOFTPROBE_MODE=REPLAY`. All database/HTTP drivers are now "stub-ready".
+2. **Request Entry (Local):** An incoming request arrives. Softprobe's server middleware (Express/Fastify) uses the native OTel context to find the `traceId`.
+3. **Context Priming:** The middleware calls `softprobe.activateReplayForContext(traceId)`. This links the current `AsyncLocalStorage` to the specific records loaded from the `SOFTPROBE_CASSETTE_PATH`.
+4. **Automatic Injection:** When the App code calls `db.query()`, the Postgres shim sees the global `REPLAY` mode and the local `traceId`, finds the matching SQL in the cassette, and injects the result back into the App.
+
+### 15.2 Downstream Propagation
+
+To ensure internal microservice calls are also mocked, Softprobe injects the mode into the OTel baggage:
+
+```ts
+// Inside server middleware
+if (process.env.SOFTPROBE_MODE === 'REPLAY') {
+  const entry = { value: 'REPLAY', metadata: 'softprobe' };
+  const newBaggage = baggage.setEntry(propagation.getBaggage(context.active()), 'softprobe-mode', entry);
+  // This baggage is automatically sent via 'otlp' or 'w3c' headers to the next service
+}
+
+```
+
+---
+
+## 16) Updated Server-Side Components (v4.1)
+
+### 16.1 Express Middleware (Environment Aware)
+
+```ts
+export function softprobeExpressMiddleware(req: any, res: any, next: any) {
+  const span = trace.getActiveSpan();
+  const traceId = span?.spanContext().traceId;
+
+  if (process.env.SOFTPROBE_MODE === 'REPLAY' && traceId) {
+    // Prime the Matcher for this specific trace
+    softprobe.getActiveMatcher()._setRecords(softprobe.getRecordsForTrace(traceId));
+  }
+
+  if (process.env.SOFTPROBE_MODE === 'CAPTURE') {
+    const originalSend = res.send;
+    res.send = function(body: any) {
+      CaptureEngine.queueInboundResponse(traceId, {
+        status: res.statusCode,
+        body: body,
+        identifier: `${req.method} ${req.path}`
+      });
+      return originalSend.apply(res, arguments);
+    };
+  }
+
+  next();
+}
+
+```
+
+### 16.2 Fastify Plugin (Environment Aware)
+
+Fastify hooks should be conditionally added based on the environment variable to minimize overhead.
+
+```ts
+export const softprobeFastifyPlugin = async (fastify: FastifyInstance) => {
+  if (process.env.SOFTPROBE_MODE === 'CAPTURE') {
+    fastify.addHook('onSend', async (request, reply, payload) => {
+      const traceId = trace.getActiveSpan()?.spanContext().traceId;
+      CaptureEngine.queueInboundResponse(traceId, {
+        status: reply.statusCode,
+        body: payload
+      });
+      return payload;
+    });
+  }
+};
+
+```
+
+---
+
+## 17) Implementation Checklist Refinement
+
+* **[ ] Sync Bootstrapping:** Ensure `SOFTPROBE_MODE` is checked at the very top of `instrumentation.ts` before `NodeSDK` starts.
+* **[ ] Matcher Scoping:** Verify the `SoftprobeMatcher` uses the active OTel context to select records, preventing cross-test data leakage.
+* **[ ] NDJSON Flush:** Since you are using a global `beforeExit` listener, ensure it handles both `SIGINT` and `SIGTERM` for production safety.

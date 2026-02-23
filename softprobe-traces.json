@@ -1,0 +1,1088 @@
+{
+  "d28a34b8551448871b2cbb392d76e0c6": [
+    {
+      "traceId": "d28a34b8551448871b2cbb392d76e0c6",
+      "spanId": "39319a1e2a69d07c",
+      "parentSpanId": "4a90b017c47ff9a9",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55261,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 65269
+      }
+    },
+    {
+      "traceId": "d28a34b8551448871b2cbb392d76e0c6",
+      "spanId": "4a90b017c47ff9a9",
+      "name": "redis-connect",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55261,
+        "db.connection_string": "redis://localhost:55261"
+      }
+    }
+  ],
+  "680d440a7e0798598aad4339405ddd69": [
+    {
+      "traceId": "680d440a7e0798598aad4339405ddd69",
+      "spanId": "57f1b2893ab8308e",
+      "name": "redis-SET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55261,
+        "db.connection_string": "redis://localhost:55261",
+        "db.statement": "SET softprobe:e2e:1771832704497 [1 other arguments]",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "SET softprobe:e2e:1771832704497 redis-e2e-value",
+        "softprobe.request.body": "[\"softprobe:e2e:1771832704497\",\"redis-e2e-value\"]",
+        "softprobe.response.body": "\"OK\""
+      }
+    }
+  ],
+  "047773df6e19b03f4ee26849df09dfff": [
+    {
+      "traceId": "047773df6e19b03f4ee26849df09dfff",
+      "spanId": "9e57a6a975a77957",
+      "name": "redis-GET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55261,
+        "db.connection_string": "redis://localhost:55261",
+        "db.statement": "GET softprobe:e2e:1771832704497",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "GET softprobe:e2e:1771832704497",
+        "softprobe.request.body": "[\"softprobe:e2e:1771832704497\"]",
+        "softprobe.response.body": "\"redis-e2e-value\""
+      }
+    }
+  ],
+  "023c0e6e38e8f5b6465adcf965002237": [
+    {
+      "traceId": "023c0e6e38e8f5b6465adcf965002237",
+      "spanId": "39cdd90766934a56",
+      "parentSpanId": "d48d1505e1fb9e26",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "023c0e6e38e8f5b6465adcf965002237",
+      "spanId": "ce6cbbda7447e1be",
+      "parentSpanId": "d48d1505e1fb9e26",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55258,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 65281
+      }
+    },
+    {
+      "traceId": "023c0e6e38e8f5b6465adcf965002237",
+      "spanId": "d48d1505e1fb9e26",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55258/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55258,
+        "db.user": "test"
+      }
+    }
+  ],
+  "64825796eb35e2dd5381b5b883e95c76": [
+    {
+      "traceId": "64825796eb35e2dd5381b5b883e95c76",
+      "spanId": "4ed1e623e17e9b92",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55258/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55258,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "f32bed601c55b8080d54afc4e55bb3e8": [
+    {
+      "traceId": "f32bed601c55b8080d54afc4e55bb3e8",
+      "spanId": "aa8dafb1683ae9ed",
+      "parentSpanId": "a87cdba5eb67fed6",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "f32bed601c55b8080d54afc4e55bb3e8",
+      "spanId": "4654bb5c346ff92e",
+      "parentSpanId": "a87cdba5eb67fed6",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55263,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 65293
+      }
+    },
+    {
+      "traceId": "f32bed601c55b8080d54afc4e55bb3e8",
+      "spanId": "a87cdba5eb67fed6",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55263/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55263,
+        "db.user": "test"
+      }
+    }
+  ],
+  "d2b9d7087809dff7ce0b64c96d218fb6": [
+    {
+      "traceId": "d2b9d7087809dff7ce0b64c96d218fb6",
+      "spanId": "07e4d98a5135f07d",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55263/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55263,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "c35af7c109360483dd5d3a2ee3c0946f": [
+    {
+      "traceId": "c35af7c109360483dd5d3a2ee3c0946f",
+      "spanId": "4c72c2e5ba19fa2b",
+      "parentSpanId": "a86f006e8bfb3713",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55267,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 65337
+      }
+    },
+    {
+      "traceId": "c35af7c109360483dd5d3a2ee3c0946f",
+      "spanId": "a86f006e8bfb3713",
+      "name": "redis-connect",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55267,
+        "db.connection_string": "redis://localhost:55267"
+      }
+    }
+  ],
+  "a129c10e29b4fff3d48c8eb85c60ff42": [
+    {
+      "traceId": "a129c10e29b4fff3d48c8eb85c60ff42",
+      "spanId": "5759c142714e3b38",
+      "name": "redis-SET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55267,
+        "db.connection_string": "redis://localhost:55267",
+        "db.statement": "SET softprobe:e2e:1771832755325 [1 other arguments]",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "SET softprobe:e2e:1771832755325 redis-e2e-value",
+        "softprobe.request.body": "[\"softprobe:e2e:1771832755325\",\"redis-e2e-value\"]",
+        "softprobe.response.body": "\"OK\""
+      }
+    }
+  ],
+  "466bfd3f6260eedce380ef8f9209a427": [
+    {
+      "traceId": "466bfd3f6260eedce380ef8f9209a427",
+      "spanId": "938c88364a10650b",
+      "name": "redis-GET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55267,
+        "db.connection_string": "redis://localhost:55267",
+        "db.statement": "GET softprobe:e2e:1771832755325",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "GET softprobe:e2e:1771832755325",
+        "softprobe.request.body": "[\"softprobe:e2e:1771832755325\"]",
+        "softprobe.response.body": "\"redis-e2e-value\""
+      }
+    }
+  ],
+  "50107c385c2a9ba0df2311a618bd1737": [
+    {
+      "traceId": "50107c385c2a9ba0df2311a618bd1737",
+      "spanId": "6a3b836c3f98f785",
+      "parentSpanId": "9030bc40dc6ec25c",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "50107c385c2a9ba0df2311a618bd1737",
+      "spanId": "4b6c7d1997653d89",
+      "parentSpanId": "9030bc40dc6ec25c",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55266,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 65346
+      }
+    },
+    {
+      "traceId": "50107c385c2a9ba0df2311a618bd1737",
+      "spanId": "9030bc40dc6ec25c",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55266/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55266,
+        "db.user": "test"
+      }
+    }
+  ],
+  "f35c799221ad505d9166188721c04d22": [
+    {
+      "traceId": "f35c799221ad505d9166188721c04d22",
+      "spanId": "c64d9727fc134e0b",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55266/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55266,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "b9ada129e382a94472401050508efb82": [
+    {
+      "traceId": "b9ada129e382a94472401050508efb82",
+      "spanId": "ddc02c065936481f",
+      "parentSpanId": "d527efa5f84aefbc",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "b9ada129e382a94472401050508efb82",
+      "spanId": "55b8f2ee8b66ef1c",
+      "parentSpanId": "d527efa5f84aefbc",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55271,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 65359
+      }
+    },
+    {
+      "traceId": "b9ada129e382a94472401050508efb82",
+      "spanId": "d527efa5f84aefbc",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55271/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55271,
+        "db.user": "test"
+      }
+    }
+  ],
+  "aecdd36132d098b2b5d50c53aab90c5b": [
+    {
+      "traceId": "aecdd36132d098b2b5d50c53aab90c5b",
+      "spanId": "db5bccbfc5399e8e",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55271/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55271,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "42b2f330cb5b4674aa796a47118fc4e1": [
+    {
+      "traceId": "42b2f330cb5b4674aa796a47118fc4e1",
+      "spanId": "a3035e31cc0472fd",
+      "parentSpanId": "6970803cb3fbc131",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55277,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 65428
+      }
+    },
+    {
+      "traceId": "42b2f330cb5b4674aa796a47118fc4e1",
+      "spanId": "6970803cb3fbc131",
+      "name": "redis-connect",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55277,
+        "db.connection_string": "redis://localhost:55277"
+      }
+    }
+  ],
+  "bd732397ad176c063dc21e5b74efcbc8": [
+    {
+      "traceId": "bd732397ad176c063dc21e5b74efcbc8",
+      "spanId": "65fb96151313bd75",
+      "name": "redis-SET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55277,
+        "db.connection_string": "redis://localhost:55277",
+        "db.statement": "SET softprobe:e2e:1771832849621 [1 other arguments]",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "SET softprobe:e2e:1771832849621 redis-e2e-value",
+        "softprobe.request.body": "[\"softprobe:e2e:1771832849621\",\"redis-e2e-value\"]",
+        "softprobe.response.body": "\"OK\""
+      }
+    }
+  ],
+  "71399347bd2932d3948e1ab19192d370": [
+    {
+      "traceId": "71399347bd2932d3948e1ab19192d370",
+      "spanId": "7776667ca5a1df4c",
+      "name": "redis-GET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55277,
+        "db.connection_string": "redis://localhost:55277",
+        "db.statement": "GET softprobe:e2e:1771832849621",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "GET softprobe:e2e:1771832849621",
+        "softprobe.request.body": "[\"softprobe:e2e:1771832849621\"]",
+        "softprobe.response.body": "\"redis-e2e-value\""
+      }
+    }
+  ],
+  "b81b5156b5f70c427ec4e2e629eee9c5": [
+    {
+      "traceId": "b81b5156b5f70c427ec4e2e629eee9c5",
+      "spanId": "4bbc8c8d74dc81a0",
+      "parentSpanId": "3ff664e42cf0185a",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "b81b5156b5f70c427ec4e2e629eee9c5",
+      "spanId": "e269c96aef446249",
+      "parentSpanId": "3ff664e42cf0185a",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55275,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 65435
+      }
+    },
+    {
+      "traceId": "b81b5156b5f70c427ec4e2e629eee9c5",
+      "spanId": "3ff664e42cf0185a",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55275/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55275,
+        "db.user": "test"
+      }
+    }
+  ],
+  "95d3fbea24f2cb7581163a60e9f94e98": [
+    {
+      "traceId": "95d3fbea24f2cb7581163a60e9f94e98",
+      "spanId": "6b793ea80b84b628",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55275/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55275,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "4572e35c8b19766ab83988ecf77ced88": [
+    {
+      "traceId": "4572e35c8b19766ab83988ecf77ced88",
+      "spanId": "f684336431148a77",
+      "parentSpanId": "100300bffb43057d",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "4572e35c8b19766ab83988ecf77ced88",
+      "spanId": "b8e491effc79b167",
+      "parentSpanId": "100300bffb43057d",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55279,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 65449
+      }
+    },
+    {
+      "traceId": "4572e35c8b19766ab83988ecf77ced88",
+      "spanId": "100300bffb43057d",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55279/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55279,
+        "db.user": "test"
+      }
+    }
+  ],
+  "5b2a9257ba208c6d1d80ebf99fd0e870": [
+    {
+      "traceId": "5b2a9257ba208c6d1d80ebf99fd0e870",
+      "spanId": "a739c2c1d7c18c83",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55279/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55279,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "ed1f0205469742b38db20e4cc54dda1c": [
+    {
+      "traceId": "ed1f0205469742b38db20e4cc54dda1c",
+      "spanId": "193024a3db3ad20e",
+      "parentSpanId": "1db99162f2353511",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55285,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 49244
+      }
+    },
+    {
+      "traceId": "ed1f0205469742b38db20e4cc54dda1c",
+      "spanId": "1db99162f2353511",
+      "name": "redis-connect",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55285,
+        "db.connection_string": "redis://localhost:55285"
+      }
+    }
+  ],
+  "e2861fe39ea14914a92f07aab9f0551c": [
+    {
+      "traceId": "e2861fe39ea14914a92f07aab9f0551c",
+      "spanId": "e5487c4ef60d0790",
+      "name": "redis-SET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55285,
+        "db.connection_string": "redis://localhost:55285",
+        "db.statement": "SET softprobe:e2e:1771833141048 [1 other arguments]",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "SET softprobe:e2e:1771833141048 redis-e2e-value",
+        "softprobe.request.body": "[\"softprobe:e2e:1771833141048\",\"redis-e2e-value\"]",
+        "softprobe.response.body": "\"OK\""
+      }
+    }
+  ],
+  "26045ae10ed35e60e1052993d8fc1e6e": [
+    {
+      "traceId": "26045ae10ed35e60e1052993d8fc1e6e",
+      "spanId": "4e3b82bd189851de",
+      "name": "redis-GET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55285,
+        "db.connection_string": "redis://localhost:55285",
+        "db.statement": "GET softprobe:e2e:1771833141048",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "GET softprobe:e2e:1771833141048",
+        "softprobe.request.body": "[\"softprobe:e2e:1771833141048\"]",
+        "softprobe.response.body": "\"redis-e2e-value\""
+      }
+    }
+  ],
+  "880a56ed03b3cb04f2bc6cf250239d42": [
+    {
+      "traceId": "880a56ed03b3cb04f2bc6cf250239d42",
+      "spanId": "cadc6ce2ab2de998",
+      "parentSpanId": "f744745f09887516",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "880a56ed03b3cb04f2bc6cf250239d42",
+      "spanId": "165a1f69adad5bd7",
+      "parentSpanId": "f744745f09887516",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55284,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 49252
+      }
+    },
+    {
+      "traceId": "880a56ed03b3cb04f2bc6cf250239d42",
+      "spanId": "f744745f09887516",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55284/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55284,
+        "db.user": "test"
+      }
+    }
+  ],
+  "2d3b39078d37b6d1e06f7c804ce53e43": [
+    {
+      "traceId": "2d3b39078d37b6d1e06f7c804ce53e43",
+      "spanId": "6626ba0fc8ffc20b",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55284/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55284,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "edeb406c9e10744c9b35bbd17db9e4f1": [
+    {
+      "traceId": "edeb406c9e10744c9b35bbd17db9e4f1",
+      "spanId": "fed4db6589b318d8",
+      "parentSpanId": "8e7d83bd55e4caf7",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "edeb406c9e10744c9b35bbd17db9e4f1",
+      "spanId": "572491631b339463",
+      "parentSpanId": "8e7d83bd55e4caf7",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55287,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 49261
+      }
+    },
+    {
+      "traceId": "edeb406c9e10744c9b35bbd17db9e4f1",
+      "spanId": "8e7d83bd55e4caf7",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55287/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55287,
+        "db.user": "test"
+      }
+    }
+  ],
+  "827f18233a9f77daaf93a42e975dd404": [
+    {
+      "traceId": "827f18233a9f77daaf93a42e975dd404",
+      "spanId": "c6184d6255bffc34",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55287/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55287,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "96a0074b8f98cf3ca528c178f13c25b7": [
+    {
+      "traceId": "96a0074b8f98cf3ca528c178f13c25b7",
+      "spanId": "c8830f392b56b025",
+      "parentSpanId": "b407f01287242eda",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55289,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 49341
+      }
+    },
+    {
+      "traceId": "96a0074b8f98cf3ca528c178f13c25b7",
+      "spanId": "b407f01287242eda",
+      "name": "redis-connect",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55289,
+        "db.connection_string": "redis://localhost:55289"
+      }
+    }
+  ],
+  "95a830e283a3a26fc51f6da698cc01bc": [
+    {
+      "traceId": "95a830e283a3a26fc51f6da698cc01bc",
+      "spanId": "c514204d21ec159f",
+      "name": "redis-SET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55289,
+        "db.connection_string": "redis://localhost:55289",
+        "db.statement": "SET softprobe:e2e:1771833272559 [1 other arguments]",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "SET softprobe:e2e:1771833272559 redis-e2e-value",
+        "softprobe.request.body": "[\"softprobe:e2e:1771833272559\",\"redis-e2e-value\"]",
+        "softprobe.response.body": "\"OK\""
+      }
+    }
+  ],
+  "513f66f18c34a3f20eabf5a70eb7eb18": [
+    {
+      "traceId": "513f66f18c34a3f20eabf5a70eb7eb18",
+      "spanId": "0dd12ea02448a562",
+      "name": "redis-GET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55289,
+        "db.connection_string": "redis://localhost:55289",
+        "db.statement": "GET softprobe:e2e:1771833272559",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "GET softprobe:e2e:1771833272559",
+        "softprobe.request.body": "[\"softprobe:e2e:1771833272559\"]",
+        "softprobe.response.body": "\"redis-e2e-value\""
+      }
+    }
+  ],
+  "9057190026fb1752b56cba07c9d66ab4": [
+    {
+      "traceId": "9057190026fb1752b56cba07c9d66ab4",
+      "spanId": "4e4d8c606d5421c4",
+      "parentSpanId": "0ff756221fd2d30c",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "9057190026fb1752b56cba07c9d66ab4",
+      "spanId": "bf59b587c136116f",
+      "parentSpanId": "0ff756221fd2d30c",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55293,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 49354
+      }
+    },
+    {
+      "traceId": "9057190026fb1752b56cba07c9d66ab4",
+      "spanId": "0ff756221fd2d30c",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55293/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55293,
+        "db.user": "test"
+      }
+    }
+  ],
+  "4f3b48a70cfd78fd9466c7afeba1c6e6": [
+    {
+      "traceId": "4f3b48a70cfd78fd9466c7afeba1c6e6",
+      "spanId": "21be98053d7a3ce3",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55293/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55293,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "658193bde50e4ac0a513ac4b8903f792": [
+    {
+      "traceId": "658193bde50e4ac0a513ac4b8903f792",
+      "spanId": "50226d62fc60476d",
+      "parentSpanId": "5b96a915e0f6013b",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "658193bde50e4ac0a513ac4b8903f792",
+      "spanId": "fba80baf1ad726d0",
+      "parentSpanId": "5b96a915e0f6013b",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55295,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 49369
+      }
+    },
+    {
+      "traceId": "658193bde50e4ac0a513ac4b8903f792",
+      "spanId": "5b96a915e0f6013b",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55295/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55295,
+        "db.user": "test"
+      }
+    }
+  ],
+  "011f7994d2cb78ed8b5a08b1d744931d": [
+    {
+      "traceId": "011f7994d2cb78ed8b5a08b1d744931d",
+      "spanId": "6e71a984a518d06e",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55295/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55295,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "f4c036239d2e4f43896389c11cf4b211": [
+    {
+      "traceId": "f4c036239d2e4f43896389c11cf4b211",
+      "spanId": "d4009a8325703ddb",
+      "parentSpanId": "2d7fc239c8034d7d",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55299,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 49504
+      }
+    },
+    {
+      "traceId": "f4c036239d2e4f43896389c11cf4b211",
+      "spanId": "2d7fc239c8034d7d",
+      "name": "redis-connect",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55299,
+        "db.connection_string": "redis://localhost:55299"
+      }
+    }
+  ],
+  "b42317f1690a144ffc278e42075b9324": [
+    {
+      "traceId": "b42317f1690a144ffc278e42075b9324",
+      "spanId": "b60bb88efac51cd3",
+      "name": "redis-SET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55299,
+        "db.connection_string": "redis://localhost:55299",
+        "db.statement": "SET softprobe:e2e:1771833460392 [1 other arguments]",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "SET softprobe:e2e:1771833460392 redis-e2e-value",
+        "softprobe.request.body": "[\"softprobe:e2e:1771833460392\",\"redis-e2e-value\"]",
+        "softprobe.response.body": "\"OK\""
+      }
+    }
+  ],
+  "f23c02b125bd0d0671c8954cef969777": [
+    {
+      "traceId": "f23c02b125bd0d0671c8954cef969777",
+      "spanId": "fe51440a54bc815b",
+      "name": "redis-GET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55299,
+        "db.connection_string": "redis://localhost:55299",
+        "db.statement": "GET softprobe:e2e:1771833460392",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "GET softprobe:e2e:1771833460392",
+        "softprobe.request.body": "[\"softprobe:e2e:1771833460392\"]",
+        "softprobe.response.body": "\"redis-e2e-value\""
+      }
+    }
+  ],
+  "76286e3de2e785ebf6cd82c46fc6d0f7": [
+    {
+      "traceId": "76286e3de2e785ebf6cd82c46fc6d0f7",
+      "spanId": "20b2ba8f363ee8b7",
+      "parentSpanId": "09c2cba361376f71",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "76286e3de2e785ebf6cd82c46fc6d0f7",
+      "spanId": "2a1b91664d2a5e11",
+      "parentSpanId": "09c2cba361376f71",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55302,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 49516
+      }
+    },
+    {
+      "traceId": "76286e3de2e785ebf6cd82c46fc6d0f7",
+      "spanId": "09c2cba361376f71",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55302/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55302,
+        "db.user": "test"
+      }
+    }
+  ],
+  "1f312768879c964baf04cc6facb10d08": [
+    {
+      "traceId": "1f312768879c964baf04cc6facb10d08",
+      "spanId": "167d2401bd36db3a",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55302/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55302,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "8efbfb0015862a8eab106860349d2b14": [
+    {
+      "traceId": "8efbfb0015862a8eab106860349d2b14",
+      "spanId": "940967b693ad4166",
+      "parentSpanId": "d2b3f8cbdc5654e8",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "8efbfb0015862a8eab106860349d2b14",
+      "spanId": "fbcfc4c8b4915cf7",
+      "parentSpanId": "d2b3f8cbdc5654e8",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55303,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 49525
+      }
+    },
+    {
+      "traceId": "8efbfb0015862a8eab106860349d2b14",
+      "spanId": "d2b3f8cbdc5654e8",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55303/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55303,
+        "db.user": "test"
+      }
+    }
+  ],
+  "11f714bc57443edd120036a94577b800": [
+    {
+      "traceId": "11f714bc57443edd120036a94577b800",
+      "spanId": "6789b6c0285be9b8",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55303/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55303,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ]
+}

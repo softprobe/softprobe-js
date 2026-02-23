@@ -3,16 +3,25 @@
   "version": "2.0.0",
   "description": "Topology-aware record & replay testing framework via OpenTelemetry",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./init": "./dist/init.js"
+  },
   "scripts": {
     "test": "jest",
     "build": "tsc",
-    "test:e2e": "jest --testPathPattern=__tests__/e2e"
+    "test:e2e": "jest --testPathPattern=__tests__/e2e",
+    "example:run": "cd examples/basic-app && npx ts-node --transpile-only -r ./instrumentation.ts run.ts",
+    "example:up": "docker compose -f examples/basic-app/docker-compose.yml up -d",
+    "example:down": "docker compose -f examples/basic-app/docker-compose.yml down",
+    "example:test": "jest --config examples/basic-app/jest.config.js"
   },
   "dependencies": {
     "@mswjs/interceptors": "^0.39.8",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/sdk-node": "^0.54.0",
     "@opentelemetry/sdk-trace-base": "^1.28.0",
+    "express": "^5.2.1",
     "shimmer": "^1.2.0",
     "undici": "^6.0.0",
     "yaml": "^2.6.0"
@@ -21,6 +30,7 @@
     "@opentelemetry/auto-instrumentations-node": "^0.52.0",
     "@testcontainers/postgresql": "^11.0.0",
     "@testcontainers/redis": "^11.0.0",
+    "@types/express": "^5.0.6",
     "@types/jest": "^29.5.0",
     "@types/node": "^22.0.0",
     "@types/pg": "^8.11.0",

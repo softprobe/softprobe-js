@@ -8,6 +8,34 @@ const mode = process.env.SOFTPROBE_MODE;
 
 if (mode === 'CAPTURE') {
   const { initCapture } = require('./capture/init');
+  const { setCaptureStore } = require('./capture/store-accessor');
+  const { CassetteStore } = require('./store/cassette-store');
+  const { applyAutoInstrumentationMutator } = require('./capture/mutator');
+
   initCapture();
+
+  const outPath =
+    process.env.SOFTPROBE_CASSETTE_PATH ?? './softprobe-cassettes.ndjson';
+  const store = new CassetteStore(outPath);
+  setCaptureStore(store);
+  process.on('beforeExit', () => store.flushOnExit());
+
+  applyAutoInstrumentationMutator();
 }
-// REPLAY: mode-specific init (e.g. cassette load) in task 11.1.2; no-op here
+
+if (mode === 'REPLAY') {
+  const path = process.env.SOFTPROBE_CASSETTE_PATH;
+  if (path) {
+    const { loadNdjson } = require('./store/load-ndjson');
+    loadNdjson(path); // eager load, called exactly once (task 11.1.2)
+  }
+  // Apply adapter patches synchronously so drivers are wrapped before use (task 11.1.3)
+  const { setupPostgresReplay } = require('./replay/postgres');
+  const { setupRedisReplay } = require('./replay/redis');
+  const { setupUndiciReplay } = require('./replay/undici');
+  const { setupHttpReplayInterceptor } = require('./replay/http');
+  setupPostgresReplay();
+  setupRedisReplay();
+  setupUndiciReplay();
+  setupHttpReplayInterceptor();
+}

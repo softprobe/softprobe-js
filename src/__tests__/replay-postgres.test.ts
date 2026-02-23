@@ -81,7 +81,7 @@ describe('Postgres Replay (Task 9.2)', () => {
     const client = new Client();
     await client.query('SELECT 1');
 
-    expect(tagQuerySpy).toHaveBeenCalledWith('SELECT 1', undefined);
+    expect(tagQuerySpy).toHaveBeenCalledWith('SELECT 1', undefined, undefined);
     tagQuerySpy.mockRestore();
   });
 

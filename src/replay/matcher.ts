@@ -6,6 +6,8 @@ const RESPONSE_BODY_KEY = 'softprobe.response.body' as const;
 const PROTOCOL_KEY = 'softprobe.protocol' as const;
 const IDENTIFIER_KEY = 'softprobe.identifier' as const;
 
+// This is obsolete, we should use the new matcher instead
+// Deprecated: use SoftprobeMatcher instead
 export class SemanticMatcher {
   private readonly recordedSpans: ReadableSpan[];
   /** Tracks call count per (protocol, identifier, liveParentName) for sequential N+1 resolution. */

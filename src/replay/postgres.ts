@@ -5,7 +5,9 @@
  */
 
 import shimmer from 'shimmer';
+import { trace } from '@opentelemetry/api';
 import type { SemanticMatcher } from './matcher';
+import type { SoftprobeMatcher } from './softprobe-matcher';
 import { softprobe } from '../api';
 import { PostgresSpan } from '../bindings/postgres-span';
 
@@ -46,28 +48,51 @@ export function setupPostgresReplay(): void {
         const cb = typeof lastArg === 'function' ? (lastArg as (err: Error | null, res?: unknown) => void) : undefined;
         const valsArray = Array.isArray(args[1]) ? args[1] : undefined;
 
-        PostgresSpan.tagQuery(queryString, valsArray);
+        PostgresSpan.tagQuery(queryString, valsArray, trace.getActiveSpan() ?? undefined);
 
         let payload: unknown;
-        try {
-          // Replay tests inject SemanticMatcher. SoftprobeMatcher support is Phase 9.
-          payload = (matcher as SemanticMatcher).findMatch({
-            protocol: 'postgres',
-            identifier: queryString,
-            requestBody: valsArray,
-          });
-        } catch (err) {
-          // CONTINUE + STRICT: design §9.1 — wrapper owns strict vs dev policy.
-          if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
-            const strictErr = new Error('Softprobe replay: no match for pg.query');
-            if (cb) {
-              process.nextTick(() => (cb as (err: Error | null, res?: unknown) => void)(strictErr));
-              return undefined;
+        const softprobeMatcher = matcher as SoftprobeMatcher;
+        if (typeof softprobeMatcher.match === 'function') {
+          const spanLike = {
+            attributes: {
+              'softprobe.protocol': 'postgres',
+              'softprobe.identifier': queryString,
+            },
+          } as { attributes: Record<string, unknown> };
+          const r = softprobeMatcher.match(spanLike);
+          if (r.action === 'MOCK') {
+            payload = r.payload;
+          } else if (r.action === 'PASSTHROUGH') {
+            return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
+          } else {
+            if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
+              const strictErr = new Error('Softprobe replay: no match for pg.query');
+              if (cb) {
+                process.nextTick(() => (cb as (err: Error | null, res?: unknown) => void)(strictErr));
+                return undefined;
+              }
+              return Promise.reject(strictErr);
             }
-            return Promise.reject(strictErr);
+            return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
           }
-          // CONTINUE + DEV: passthrough (Task 9.2.5).
-          return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
+        } else {
+          try {
+            payload = (matcher as SemanticMatcher).findMatch({
+              protocol: 'postgres',
+              identifier: queryString,
+              requestBody: valsArray,
+            });
+          } catch (err) {
+            if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
+              const strictErr = new Error('Softprobe replay: no match for pg.query');
+              if (cb) {
+                process.nextTick(() => (cb as (err: Error | null, res?: unknown) => void)(strictErr));
+                return undefined;
+              }
+              return Promise.reject(strictErr);
+            }
+            return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
+          }
         }
 
         const rows = Array.isArray(payload) ? payload : (payload as { rows?: unknown[] })?.rows ?? [];

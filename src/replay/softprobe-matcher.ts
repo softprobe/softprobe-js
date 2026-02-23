@@ -24,11 +24,15 @@ export class SoftprobeMatcher {
     this.records = records;
   }
 
-  /** Runs matcher fns in order; returns first non-CONTINUE or CONTINUE if all continue. */
-  match(): MatcherAction {
-    const span = trace.getActiveSpan();
+  /**
+   * Runs matcher fns in order; returns first non-CONTINUE or CONTINUE if all continue.
+   * When spanOverride is provided (e.g. when there is no active OTel span), it is passed
+   * to matcher fns so extractKeyFromSpan can read .attributes; design §7.1.
+   */
+  match(spanOverride?: { attributes?: Record<string, unknown> }): MatcherAction {
+    const span = spanOverride ?? trace.getActiveSpan();
     for (const fn of this.fns) {
-      const r = fn(span, this.records);
+      const r = fn(span as import('@opentelemetry/api').Span, this.records);
       if (r.action !== 'CONTINUE') return r;
     }
     return { action: 'CONTINUE' };

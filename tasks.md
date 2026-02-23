@@ -280,11 +280,11 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 # 11) init.ts Boot Sequence — Atomic
 
 ## 11.1 Mode router
-- [ ] Task 11.1.1 `softprobe/init` reads `SOFTPROBE_MODE`
+- [x] Task 11.1.1 `softprobe/init` reads `SOFTPROBE_MODE` *(feat: src/init.ts + exports ./init; REPLAY/CAPTURE modes)*
   - Test: requires module under REPLAY/CAPTURE modes
-- [ ] Task 11.1.2 REPLAY mode loads cassette synchronously (or eagerly)
+- [x] Task 11.1.2 REPLAY mode loads cassette synchronously (or eagerly) *(feat: init calls loadNdjson(SOFTPROBE_CASSETTE_PATH) once)*
   - Test: load called exactly once
-- [ ] Task 11.1.3 Applies adapter patches synchronously
+- [x] Task 11.1.3 Applies adapter patches synchronously *(feat: init calls setupPostgresReplay, setupRedisReplay, setupUndiciReplay, setupHttpReplayInterceptor in REPLAY)*
   - Test: patch fns called during module import
 
 ---
@@ -294,28 +294,131 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 > Because Jest breaks some require-in-the-middle instrumentations.
 
 ## 12.1 Harness
-- [ ] Task 12.1.1 Add `test/e2e/run-child.ts` helper to spawn node scripts with env
+- [x] Task 12.1.1 Add `test/e2e/run-child.ts` helper to spawn node scripts with env *(feat: run-child.ts in src/__tests__/e2e; run-child.test.ts)*
   - Test: child returns stdout and exit code
 
 ## 12.2 Postgres E2E
-- [ ] Task 12.2.1 CAPTURE script writes NDJSON with rows
-- [ ] Task 12.2.2 REPLAY script works with DB disconnected
+- [x] Task 12.2.1 CAPTURE script writes NDJSON with rows *(feat: init CAPTURE sets CassetteStore + flush; pg-cassette-capture-worker; postgres-cassette-capture.e2e.test)*
+- [x] Task 12.2.2 REPLAY script works with DB disconnected *(feat: runWithContext registers default matcher; postgres wrapper uses SoftprobeMatcher.match(spanLike); E2E in-process replay)*
 - [ ] Task 12.2.3 Assert “zero span bloat” (no payload in span attrs)
 
 ## 12.3 Redis E2E
-- [ ] Task 12.3.1 CAPTURE writes NDJSON
-- [ ] Task 12.3.2 REPLAY works without redis
+- [x] Task 12.3.1 CAPTURE writes NDJSON *(feat: redis-cassette.e2e + redis-cassette-capture-worker; asserts outbound redis NDJSON records)*
+- [x] Task 12.3.2 REPLAY works without redis *(feat: redis-replay-worker + strict replay assertion; returns recorded GET without live redis)*
 
 ## 12.4 HTTP E2E
-- [ ] Task 12.4.1 CAPTURE writes NDJSON
-- [ ] Task 12.4.2 REPLAY runs with network disabled (or no outbound calls)
+- [x] Task 12.4.1 CAPTURE writes NDJSON *(feat: add child-process HTTP cassette capture E2E with outbound http NDJSON assertions)*
+- [x] Task 12.4.2 REPLAY runs with network disabled (or no outbound calls) *(feat: add child-process HTTP replay worker asserting mocked fetch succeeds without live server)*
 
 ---
 
 # 13) Strict Mode AC (network isolation) — Atomic
 
-- [ ] Task 13.1 In strict replay, unrecorded call hard-fails and does not touch real network
+- [x] Task 13.1 In strict replay, unrecorded call hard-fails and does not touch real network *(feat: strict-mode.e2e.test + http-strict-replay-worker; assert 500 and no passthrough)*
   - Test: attempt unrecorded identifier; assert thrown / 500 response and verify passthrough not called
+
+---
+
+# 14) User-Facing Example App + Record/Replay Demo — Atomic
+
+**Goal:** Provide a runnable, **customer-visible demo** showing:
+- A **normal** example app with **real** connections to **Postgres**, **Redis**, and outbound **HTTP** (e.g. httpbin.org). Users run dependencies via **Docker** (docker-compose); the app is the kind of code a customer would write.
+- **Record** real traffic into an NDJSON cassette file.
+- **Replay** the same scenario in a test with **no live dependencies**.
+- A **custom matcher** example that gives the customer finer control than default matching.
+
+> Keep this example minimal and boring on purpose: clarity > cleverness.
+> The example must be a **user-facing demo**: real Postgres/Redis (Docker), normal app code, usable as:
+> - `examples/basic-app/` (source)
+> - `docker compose up -d` then `npm run example:run`
+> - `npm run example:capture` / `npm run example:replay`
+> - `npm test` (or `npm run example:test`)
+
+## 14.1 Example app skeleton (no Softprobe yet)
+- [x] Task 14.1.1 Scaffold `examples/basic-app` with a single entry script *(feat: examples/basic-app/run.ts + basic-app-example.e2e.test)*
+  - **User-facing**: normal app with real Postgres + Redis + HTTP. Default env points at local Docker (docker-compose); no mocks in the app itself.
+  - App behavior (single request/flow):
+    1) Insert/select from Postgres (or select-only if easier)
+    2) Read/write Redis cache
+    3) Call an HTTP service (e.g. httpbin.org or local stub)
+    4) Return a JSON response containing all three results
+  - Test: `node examples/basic-app/run.js` (or ts) exits 0 and prints JSON (E2E can use Testcontainers; demo assumes Docker).
+
+- [x] Task 14.1.2 HTTP for demo: deterministic outbound call *(feat: httpbin.org in run.ts; E2E asserts http.url contains httpbin.org)*
+  - Use httpbin.org (or optional local stub) so the example has a deterministic HTTP dependency.
+  - Test: app run includes `http` in output; optional `curl` test for stub if used.
+
+- [ ] Task 14.1.3 Provide docker-compose for Postgres + Redis (example-only)
+  - Standard way to run the demo: `docker compose up -d` in examples/basic-app (or repo root); app connects via default PG_URL / REDIS_URL (e.g. localhost).
+  - Test: `docker compose up -d` brings services up; `npm run example:run` (or equivalent) connects and prints JSON
+
+## 14.2 Capture demo (record NDJSON)
+- [ ] Task 14.2.1 Add capture runner script: `npm run example:capture`
+  - Env:
+    - `SOFTPROBE_MODE=CAPTURE`
+    - `SOFTPROBE_CASSETTE=./examples/basic-app/softprobe-cassettes.ndjson` (or your chosen config path)
+  - Behavior:
+    - Runs the example flow once against live Postgres/Redis/http stub
+    - Produces an NDJSON file containing:
+      - outbound postgres record(s)
+      - outbound redis record(s)
+      - outbound http record(s)
+      - (optional) inbound http record if you wrap the app as an HTTP server
+  - Test: after capture run, cassette file exists and has ≥ 3 lines
+
+- [ ] Task 14.2.2 Add a test to validate “no span bloat” in capture demo
+  - Minimal approach:
+    - assert the produced cassette includes payload bodies
+    - assert captured spans (if exported/printed) do not contain large payload fields
+  - Test: verify payload appears in NDJSON but not in span attributes output (if you emit spans)
+
+## 14.3 Replay demo (no live deps)
+- [ ] Task 14.3.1 Add replay runner script: `npm run example:replay`
+  - Env:
+    - `SOFTPROBE_MODE=REPLAY`
+    - `SOFTPROBE_STRICT_REPLAY=1`
+    - Points to the recorded cassette file
+  - Behavior:
+    - Runs the same example flow
+    - Postgres and Redis should be allowed to be OFFLINE (stop containers)
+    - HTTP stub server should be OFFLINE (do not start)
+    - Output JSON should match the capture run (or match a golden snapshot)
+  - Test: with services stopped, replay run still succeeds and output matches snapshot
+
+- [ ] Task 14.3.2 Add strict-mode negative test (proves isolation)
+  - Modify the example flow to perform an extra, unrecorded call (e.g., different SQL or new URL)
+  - Test: replay fails with strict error and does NOT attempt live network (assert passthrough not called)
+
+## 14.4 Custom matcher example (customer control)
+- [ ] Task 14.4.1 Add `examples/basic-app/custom-matcher.ts` demonstrating matcher injection
+  - Example behaviors (pick 1–2):
+    - Override Redis GET for a specific key to return `null` (force cache miss)
+    - Normalize dynamic HTTP query params (e.g., `?ts=`) by matching only path
+    - Force a specific SQL to map to a specific recorded response regardless of call sequence
+  - Test: unit test custom matcher is invoked before default matcher and wins
+
+- [ ] Task 14.4.2 Add “how to use custom matcher” snippet to README
+  - Include a complete code sample using:
+    - `softprobe.runWithContext({ traceId, cassettePath }, async () => { ... })`
+    - `softprobe.getActiveMatcher().use((span, records) => { ... })`
+  - Test: docs lint (if any) or simple presence check
+
+## 14.5 Documentation polish (customer-facing)
+- [ ] Task 14.5.1 Add `examples/basic-app/README.md`
+  - Must include:
+    - prerequisites (node, docker)
+    - start services
+    - capture command
+    - stop services
+    - replay command
+    - how strict mode behaves
+    - custom matcher explanation
+  - Test: smoke check: all commands referenced exist in package.json scripts
+
+- [ ] Task 14.5.2 Add top-level docs section “Quickstart: Record & Replay”
+  - Link to the example
+  - Show expected output snippets (short)
+  - Test: docs build/lint if applicable
 
 ---
 

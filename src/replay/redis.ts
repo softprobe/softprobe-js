@@ -1,6 +1,6 @@
 /**
  * Redis replay: patches Redis client so that under replay context commands are
- * resolved by the SemanticMatcher (no live network). Pairs with capture Task 4.5;
+ * resolved by matcher actions (no live network). Pairs with capture Task 4.5;
  * identifier = command + args per design §3.1, §6.3.
  *
  * We wrap the commander's attachCommands so that the executor passed to each
@@ -11,7 +11,7 @@
 import { trace } from '@opentelemetry/api';
 import shimmer from 'shimmer';
 import { RedisSpan } from '../bindings/redis-span';
-import type { SemanticMatcher } from './matcher';
+import type { MatcherAction } from '../types/schema';
 import { softprobe } from '../api';
 
 /**
@@ -65,13 +65,57 @@ export function setupRedisReplay(): void {
             RedisSpan.tagCommand(cmd, cmdArgs, trace.getActiveSpan());
             const identifier = buildIdentifier(redisArgs);
             let payload: unknown;
-            try {
-              payload = (matcher as SemanticMatcher).findMatch({
-                protocol: 'redis',
-                identifier,
-                requestBody: redisArgs,
-              });
-            } catch (err) {
+            const softprobeMatcher = matcher as { match?: () => MatcherAction };
+            if (typeof softprobeMatcher.match === 'function') {
+              const r = softprobeMatcher.match();
+              if (r.action === 'MOCK') {
+                payload = r.payload;
+              } else if (r.action === 'PASSTHROUGH') {
+                return (originalExecutor as (this: unknown, c: unknown, a: unknown[], n: string) => unknown).call(
+                  this,
+                  command,
+                  args,
+                  _name
+                );
+              } else if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
+                return Promise.reject(new Error('Softprobe replay: no match for redis command'));
+              } else {
+                // CONTINUE + DEV: passthrough (design §9.3)
+                return (originalExecutor as (this: unknown, c: unknown, a: unknown[], n: string) => unknown).call(
+                  this,
+                  command,
+                  args,
+                  _name
+                );
+              }
+            } else {
+              try {
+                payload = (matcher as {
+                  findMatch: (req: {
+                    protocol: string;
+                    identifier: string;
+                    requestBody?: unknown;
+                  }) => unknown;
+                }).findMatch({
+                  protocol: 'redis',
+                  identifier,
+                  requestBody: redisArgs,
+                });
+              } catch (err) {
+                if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
+                  return Promise.reject(new Error('Softprobe replay: no match for redis command'));
+                }
+                // CONTINUE + DEV: passthrough (design §9.3)
+                return (originalExecutor as (this: unknown, c: unknown, a: unknown[], n: string) => unknown).call(
+                  this,
+                  command,
+                  args,
+                  _name
+                );
+              }
+            }
+
+            if (typeof payload === 'undefined') {
               if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
                 return Promise.reject(new Error('Softprobe replay: no match for redis command'));
               }
@@ -82,7 +126,7 @@ export function setupRedisReplay(): void {
                 args,
                 _name
               );
-            }
+            } 
             const preserved = (redisArgs as { preserve?: boolean })?.preserve;
             return Promise.resolve(transformCommandReply(command, payload, preserved));
           },

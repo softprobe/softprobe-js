@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import type { SoftprobeCassetteRecord } from './types/schema';
 import type { SemanticMatcher } from './replay/matcher';
 import { SoftprobeMatcher } from './replay/softprobe-matcher';
+import { createDefaultMatcher } from './replay/extract-key';
 import { loadNdjson } from './store/load-ndjson';
 
 /**
@@ -36,6 +37,7 @@ export function runWithContext<T>(
       const records = await loadNdjson(cassettePath, context.traceId);
       const matcher = new SoftprobeMatcher();
       matcher._setRecords(records);
+      matcher.use(createDefaultMatcher());
       const inboundRecord = records.find((r) => r.type === 'inbound');
       return replayStorage.run(
         { ...context, matcher, inboundRecord },
