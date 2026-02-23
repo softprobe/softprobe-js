@@ -1,10 +1,17 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import type { SemanticMatcher } from './replay/matcher';
+import { SoftprobeMatcher } from './replay/softprobe-matcher';
+import { loadNdjson } from './store/load-ndjson';
 
+/**
+ * ALS store shape for replay context. traceId and cassettePath are used by
+ * runWithContext; matcher is set when records are loaded (Task 8.2).
+ */
 export interface ReplayContext {
-  traceId: string;
+  traceId?: string;
+  cassettePath?: string;
   /** Optional matcher for replay; when set, getActiveMatcher() returns it. */
-  matcher?: SemanticMatcher;
+  matcher?: SemanticMatcher | SoftprobeMatcher;
 }
 
 const replayStorage = new AsyncLocalStorage<ReplayContext | undefined>();
@@ -12,11 +19,22 @@ const replayStorage = new AsyncLocalStorage<ReplayContext | undefined>();
 /**
  * Test-time API: run a function with the given replay context so that
  * concurrent tests (e.g. different workers) do not share matcher state.
+ * When context.cassettePath is set, loads records once from NDJSON and sets
+ * them on a SoftprobeMatcher before running the callback (Task 8.2.1).
  */
 export function runWithContext<T>(
   context: ReplayContext,
   fn: () => T | Promise<T>
 ): T | Promise<T> {
+  if (context.cassettePath) {
+    const cassettePath = context.cassettePath;
+    return (async () => {
+      const records = await loadNdjson(cassettePath, context.traceId);
+      const matcher = new SoftprobeMatcher();
+      matcher._setRecords(records);
+      return replayStorage.run({ ...context, matcher }, fn) as Promise<T>;
+    })();
+  }
   return replayStorage.run(context, fn) as T | Promise<T>;
 }
 
@@ -44,10 +62,10 @@ export function clearReplayContext(): void {
 }
 
 /**
- * Returns the SemanticMatcher for the current replay context, if any.
- * Replay interceptors (e.g. Postgres) use this to resolve live calls to recorded spans.
+ * Returns the active matcher (SemanticMatcher or SoftprobeMatcher) for the current
+ * replay context, if any. Replay interceptors use this to resolve live calls to recorded spans.
  */
-export function getActiveMatcher(): SemanticMatcher | undefined {
+export function getActiveMatcher(): SemanticMatcher | SoftprobeMatcher | undefined {
   const ctx = getReplayContext();
   return ctx?.matcher;
 }

@@ -5,6 +5,7 @@
  */
 
 import shimmer from 'shimmer';
+import type { SemanticMatcher } from './matcher';
 import { softprobe } from '../api';
 
 /**
@@ -35,7 +36,8 @@ export function setupPostgresReplay(): void {
 
         let payload: unknown;
         try {
-          payload = matcher.findMatch({
+          // Replay tests inject SemanticMatcher. SoftprobeMatcher support is Phase 9.
+          payload = (matcher as SemanticMatcher).findMatch({
             protocol: 'postgres',
             identifier: queryString,
             requestBody: vals,

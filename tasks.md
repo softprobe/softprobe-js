@@ -184,9 +184,9 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
   - Test: unit test by calling internal handler directly (don’t actually kill Jest)
 
 ## 7.3 Loader
-- [ ] Task 7.3.1 Implement `loadNdjson(path, traceId?)` streaming
+- [x] Task 7.3.1 Implement `loadNdjson(path, traceId?)` streaming *(feat: store/load-ndjson.ts; readline streaming)*
   - Test: loads all when traceId undefined
-- [ ] Task 7.3.2 Filter by traceId
+- [x] Task 7.3.2 Filter by traceId *(test: loadNdjson(path, traceId) returns only matching records)*
   - Test: only matching traceId lines returned
 
 ---
@@ -194,11 +194,11 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 # 8) Replay Context (ALS + record loading) — Atomic
 
 ## 8.1 ALS state shape
-- [ ] Task 8.1.1 Define ALS store `{ traceId?, cassettePath }`
+- [x] Task 8.1.1 Define ALS store `{ traceId?, cassettePath }` *(feat: ReplayContext has traceId? + cassettePath?; api.test runWithContext visibility)*
   - Test: `runWithContext` sets ALS store visible inside callback
 
 ## 8.2 runWithContext behavior
-- [ ] Task 8.2.1 `runWithContext` loads records once and sets into matcher
+- [x] Task 8.2.1 `runWithContext` loads records once and sets into matcher *(feat: when cassettePath set, loadNdjson + SoftprobeMatcher._setRecords; api.test)*
   - Test: matcher fn sees records length > 0
 - [ ] Task 8.2.2 `runWithContext` sets inbound record cache
   - Test: `getRecordedInboundResponse()` returns correct record

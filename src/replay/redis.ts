@@ -9,6 +9,7 @@
  */
 
 import shimmer from 'shimmer';
+import type { SemanticMatcher } from './matcher';
 import { softprobe } from '../api';
 
 /**
@@ -60,7 +61,7 @@ export function setupRedisReplay(): void {
             const identifier = buildIdentifier(redisArgs);
             let payload: unknown;
             try {
-              payload = matcher.findMatch({
+              payload = (matcher as SemanticMatcher).findMatch({
                 protocol: 'redis',
                 identifier,
                 requestBody: redisArgs,

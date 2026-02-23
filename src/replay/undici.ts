@@ -5,6 +5,7 @@
  */
 
 import shimmer from 'shimmer';
+import type { SemanticMatcher } from './matcher';
 import { softprobe } from '../api';
 
 /** Recorded HTTP response shape from capture (softprobe.response.body). */
@@ -36,7 +37,7 @@ export function setupUndiciReplay(): void {
 
       let payload: RecordedHttpResponse;
       try {
-        payload = matcher.findMatch({
+        payload = (matcher as SemanticMatcher).findMatch({
           protocol: 'http',
           identifier,
           requestBody: init?.body,
