@@ -137,7 +137,21 @@ export function setupRedisReplay(): void {
 
   // Ensure client module loads after our patch so attachCommands uses our wrapper
   try {
-    require('redis');
+    const redis = require('redis');
+    // No-op connect in replay so demo can run with Redis offline (Task 16.3.1).
+    const stub = (redis.createClient ?? (redis as { default?: { createClient?: () => unknown } }).default?.createClient)?.();
+    if (stub?.constructor?.prototype && typeof (stub as { connect?: unknown }).connect === 'function') {
+      const proto = stub.constructor.prototype as { connect?: (...args: unknown[]) => unknown; _connectReplayNoop?: boolean };
+      if (!proto._connectReplayNoop) {
+        shimmer.wrap(proto, 'connect', (original: (...args: unknown[]) => unknown) =>
+          function (this: unknown, ...args: unknown[]): unknown {
+            if (process.env.SOFTPROBE_MODE === 'REPLAY' && softprobe.getActiveMatcher()) return Promise.resolve();
+            return (original as (...a: unknown[]) => unknown).apply(this, args);
+          }
+        );
+        proto._connectReplayNoop = true;
+      }
+    }
   } catch {
     // redis optional; tests will require it
   }

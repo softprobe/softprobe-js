@@ -100,12 +100,6 @@ describe('Replay demo (Task 16.3.1)', () => {
       }
     );
 
-    if (result.status !== 0) {
-      // eslint-disable-next-line no-console
-      console.error('Replay runner stderr:', result.stderr);
-      // eslint-disable-next-line no-console
-      console.error('Replay runner stdout:', result.stdout);
-    }
     expect(result.status).toBe(0);
     expect(result.stderr).toBeDefined();
     const out = result.stdout?.trim() ?? '';

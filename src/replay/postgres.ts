@@ -15,18 +15,32 @@ const FATAL_IMPORT_ORDER =
   "[Softprobe FATAL] OTel already wrapped pg. Import 'softprobe/init' BEFORE OTel initialization.";
 
 /**
- * Sets up Postgres replay by wrapping pg.Client.prototype.query. When replay context
- * has a matcher, queries are intercepted and return the recorded response payload
- * (rows/rowCount). Supports both promise style (query(text) / query(text, values))
- * and callback style (query(text, cb) / query(text, values, cb)); design §9.1
- * uses last-argument detection for callback. If no matcher or no match, throws per
- * AC4 (unmocked query). Throws fatally if OTel wrapped pg first (import-order guard).
+ * Sets up Postgres replay by wrapping pg.Client.prototype.connect and query.
+ * When a matcher is active, connect() is a no-op (no TCP) so replay works with DB offline;
+ * query() returns recorded payloads. Design §9.1; Task 16.3.1 demo.
  */
 export function setupPostgresReplay(): void {
   const pg = require('pg');
   if ((pg.Client.prototype.query as { __wrapped?: boolean }).__wrapped) {
     throw new Error(FATAL_IMPORT_ORDER);
   }
+
+  // No-op connect in replay so demo can run with Postgres offline (Task 16.3.1).
+  const connectKey = 'connect' as const;
+  if (!(pg.Client.prototype[connectKey] as { __wrapped?: boolean })?.__wrapped) {
+    shimmer.wrap(
+      pg.Client.prototype,
+      connectKey,
+      (originalConnect: (...args: unknown[]) => unknown) =>
+        function wrappedConnect(this: unknown, ...args: unknown[]): unknown {
+          if (process.env.SOFTPROBE_MODE === 'REPLAY' && softprobe.getActiveMatcher()) {
+            return Promise.resolve();
+          }
+          return (originalConnect as (...a: unknown[]) => unknown).apply(this, args);
+        }
+    );
+  }
+
   shimmer.wrap(
     pg.Client.prototype,
     'query',
