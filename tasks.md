@@ -40,13 +40,13 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 # 1) V4.1 Schema (NDJSON record) — Atomic
 
 ## 1.1 Types: enums + record type
-- [ ] Task 1.1.1 Add `Protocol` union type
+- [x] Task 1.1.1 Add `Protocol` union type *(feat: Protocol includes grpc; schema.types.test.ts)*
   - Test: `schema.types.test.ts` compiles with `Protocol = "http" | "postgres" | "redis" | "amqp" | "grpc"`
-- [ ] Task 1.1.2 Add `RecordType` union type
+- [x] Task 1.1.2 Add `RecordType` union type *(feat: RecordType inbound|outbound|metadata; schema.types.test)*
   - Test: compilation, `RecordType = "inbound" | "outbound" | "metadata"`
-- [ ] Task 1.1.3 Add `SoftprobeCassetteRecord` type with `version: "4.1"`
+- [x] Task 1.1.3 Add `SoftprobeCassetteRecord` type with `version: "4.1"` *(feat: v4.1 record shape; version, type, timestamp, spanName; schema.test updated)*
   - Test: type-level test asserts literal `"4.1"` and required keys exist
-- [ ] Task 1.1.4 Add minimal runtime guard `isCassetteRecord(obj): boolean` (optional but useful)
+- [x] Task 1.1.4 Add minimal runtime guard `isCassetteRecord(obj): boolean` (optional but useful) *(feat: isCassetteRecord in schema.ts; type predicate)*
   - Test: valid record returns true; missing version returns false
 
 ## 1.2 Identifier builders (pure)

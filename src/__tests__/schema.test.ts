@@ -27,29 +27,34 @@ describe('schema', () => {
     expect(p).toBe('postgres');
   });
 
-  it('exports SoftprobeCassetteRecord with traceId, spanId, name, protocol, identifier, responsePayload', () => {
+  it('exports SoftprobeCassetteRecord with version 4.1, traceId, spanId, type, protocol, identifier', () => {
     const record: SoftprobeCassetteRecord = {
+      version: '4.1',
       traceId: 't1',
       spanId: 's1',
-      parentSpanId: undefined,
-      name: 'pg.query',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      type: 'outbound',
       protocol: 'postgres',
       identifier: 'SELECT 1',
       responsePayload: [],
     };
+    expect(record.version).toBe('4.1');
     expect(record.traceId).toBe('t1');
     expect(record.spanId).toBe('s1');
-    expect(record.name).toBe('pg.query');
+    expect(record.type).toBe('outbound');
     expect(record.protocol).toBe('postgres');
     expect(record.identifier).toBe('SELECT 1');
     expect(record.responsePayload).toEqual([]);
   });
 
-  it('SoftprobeCassetteRecord allows optional requestPayload', () => {
+  it('SoftprobeCassetteRecord allows optional requestPayload, spanName, parentSpanId', () => {
     const record: SoftprobeCassetteRecord = {
+      version: '4.1',
       traceId: 't1',
       spanId: 's1',
-      name: 'pg.query',
+      spanName: 'pg.query',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      type: 'outbound',
       protocol: 'postgres',
       identifier: 'SELECT 1',
       requestPayload: { query: 'SELECT 1', values: [] },
@@ -57,6 +62,7 @@ describe('schema', () => {
     };
     expect(record.requestPayload).toEqual({ query: 'SELECT 1', values: [] });
     expect(record.responsePayload).toEqual([{ id: 1 }]);
+    expect(record.spanName).toBe('pg.query');
   });
 
   it('exports SoftprobeCassette with version 3.0 and records array', () => {
@@ -73,9 +79,11 @@ describe('schema', () => {
       version: '3.0',
       records: [
         {
+          version: '4.1',
           traceId: 't1',
           spanId: 's1',
-          name: 'pg.query',
+          timestamp: '2025-01-01T00:00:00.000Z',
+          type: 'outbound',
           protocol: 'postgres',
           identifier: 'SELECT 1',
           responsePayload: [],
@@ -83,7 +91,8 @@ describe('schema', () => {
       ],
     };
     expect(cassette.records).toHaveLength(1);
-    expect(cassette.records[0].name).toBe('pg.query');
+    expect(cassette.records[0].version).toBe('4.1');
+    expect(cassette.records[0].spanName).toBeUndefined();
     expect(cassette.records[0].protocol).toBe('postgres');
   });
 });

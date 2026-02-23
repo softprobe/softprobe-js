@@ -24,23 +24,42 @@ export interface SoftprobeAttributes {
   'softprobe.response.body'?: string;
 }
 
-/** V3 side-channel protocol discriminator. */
-export type Protocol = 'http' | 'postgres' | 'redis' | 'amqp';
+/** V4.1 protocol discriminator (cassette + bindings). */
+export type Protocol = 'http' | 'postgres' | 'redis' | 'amqp' | 'grpc';
+
+/** V4.1 cassette record direction. */
+export type RecordType = 'inbound' | 'outbound' | 'metadata';
 
 /**
- * V3 cassette record: synthetic span + payload stored by softprobe (not OTel).
- * Matcher-compatible shape for replay.
+ * V4.1 NDJSON cassette record: identity, topology, direction, matching keys, optional payloads.
+ * Payloads are side-channel only (not in span attributes).
  */
-export interface SoftprobeCassetteRecord {
+export type SoftprobeCassetteRecord = {
+  version: '4.1';
   traceId: string;
   spanId: string;
   parentSpanId?: string;
-  name: string;
+  spanName?: string;
+  timestamp: string;
+  type: RecordType;
   protocol: Protocol;
-  /** Parsed SQL, URL, or Redis command. */
   identifier: string;
   requestPayload?: unknown;
-  responsePayload: unknown;
+  responsePayload?: unknown;
+  statusCode?: number;
+  error?: { message: string; stack?: string };
+};
+
+/**
+ * Minimal runtime guard for V4.1 cassette records. Returns true only when
+ * the object has version "4.1" (does not validate other required keys).
+ */
+export function isCassetteRecord(obj: unknown): obj is SoftprobeCassetteRecord {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    (obj as Record<string, unknown>).version === '4.1'
+  );
 }
 
 /** V3 side-channel cassette file format. */
