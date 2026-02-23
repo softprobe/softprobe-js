@@ -200,7 +200,7 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 ## 8.2 runWithContext behavior
 - [x] Task 8.2.1 `runWithContext` loads records once and sets into matcher *(feat: when cassettePath set, loadNdjson + SoftprobeMatcher._setRecords; api.test)*
   - Test: matcher fn sees records length > 0
-- [ ] Task 8.2.2 `runWithContext` sets inbound record cache
+- [x] Task 8.2.2 `runWithContext` sets inbound record cache *(feat: inboundRecord on context, getRecordedInboundResponse() in api.ts)*
   - Test: `getRecordedInboundResponse()` returns correct record
 
 ---

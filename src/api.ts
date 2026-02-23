@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'async_hooks';
+import type { SoftprobeCassetteRecord } from './types/schema';
 import type { SemanticMatcher } from './replay/matcher';
 import { SoftprobeMatcher } from './replay/softprobe-matcher';
 import { loadNdjson } from './store/load-ndjson';
@@ -6,12 +7,15 @@ import { loadNdjson } from './store/load-ndjson';
 /**
  * ALS store shape for replay context. traceId and cassettePath are used by
  * runWithContext; matcher is set when records are loaded (Task 8.2).
+ * inboundRecord is set when loading a cassette that contains an inbound record (Task 8.2.2).
  */
 export interface ReplayContext {
   traceId?: string;
   cassettePath?: string;
   /** Optional matcher for replay; when set, getActiveMatcher() returns it. */
   matcher?: SemanticMatcher | SoftprobeMatcher;
+  /** Cached inbound record for this trace; used by getRecordedInboundResponse(). */
+  inboundRecord?: SoftprobeCassetteRecord;
 }
 
 const replayStorage = new AsyncLocalStorage<ReplayContext | undefined>();
@@ -32,7 +36,11 @@ export function runWithContext<T>(
       const records = await loadNdjson(cassettePath, context.traceId);
       const matcher = new SoftprobeMatcher();
       matcher._setRecords(records);
-      return replayStorage.run({ ...context, matcher }, fn) as Promise<T>;
+      const inboundRecord = records.find((r) => r.type === 'inbound');
+      return replayStorage.run(
+        { ...context, matcher, inboundRecord },
+        fn
+      ) as Promise<T>;
     })();
   }
   return replayStorage.run(context, fn) as T | Promise<T>;
@@ -70,10 +78,21 @@ export function getActiveMatcher(): SemanticMatcher | SoftprobeMatcher | undefin
   return ctx?.matcher;
 }
 
+/**
+ * Returns the recorded inbound response for the current trace, if any.
+ * Set by runWithContext when loading a cassette that contains a record with type "inbound".
+ * Used by tests to compare live response to recorded (e.g. inbound?.responsePayload?.body).
+ */
+export function getRecordedInboundResponse(): SoftprobeCassetteRecord | undefined {
+  const ctx = getReplayContext();
+  return ctx?.inboundRecord;
+}
+
 export const softprobe = {
   runWithContext,
   getReplayContext,
   setReplayContext,
   clearReplayContext,
   getActiveMatcher,
+  getRecordedInboundResponse,
 };
