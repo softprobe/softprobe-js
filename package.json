@@ -12,6 +12,8 @@
     "build": "tsc",
     "test:e2e": "jest --testPathPattern=__tests__/e2e",
     "example:run": "cd examples/basic-app && npx ts-node --transpile-only -r ./instrumentation.ts run.ts",
+    "example:capture": "cd examples/basic-app && npx ts-node --transpile-only capture-runner.ts",
+    "example:replay": "cd examples/basic-app && npx ts-node --transpile-only replay-runner.ts",
     "example:up": "docker compose -f examples/basic-app/docker-compose.yml up -d",
     "example:down": "docker compose -f examples/basic-app/docker-compose.yml down",
     "example:test": "jest --config examples/basic-app/jest.config.js"

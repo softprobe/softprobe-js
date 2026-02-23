@@ -32,6 +32,17 @@ Express app with **real** Postgres, Redis, and outbound HTTP. Uses **OpenTelemet
 
 The app uses default URLs that match the example docker-compose (`PG_URL`, `REDIS_URL`, `PORT`). Override with env vars if your setup differs.
 
+## Capture (record NDJSON)
+
+With Postgres and Redis running (`npm run example:up`), record one run into an NDJSON cassette:
+
+```bash
+# from repo root
+npm run example:capture
+```
+
+This runs the app once with `SOFTPROBE_MODE=CAPTURE`, hits `GET /` and `GET /exit`, and writes `examples/basic-app/softprobe-cassettes.ndjson` (outbound postgres, redis, http, and optional inbound record).
+
 ## Tests
 
 Tests live **inside this example** (not in softprobe production code). From repo root:

@@ -1,9 +1,17 @@
 import { AsyncLocalStorage } from 'async_hooks';
+import { propagation } from '@opentelemetry/api';
 import type { SoftprobeCassetteRecord } from './types/schema';
 import type { SemanticMatcher } from './replay/matcher';
 import { SoftprobeMatcher } from './replay/softprobe-matcher';
 import { createDefaultMatcher } from './replay/extract-key';
 import { loadNdjson } from './store/load-ndjson';
+import { getCaptureStore } from './capture/store-accessor';
+import { getContextWithReplayBaggage } from './api/baggage';
+import { compareInboundWithRecord, type CompareInboundInput } from './api/compare';
+import {
+  getRecordsForTrace as getRecordsForTraceFromStore,
+  setReplayRecordsCache as setReplayRecordsCacheInStore,
+} from './replay/store-accessor';
 
 /**
  * ALS store shape for replay context. traceId and cassettePath are used by
@@ -74,11 +82,15 @@ export function clearReplayContext(): void {
 /**
  * Returns the active matcher (SemanticMatcher or SoftprobeMatcher) for the current
  * replay context, if any. In REPLAY mode without ALS context (e.g. server request), returns globalReplayMatcher.
+ * Task 15.1.2: When OTel baggage contains softprobe-mode=REPLAY, also returns globalReplayMatcher so
+ * downstream services (receiving propagated baggage) use the global matcher for outbound calls.
  */
 export function getActiveMatcher(): SemanticMatcher | SoftprobeMatcher | undefined {
   const ctx = getReplayContext();
   if (ctx?.matcher) return ctx.matcher;
   if (process.env.SOFTPROBE_MODE === 'REPLAY' && globalReplayMatcher) return globalReplayMatcher;
+  const baggageMode = propagation.getActiveBaggage()?.getEntry('softprobe-mode')?.value;
+  if (baggageMode === 'REPLAY' && globalReplayMatcher) return globalReplayMatcher;
   return undefined;
 }
 
@@ -92,25 +104,29 @@ export function getRecordedInboundResponse(): SoftprobeCassetteRecord | undefine
   return ctx?.inboundRecord;
 }
 
-/** Records loaded at REPLAY init (or set by tests). Used by getRecordsForTrace. */
-let replayRecordsCache: SoftprobeCassetteRecord[] = [];
-
 /**
- * Sets the global replay records cache (used by REPLAY init or tests).
- * Design §16.1: middleware primes matcher from records for the request traceId.
+ * Task 15.2.1: Compares the actual response (status and body) to the recorded inbound for the current trace.
+ * Task 15.2.2: When SOFTPROBE_STRICT_COMPARISON is set, also compares headers.
+ * @throws When no recorded inbound exists, or when status, body, or (if strict) headers do not match.
  */
-export function setReplayRecordsCache(records: SoftprobeCassetteRecord[]): void {
-  replayRecordsCache = records;
+export function compareInbound(actual: CompareInboundInput): void {
+  compareInboundWithRecord(actual, getRecordedInboundResponse());
 }
 
 /**
- * Returns recorded cassette records for the given traceId.
- * Used by server-side replay (e.g. Express middleware) to prime the matcher per request.
- * Compares traceIds in lowercase so W3C traceparent propagation (lowercase) matches cassette records.
+ * Sets the global replay records cache (used at REPLAY boot or tests).
+ * Task 15.3.1: store lives in replay/store-accessor; middleware retrieves via getRecordsForTrace.
+ */
+export function setReplayRecordsCache(records: SoftprobeCassetteRecord[]): void {
+  setReplayRecordsCacheInStore(records);
+}
+
+/**
+ * Returns recorded cassette records for the given traceId from the eager-loaded global store.
+ * Used by server middleware to prime the matcher for the current request. Task 15.3.1.
  */
 export function getRecordsForTrace(traceId: string): SoftprobeCassetteRecord[] {
-  const normalized = traceId.toLowerCase();
-  return replayRecordsCache.filter((r) => r.traceId.toLowerCase() === normalized);
+  return getRecordsForTraceFromStore(traceId);
 }
 
 /** Global matcher used in REPLAY mode when no ALS context (e.g. server request). Set by init. */
@@ -134,6 +150,16 @@ export function activateReplayForContext(traceId: string): void {
   }
 }
 
+/**
+ * Flushes the capture cassette store to disk. Call before process.exit in CAPTURE mode
+ * (e.g. from a /exit route) so the NDJSON file is written. Design §16.2 example.
+ */
+export function flushCapture(): void {
+  getCaptureStore()?.flushOnExit();
+}
+
+export { getContextWithReplayBaggage } from './api/baggage';
+
 export const softprobe = {
   runWithContext,
   getReplayContext,
@@ -141,8 +167,11 @@ export const softprobe = {
   clearReplayContext,
   getActiveMatcher,
   getRecordedInboundResponse,
+  compareInbound,
   getRecordsForTrace,
   setReplayRecordsCache,
   setGlobalReplayMatcher,
   activateReplayForContext,
+  flushCapture,
+  getContextWithReplayBaggage,
 };

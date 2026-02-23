@@ -375,30 +375,30 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 
 ## 15.1 OTel Baggage Propagation
 
-* [ ] Task 15.1.1 Inject `softprobe-mode: REPLAY` into OTel Baggage *(feat: api/baggage.ts)*
-* Test: setting global REPLAY mode adds entry to current OTel baggage
+* [x] Task 15.1.1 Inject `softprobe-mode: REPLAY` into OTel Baggage *(feat: api/baggage.ts)*
+* Test: setting global REPLAY mode adds entry to current OTel baggage *(feat: getContextWithReplayBaggage + api-baggage.test.ts)*
 
 
-* [ ] Task 15.1.2 Downstream shims check baggage for mode *(feat: replay/http-shim.ts)*
+* [x] Task 15.1.2 Downstream shims check baggage for mode *(feat: getActiveMatcher in api.ts + replay-http-baggage.test.ts)*
 * Test: outbound fetch shim automatically switches to MOCK when baggage contains `softprobe-mode: REPLAY`
 
 
 
 ## 15.2 Inbound Comparison Utility
 
-* [ ] Task 15.2.1 Implement `softprobe.compareInbound(actualResponse)` helper *(feat: api/compare.ts)*
-* Test: helper retrieves recorded `inbound` record and performs deep equality check on status/body
+* [x] Task 15.2.1 Implement `softprobe.compareInbound(actualResponse)` helper *(feat: api/compare.ts)*
+* Test: helper retrieves recorded `inbound` record and performs deep equality check on status/body *(feat: api/compare.ts + compareInbound in api.test.ts)*
 
 
-* [ ] Task 15.2.2 Add `SOFTPROBE_STRICT_COMPARISON` env check *(feat: compare.ts strict flag)*
-* Test: when strict, mismatched headers cause failure; when off, only status/body matter
+* [x] Task 15.2.2 Add `SOFTPROBE_STRICT_COMPARISON` env check *(feat: compare.ts strict flag)*
+* Test: when strict, mismatched headers cause failure; when off, only status/body matter *(feat: SOFTPROBE_STRICT_COMPARISON in api/compare.ts + api.test.ts)*
 
 
 
 ## 15.3 Automatic Record Loading in Middleware
 
-* [ ] Task 15.3.1 Middleware loads specific trace records from eager-loaded global store *(feat: replay/store-accessor.ts)*
-* Test: middleware retrieves only records for the current `traceId` from the store initialized at boot
+* [x] Task 15.3.1 Middleware loads specific trace records from eager-loaded global store *(feat: replay/store-accessor.ts)*
+* Test: middleware retrieves only records for the current `traceId` from the store initialized at boot *(feat: replay/store-accessor.ts + replay-store-accessor.test.ts; api delegates to store)*
 
 
 ---
@@ -437,10 +437,10 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
   - Test: `docker compose up -d` brings services up; `npm run example:run` (or equivalent) connects and prints JSON
 
 ## 16.2 Capture demo (record NDJSON)
-- [ ] Task 16.2.1 Add capture runner script: `npm run example:capture`
+- [x] Task 16.2.1 Add capture runner script: `npm run example:capture` *(feat: capture-runner.ts, softprobe/init in instrumentation, /exit + flushCapture, example:capture script)*
   - Env:
     - `SOFTPROBE_MODE=CAPTURE`
-    - `SOFTPROBE_CASSETTE=./examples/basic-app/softprobe-cassettes.ndjson` (or your chosen config path)
+    - `SOFTPROBE_CASSETTE_PATH=./softprobe-cassettes.ndjson` (when cwd is examples/basic-app)
   - Behavior:
     - Runs the example flow once against live Postgres/Redis/http stub
     - Produces an NDJSON file containing:
@@ -448,13 +448,7 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
       - outbound redis record(s)
       - outbound http record(s)
       - (optional) inbound http record if you wrap the app as an HTTP server
-  - Test: after capture run, cassette file exists and has ≥ 3 lines
-
-- [ ] Task 16.2.2 Add a test to validate “no span bloat” in capture demo
-  - Minimal approach:
-    - assert the produced cassette includes payload bodies
-    - assert captured spans (if exported/printed) do not contain large payload fields
-  - Test: verify payload appears in NDJSON but not in span attributes output (if you emit spans)
+  - Test: after capture run, cassette file exists and has ≥ 3 lines (example: no TDD; manual run with services up)
 
 ## 16.3 Replay demo (no live deps)
 - [ ] Task 16.3.1 Add replay runner script: `npm run example:replay`

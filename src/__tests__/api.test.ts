@@ -3,6 +3,7 @@
  * Task 8.1.1: ALS store shape { traceId?, cassettePath }.
  * Task 8.2.1: runWithContext loads records once and sets into matcher.
  * Task 8.2.2: runWithContext sets inbound record cache; getRecordedInboundResponse returns it.
+ * Task 15.2.1: compareInbound retrieves recorded inbound and performs deep equality on status/body.
  */
 import fs from 'fs';
 import os from 'os';
@@ -121,5 +122,201 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
     } catch {
       // ignore cleanup
     }
+  });
+
+  describe('Task 15.2.1: compareInbound', () => {
+    it('retrieves recorded inbound record and performs deep equality check on status and body', async () => {
+      const traceId = 'trace-compare-1';
+      const inboundRecord = {
+        version: '4.1' as const,
+        traceId,
+        spanId: 'span-1',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        type: 'inbound' as const,
+        protocol: 'http' as const,
+        identifier: 'GET /users/1',
+        responsePayload: { status: 200, body: { id: 1, name: 'Alice' } },
+      };
+      const tmpPath = path.join(os.tmpdir(), `softprobe-compare-${Date.now()}.ndjson`);
+      fs.writeFileSync(tmpPath, JSON.stringify(inboundRecord) + '\n', 'utf8');
+
+      await softprobe.runWithContext({ traceId, cassettePath: tmpPath }, async () => {
+        softprobe.compareInbound({ status: 200, body: { id: 1, name: 'Alice' } });
+      });
+
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch {
+        // ignore
+      }
+    });
+
+    it('throws when status does not match recorded inbound', async () => {
+      const traceId = 'trace-compare-status';
+      const inboundRecord = {
+        version: '4.1' as const,
+        traceId,
+        spanId: 'span-1',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        type: 'inbound' as const,
+        protocol: 'http' as const,
+        identifier: 'GET /',
+        responsePayload: { status: 200, body: {} },
+      };
+      const tmpPath = path.join(os.tmpdir(), `softprobe-compare-status-${Date.now()}.ndjson`);
+      fs.writeFileSync(tmpPath, JSON.stringify(inboundRecord) + '\n', 'utf8');
+
+      await softprobe.runWithContext({ traceId, cassettePath: tmpPath }, async () => {
+        expect(() => {
+          softprobe.compareInbound({ status: 404, body: {} });
+        }).toThrow(/status/);
+      });
+
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch {
+        // ignore
+      }
+    });
+
+    it('throws when body does not match recorded inbound', async () => {
+      const traceId = 'trace-compare-body';
+      const inboundRecord = {
+        version: '4.1' as const,
+        traceId,
+        spanId: 'span-1',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        type: 'inbound' as const,
+        protocol: 'http' as const,
+        identifier: 'GET /',
+        responsePayload: { status: 200, body: { x: 1 } },
+      };
+      const tmpPath = path.join(os.tmpdir(), `softprobe-compare-body-${Date.now()}.ndjson`);
+      fs.writeFileSync(tmpPath, JSON.stringify(inboundRecord) + '\n', 'utf8');
+
+      await softprobe.runWithContext({ traceId, cassettePath: tmpPath }, async () => {
+        expect(() => {
+          softprobe.compareInbound({ status: 200, body: { x: 2 } });
+        }).toThrow(/body/);
+      });
+
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch {
+        // ignore
+      }
+    });
+
+    it('throws when no recorded inbound exists', async () => {
+      const tmpPath = path.join(os.tmpdir(), `softprobe-compare-none-${Date.now()}.ndjson`);
+      fs.writeFileSync(
+        tmpPath,
+        '{"version":"4.1","traceId":"t1","spanId":"s1","timestamp":"2025-01-01T00:00:00.000Z","type":"outbound","protocol":"http","identifier":"GET /"}\n',
+        'utf8'
+      );
+
+      await softprobe.runWithContext({ traceId: 't1', cassettePath: tmpPath }, async () => {
+        expect(() => {
+          softprobe.compareInbound({ status: 200, body: {} });
+        }).toThrow(/no recorded inbound/);
+      });
+
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch {
+        // ignore
+      }
+    });
+  });
+
+  describe('Task 15.2.2: SOFTPROBE_STRICT_COMPARISON', () => {
+    const traceId = 'trace-strict-headers';
+    const inboundWithHeaders = {
+      version: '4.1' as const,
+      traceId,
+      spanId: 'span-1',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      type: 'inbound' as const,
+      protocol: 'http' as const,
+      identifier: 'GET /',
+      responsePayload: {
+        status: 200,
+        body: {},
+        headers: { 'content-type': 'application/json', 'x-request-id': 'abc' },
+      },
+    };
+
+    it('when strict, mismatched headers cause failure', async () => {
+      const tmpPath = path.join(os.tmpdir(), `softprobe-strict-${Date.now()}.ndjson`);
+      fs.writeFileSync(tmpPath, JSON.stringify(inboundWithHeaders) + '\n', 'utf8');
+      const prev = process.env.SOFTPROBE_STRICT_COMPARISON;
+      process.env.SOFTPROBE_STRICT_COMPARISON = '1';
+      try {
+        await softprobe.runWithContext({ traceId, cassettePath: tmpPath }, async () => {
+          expect(() => {
+            softprobe.compareInbound({
+              status: 200,
+              body: {},
+              headers: { 'content-type': 'application/json', 'x-request-id': 'different' },
+            });
+          }).toThrow(/header/);
+        });
+      } finally {
+        if (prev === undefined) delete process.env.SOFTPROBE_STRICT_COMPARISON;
+        else process.env.SOFTPROBE_STRICT_COMPARISON = prev;
+      }
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch {
+        // ignore
+      }
+    });
+
+    it('when strict, matching headers do not cause failure', async () => {
+      const tmpPath = path.join(os.tmpdir(), `softprobe-strict-ok-${Date.now()}.ndjson`);
+      fs.writeFileSync(tmpPath, JSON.stringify(inboundWithHeaders) + '\n', 'utf8');
+      const prev = process.env.SOFTPROBE_STRICT_COMPARISON;
+      process.env.SOFTPROBE_STRICT_COMPARISON = '1';
+      try {
+        await softprobe.runWithContext({ traceId, cassettePath: tmpPath }, async () => {
+          softprobe.compareInbound({
+            status: 200,
+            body: {},
+            headers: { 'content-type': 'application/json', 'x-request-id': 'abc' },
+          });
+        });
+      } finally {
+        if (prev === undefined) delete process.env.SOFTPROBE_STRICT_COMPARISON;
+        else process.env.SOFTPROBE_STRICT_COMPARISON = prev;
+      }
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch {
+        // ignore
+      }
+    });
+
+    it('when off, only status and body matter (mismatched headers do not cause failure)', async () => {
+      const tmpPath = path.join(os.tmpdir(), `softprobe-nostrict-${Date.now()}.ndjson`);
+      fs.writeFileSync(tmpPath, JSON.stringify(inboundWithHeaders) + '\n', 'utf8');
+      const prev = process.env.SOFTPROBE_STRICT_COMPARISON;
+      delete process.env.SOFTPROBE_STRICT_COMPARISON;
+      try {
+        await softprobe.runWithContext({ traceId, cassettePath: tmpPath }, async () => {
+          softprobe.compareInbound({
+            status: 200,
+            body: {},
+            headers: { 'content-type': 'text/plain', 'x-other': 'ignored' },
+          });
+        });
+      } finally {
+        if (prev !== undefined) process.env.SOFTPROBE_STRICT_COMPARISON = prev;
+      }
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch {
+        // ignore
+      }
+    });
   });
 });

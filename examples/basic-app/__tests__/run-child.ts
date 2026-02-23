@@ -76,3 +76,11 @@ export async function waitForServer(port: number, timeoutMs = 15000): Promise<vo
   }
   throw new Error(`Server on port ${port} not ready within ${timeoutMs}ms`);
 }
+
+/** Kill child and destroy stdio so Jest can exit. Call closeServer(child) when done. */
+export async function closeServer(child: ChildProcess): Promise<void> {
+  child.stdin?.destroy();
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  child.kill();
+}
