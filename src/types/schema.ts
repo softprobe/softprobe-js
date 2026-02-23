@@ -24,7 +24,30 @@ export interface SoftprobeAttributes {
   'softprobe.response.body'?: string;
 }
 
-export type SoftprobeTraceStore = Record<string, ReadableSpan[]>;
+/** V3 side-channel protocol discriminator. */
+export type Protocol = 'http' | 'postgres' | 'redis' | 'amqp';
+
+/**
+ * V3 cassette record: synthetic span + payload stored by softprobe (not OTel).
+ * Matcher-compatible shape for replay.
+ */
+export interface SoftprobeCassetteRecord {
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string;
+  name: string;
+  protocol: Protocol;
+  /** Parsed SQL, URL, or Redis command. */
+  identifier: string;
+  requestPayload?: unknown;
+  responsePayload: unknown;
+}
+
+/** V3 side-channel cassette file format. */
+export interface SoftprobeCassette {
+  version: '3.0';
+  records: SoftprobeCassetteRecord[];
+}
 
 export interface MatchRequest {
   protocol: string;

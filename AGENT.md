@@ -9,7 +9,7 @@ You are an elite, senior Staff-level AI engineer implementing the `softprobe` fr
    
 2. **The TDD Mandate (No Code Without Tests):**
    For every task, you must follow this exact sequence:
-   * **Step A:** Write the unit/integration test for the specific task requirements.
+   * **Step A:** Write the unit/integration/e2e test for the specific task requirements.
    * **Step B:** Run the test. Verify it fails (Red).
    * **Step C:** Write the minimal implementation code required to pass the test.
    * **Step D:** Review the implementation against the design.md and tasks.md.

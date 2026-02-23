@@ -1,401 +1,684 @@
+# Softprobe Record & Replay — Consolidated Design (v4.1)
 
-# Architectural Design Specification: `softprobe` v2.0
-
-**Document Version:** 2.0 (Final)
-**Author:** Principal Architect / Technical PM
-**Subject:** Topology-Aware Record & Replay Testing Framework via OpenTelemetry
-**Status:** Ready for Engineering Implementation
-
-## 1. Executive Summary & Product Vision
-
-**The Problem:** Simple request/response matching fails in complex, stateful applications (e.g., cache hits/misses, conditional branching). If a test run diverges slightly from the recorded run, standard mockers fail catastrophically.
-**The Solution:** `softprobe` v2.0 captures the **entire** OpenTelemetry trace, including span lineage (parent-child relationships). During replay, it utilizes a **Semantic Tree Matching Algorithm** to map live outbound calls to the recorded trace topology, rather than relying on flat lists. It provides a robust default algorithm while allowing users to inject custom matching rules.
+This document merges **v2/v3/v3.5** into **v4** to form a complete design.
+- **v4 is the source of truth** for overall architecture and conflicting decisions (typed bindings, matcher list, wrapper behavior, NDJSON cassette baseline).
+- **v2/v3/v3.5 details are reintroduced** where they add missing critical capabilities (production-safe capture side-channel + write queue, config + ignore/bypass, import-order guard, AsyncLocalStorage isolation, inbound capture + “compare response”, Jest/E2E constraints, topology-aware matching as an optional matcher).
 
 ---
 
-## 2. Developer Experience (The API Contract)
+## 1) Background
 
-The golden rule remains: integration must be near-zero configuration.
+### Why record & replay (and why simple mocks fail)
+Simple mocks (“request → response”) break when runtime diverges from the recorded run (cache hit vs miss, conditional branches, loops, retries). v2 introduced trace/topology-aware matching to survive these divergences.
 
-### 2.1 The Global Import
+### Why v3.5 changed capture architecture
+Writing full payloads into OpenTelemetry span attributes caused span bloat and event-loop pressure. v3.5 moved payload capture to a production-safe **NDJSON side channel** written by a single-threaded queue.
 
-The user still places this at the absolute top of their application entry point. This handles the automatic monkey-patching and hook injection.
+### What v4 fixed
+v4 simplified integration and matching:
+- Wrappers are minimal (shimmer/MSW).
+- Matchers are a list of functions (first non-`CONTINUE` wins).
+- Matchers do **not** execute passthrough.
+- Typed bindings hide attribute keys and avoid stringly-typed user code.
 
-```typescript
-// /*instrumentation.ts*/
-import "softprobe/init"; // MUST be the first line!
-
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-// ... standard otel setup ...
-
-```
-
-### 2.2 The Test-Time API (Replay Context & Overrides)
-
-To solve the `traceId` matching problem, the test must explicitly tell `softprobe` *which* recorded trace it is currently attempting to replay, and optionally define custom matching rules.
-
-```typescript
-// test/user.test.ts
-import { softprobe } from 'softprobe';
-
-describe('User Service', () => {
-  beforeEach(() => {
-    // Tell softprobe to scope all interceptors to this specific recorded trace tree
-    softprobe.setReplayContext({ traceId: 'a1b2c3d4e5f6g7h8' });
-  });
-
-  afterEach(() => {
-    softprobe.clearReplayContext();
-    softprobe.clearCustomMatchers();
-  });
-
-  it('should fetch user and handle cache hits gracefully', async () => {
-    // Optional: User overrides the default matching rule for a specific Redis call
-    softprobe.addMatcher('redis', (liveCall, recordedSpans) => {
-      // If the live app asks for a cache key, always return a cache MISS (null)
-      // to force the application to test the database fallback logic.
-      if (liveCall.identifier === 'get' && liveCall.requestBody.includes('user:1:cache')) {
-        return { action: 'MOCK', payload: null }; 
-      }
-      return { action: 'CONTINUE' }; // Fall back to default tree-matching algorithm
-    });
-
-    const res = await fetch('http://localhost:3000/users/1');
-    expect(res.status).toBe(200);
-  });
-});
-
-```
-
-**Replay context and isolation:** For correct isolation (especially with parallel test workers), use `softprobe.runWithContext({ traceId }, async () => { ... })` so the traceId is scoped to that async flow. `setReplayContext`/`clearReplayContext` are for single-threaded or "current continuation" usage; in Jest, `beforeEach` and the test body can run in different async contexts, so `runWithContext` is the reliable choice.
+v4.1 = **v4 simplicity** + **v3.5 production capture correctness** + **v2/v3 topology matching as an optional matcher**.
 
 ---
 
-## 3. Data Schema: Full Trace Retention
+## 2) Goals and non-goals
 
-We will no longer extract a proprietary JSON schema. We will utilize a standard `FileSpanExporter` that dumps raw OpenTelemetry `ReadableSpan` objects to disk.
+### Goals
+- **Near-zero config integration**: `import "softprobe/init"` as the first line.
+- **Production-safe capture**: do not put big payloads in span attrs; write NDJSON via a single-threaded queue.
+- **Deterministic replay** in CI (strict mode) + optional passthrough locally.
+- **Matching extensibility**: keep v4 matcher model; add topology-aware matcher as just another matcher fn.
+- **Parallel tests**: AsyncLocalStorage-based isolation for replay context (traceId + loaded records).
+- **HTTP coverage**: support `fetch` and legacy clients via `@mswjs/interceptors`.
 
-```typescript
-// src/types/schema.ts
-import { ReadableSpan } from '@opentelemetry/sdk-trace-base';
-
-// We extend the standard OTel Span attributes with our payloads
-export interface SoftprobeAttributes {
-  'softprobe.protocol': 'http' | 'postgres' | 'redis' | 'amqp';
-  'softprobe.identifier': string;
-  'softprobe.request.body'?: string;
-  'softprobe.response.body'?: string;
-}
-
-// The storage format is a map of traceId -> array of spans
-export type SoftprobeTraceStore = Record<string, ReadableSpan[]>;
-
-```
-
-**Implementation reminder:** When loading traces from disk, the exporter writes serialized (plain) span objects. Any loader that populates an in-memory `SoftprobeTraceStore` must deserialize so that each value satisfies `ReadableSpan` (e.g. has `spanContext()`, `parentSpanId`, `name`, `attributes`) for the matcher and replay code to work correctly.
-
-### 3.1 Capture–Replay Protocol Pairs
-
-Capture and replay are **always implemented in pairs** per protocol. For each supported protocol we define both how we capture (which OpenTelemetry instrumentation/hook and which attributes we set) and how we replay (which driver we patch and how we call the matcher). The same `softprobe.protocol` value, identifier semantics, and request/response payload shape are used in both directions so that any recorded span can be matched and replayed.
-
-| Protocol  | Capture (instrumentation / hook) | Replay (patch target) | Identifier | Request/response shape |
-|-----------|-----------------------------------|------------------------|------------|-------------------------|
-| **http**  | `@opentelemetry/instrumentation-http` (or undici) responseHook | undici `Dispatcher` / `MockAgent` | Method + URL (e.g. `GET https://api.example.com/users`) | request: optional body; response: status + body |
-| **postgres** | `@opentelemetry/instrumentation-pg` requestHook + responseHook | `pg.Client.prototype.query` (shimmer) | SQL text | request: query text + values; response: `{ rows, rowCount }` |
-| **redis** | `@opentelemetry/instrumentation-redis-4` (or ioredis) responseHook | redis/ioredis command (e.g. `send_command` / `call`) | Command name + key/args (e.g. `GET user:1:cache`) | request: command + args; response: reply value |
-| **amqp**  | `@opentelemetry/instrumentation-amqplib` responseHook | amqplib channel (publish/consume) | e.g. `publish exchange routingKey` or `consume queue` | request: message payload; response: ack/nack or delivery |
-
-**Golden rule:** When adding or changing a protocol, update both capture and replay in lockstep so that identifier and payload semantics stay aligned and the matcher can always resolve a live call to a recorded span.
+### Non-goals
+- A heavy “framework” abstraction beyond wrappers + matchers + typed bindings.
+- Default-on topology scoring; topology matcher is optional.
 
 ---
 
-## 4. The Matching Engine: Semantic Tree Algorithm
+## 3) High-level architecture (v4.1)
 
-This is the most critical component of v2.0.
+Softprobe has three core concerns (v4):
+1) **Capture**
+2) **Replay**
+3) **Matching**
 
-**The Challenge:** During capture, a span has `traceId: A`, `spanId: 1`, `parentSpanId: 0`. During a test replay, the live application generates *new* OpenTelemetry spans (e.g., `traceId: B`, `spanId: 9`, `parentSpanId: 8`). We cannot do a strict `===` comparison on IDs.
+v3.5 adds: a production-safe capture pipeline + config + bypass/ignore.
 
-**The Solution:** We match based on the **Semantic Lineage** of the current active span.
+### 3.1 Replay runtime flow
+1. A library call happens (pg/redis/http).
+2. OTel instrumentation creates an active span.
+3. A Softprobe wrapper tags the span via **typed binding**.
+4. Wrapper calls `matcher.match()` (no args).
+5. Wrapper executes:
+   - `MOCK`: return mocked result
+   - `PASSTHROUGH`: call original
+   - `CONTINUE`: wrapper policy (passthrough in dev, throw / hard-fail in strict CI)
 
-### 4.1 Algorithm Details
-
-When a live outbound call (e.g., Postgres `SELECT`) is intercepted by `shimmer` during replay, the following sequence executes:
-
-1. **Context Resolution:** Extract the *live* active span from the OpenTelemetry Context (`trace.getActiveSpan()`). Let's call this `LiveSpan`.
-2. **Lineage Extraction:** Traverse up the live trace tree to build a semantic path. For example: `HTTP GET /users/:id` -> `Service.getUser` -> `Postgres.query`.
-3. **Candidate Filtering:** Fetch all recorded spans belonging to the `traceId` specified in `softprobe.setReplayContext()`. Filter these to only spans matching the target protocol (e.g., `postgres`).
-4. **Tree Matching (The Heuristic):**
-For each candidate recorded span, compare its recorded lineage to the live lineage.
-* *Rule 1 (Structural):* Does the recorded span's parent have the same semantic name/attributes as the live span's parent?
-* *Rule 2 (Payload):* Does the intercepted SQL query match the candidate's `softprobe.identifier`?
-* *Rule 3 (Deduplication):* If multiple exact matches exist (e.g., a loop of identical queries), select the one matching the current sequential call count for that specific lineage node. If the live call count exceeds the number of recorded matches, the engine **wraps around** and reuses the first match in the sequence (index 0).
-
-**Custom matcher actions.** A custom matcher returns one of:
-
-* **MOCK** — Return the given payload as the response; no tree matching, no network. Use to override what the recording would return (e.g. force a cache miss).
-* **CONTINUE** — Do not override; fall through to the default tree-matching algorithm. The engine still uses the **recorded** trace to find a span and return its payload. The call remains replayed from the recording; no live network.
-* **PASSTHROUGH** — Request that this call go to the **live** network (no recording). In strict replay mode this is not allowed; the engine throws *Network Passthrough not allowed in strict mode*. PASSTHROUGH would only be honored in a hypothetical non-strict mode.
-
-### 4.2 Algorithm Implementation
-
-```typescript
-// src/replay/matcher.ts
-import { trace } from '@opentelemetry/api';
-import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
-import type { MatchRequest } from '../types/schema';
-
-export class SemanticMatcher {
-  private recordedSpans: ReadableSpan[];
-  private customMatchers: CustomMatcherFn[] = [];
-  private callSequenceMap = new Map<string, number>();
-
-  constructor(recordedSpans: ReadableSpan[]) {
-    this.recordedSpans = recordedSpans;
-  }
-
-  public findMatch(liveRequest: MatchRequest): any {
-    // 1. Evaluate Custom User Overrides First
-    for (const matcher of this.customMatchers) {
-      const result = matcher(liveRequest, this.recordedSpans);
-      if (result.action === 'MOCK') return result.payload;
-      if (result.action === 'PASSTHROUGH') throw new Error('Network Passthrough not allowed in strict mode');
-    }
-
-    // 2. Default Tree-Matching Algorithm
-    const liveSpan = trace.getActiveSpan();
-    const liveParentName = liveSpan ? (liveSpan as any).name : 'root';
-
-    // Filter to candidate spans of the same protocol and identifier
-    const candidates = this.recordedSpans.filter(span => 
-      span.attributes['softprobe.protocol'] === liveRequest.protocol &&
-      span.attributes['softprobe.identifier'] === liveRequest.identifier
-    );
-
-    if (candidates.length === 0) {
-      throw new Error(`[Softprobe] No recorded traces found for ${liveRequest.protocol}: ${liveRequest.identifier}`);
-    }
-
-    // 3. Lineage Scoring
-    // We attempt to find the recorded span whose parent conceptually matches the live parent
-    let bestMatch = candidates[0]; // Fallback to flat match if tree context is missing
-    
-    const lineageMatches = candidates.filter(candidate => {
-      // Look up the candidate's parent in the recorded trace store
-      const candidateParent = this.recordedSpans.find(s => s.spanContext().spanId === candidate.parentSpanId);
-      return candidateParent && candidateParent.name === liveParentName;
-    });
-
-    if (lineageMatches.length > 0) {
-      bestMatch = lineageMatches[0];
-      
-      // 4. Sequential resolution for loops/N+1 (wrap-around if call count exceeds matches)
-      const sequenceKey = `${liveRequest.protocol}-${liveRequest.identifier}-${liveParentName}`;
-      const currentCount = this.callSequenceMap.get(sequenceKey) || 0;
-      bestMatch = lineageMatches[currentCount] ?? lineageMatches[0]; // wrap to first when out of range
-      this.callSequenceMap.set(sequenceKey, currentCount + 1);
-    }
-
-    // Parse and return the recorded response payload attached to the matched span
-    return JSON.parse(bestMatch.attributes['softprobe.response.body'] as string);
-  }
-}
-
-```
+### 3.2 Capture flow (production-safe)
+- OTel hooks tap request/response streams and driver results.
+- Payloads are written to NDJSON via a **single-threaded write queue**.
+- Spans only get small identifiers/metadata (or nothing beyond what OTel already sets).
 
 ---
 
-## 5. Capture Mode Details
+## 4) Developer experience and public API
 
-Capture mode remains responsible for injecting hooks into OpenTelemetry and writing the *full* spans to disk. For each protocol, capture is defined in lockstep with replay (see **§3.1 Capture–Replay Protocol Pairs**). Implementations must set `softprobe.protocol`, `softprobe.identifier`, and optional `softprobe.request.body` / `softprobe.response.body` according to that table so replay can match.
+### 4.1 Global import (must be line 1)
+```ts
+// instrumentation.ts
+import "softprobe/init"; // MUST be the first line
 
-### 5.1 Standardizing the File Exporter
-
-We will implement a `SoftprobeTraceExporter` that implements `SpanExporter`.
-
-```typescript
-// src/capture/exporter.ts
-import { SpanExporter, ReadableSpan } from '@opentelemetry/sdk-trace-base';
-import { ExportResult, ExportResultCode } from '@opentelemetry/core';
-import fs from 'fs';
-
-export class SoftprobeTraceExporter implements SpanExporter {
-  private filePath = './softprobe-traces.json';
-
-  export(spans: ReadableSpan[], resultCallback: (result: ExportResult) => void): void {
-    try {
-      let store = {};
-      if (fs.existsSync(this.filePath)) {
-        store = JSON.parse(fs.readFileSync(this.filePath, 'utf-8'));
-      }
-      for (const span of spans) {
-        const traceId = span.spanContext().traceId;
-        if (!store[traceId]) store[traceId] = [];
-        store[traceId].push(this.serializeSpan(span));
-      }
-      fs.writeFileSync(this.filePath, JSON.stringify(store, null, 2));
-      resultCallback({ code: ExportResultCode.SUCCESS });
-    } catch (err) {
-      resultCallback({ code: ExportResultCode.FAILED, error: err });
-    }
-  }
-
-  shutdown(): Promise<void> { return Promise.resolve(); }
-  private serializeSpan(span: ReadableSpan) { /* ... maps ID, parentId, attributes, name ... */ }
-}
-
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 ```
 
-**Exporter notes:** Export performs a read-modify-write of the file; it is not safe for concurrent calls from multiple processes. Implementations should only use JSON-serializable attribute values so the store round-trips correctly.
+**Why:** driver shims must run before OTel wraps modules. If OTel wraps first, wrappers can become “nesting dolls” and break matching.
 
-### 5.2 Hook Injection (Auto-Wiring)
+### 4.2 Test-time API (AsyncLocalStorage-safe)
+```ts
+import { softprobe } from "softprobe";
 
-When `import "softprobe/init"` is called in capture mode, it pushes our exporter into the SDK.
-
-```typescript
-// src/capture/init.ts
-import shimmer from 'shimmer';
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
-import { SoftprobeTraceExporter } from './exporter';
-
-export function initCapture() {
-  // 1. Hijack NodeSDK to force our exporter into the pipeline, regardless of user config
-  shimmer.wrap(NodeSDK.prototype, 'start', function(originalStart) {
-    return function wrappedStart() {
-      // IMPORTANT: call originalStart FIRST — _tracerProvider is created inside start()
-      const result = originalStart.apply(this, arguments);
-      const processor = new SimpleSpanProcessor(new SoftprobeTraceExporter());
-      this._tracerProvider.addSpanProcessor(processor);
-      return result;
-    };
-  });
-
-  // 2. Hijack auto-instrumentations to inject responseHooks per protocol (see §3.1):
-  //    - Postgres: @opentelemetry/instrumentation-pg → set softprobe.* on span from query/result
-  //    - HTTP/Undici: @opentelemetry/instrumentation-http or undici → set softprobe.* from request/response
-  //    - Redis: @opentelemetry/instrumentation-redis-4 (or ioredis) → set softprobe.* from command/reply
-  //    - AMQP: @opentelemetry/instrumentation-amqplib → set softprobe.* from publish/consume
-  // ...
-}
-
-```
-
-**NodeSDK internals — critical ordering and env-var constraints:**
-
-1. **`_tracerProvider` lifecycle.** The `NodeSDK` creates `_tracerProvider` *inside* `start()`, not in the constructor. Any shimmer wrap of `start()` must call `originalStart()` **before** accessing `_tracerProvider`. Attempting to read it before `originalStart()` throws `TypeError: Cannot read properties of undefined`.
-
-2. **`OTEL_TRACES_EXPORTER=none` disables recording.** When this env var is set, the SDK's `TracerProviderWithEnvExporters` produces **non-recording spans** (`span.isRecording() === false`). Non-recording spans never trigger `onEnd` on any span processor, so *no* exporter (including ours) will ever see data. Softprobe capture requires at least one active trace exporter in the SDK — the default OTLP exporter is sufficient even if no collector is running (connection errors are harmless).
-
-3. **Provider class selection.** When the user passes no `spanProcessors` config, the SDK uses `TracerProviderWithEnvExporters` (auto-configures from env). When `spanProcessors` are provided, it uses plain `NodeTracerProvider`. Our `addSpanProcessor` after `start()` works with both, but only when spans are actually recording (see point 2).
-
-### 5.3 Capture Hook Contracts (Contract Alignment)
-
-Capture mode injects hooks into each protocol's OpenTelemetry instrumentation. **Each instrumentation has a different callback signature** — there is no universal `responseHook(span, result)` shape. Our hooks must be implemented and tested against the real contract so that `softprobe.*` attributes are reliably set.
-
-**Verified per-protocol hook contracts:**
-
-- **http/undici** — `responseHook(span, { request, response })`. Single 2-arg hook. `request` has `method`, `url` (or `origin`+`path`), `body`; `response` has `statusCode`, `body`.
-- **postgres** — **Two separate hooks required.** `requestHook(span, { query: { text, values?, name? }, connection })` and `responseHook(span, { data: { rows, rowCount, command } })`. The responseHook does NOT receive query text — only the requestHook has it. Both must be injected via the mutator.
-- **redis** — `responseHook(span, cmdName, cmdArgs, response)`. **4 separate positional arguments**, not a single result object. `cmdName` is e.g. `'SET'`, `cmdArgs` is `['key', 'value']`, `response` is the reply value.
-- **amqp** — TBD. To be verified when amqp capture is implemented.
-
-**Verification requirements:**
-
-1. **Per-protocol contract**  
-   For each instrumentation package we use, the implementation must align with the package's actual hook callback signature. When adding or upgrading a protocol, read the instrumentation's `types.d.ts` and update the corresponding capture module (`src/capture/<protocol>.ts`) and tests. **Do not assume a generic 2-argument signature.**
-
-2. **Documented contracts**  
-   The per-protocol list above is the source of truth. Update it when adding protocols or upgrading instrumentation package versions.
-
-3. **Unit tests**  
-   Unit tests must call the injected hook with arguments matching the documented contract and assert that `softprobe.protocol`, `softprobe.identifier`, `softprobe.request.body`, and `softprobe.response.body` are set correctly on the span.
-
-4. **E2E contract validation**  
-   The Phase 7 E2E test must validate **contract alignment**: after running the app in capture mode, assert that the written `softprobe-traces.json` contains the expected `softprobe.*` attributes on the relevant spans (e.g. HTTP spans have identifier and response body, Redis spans have command+args and reply). This catches drift between our hooks and the real instrumentation behavior.
-
-**Golden rule:** Capture and replay are paired per protocol; the identifier and payload semantics used in capture must match what replay expects. Any change to a capture contract must be reflected in the corresponding replay module and in the E2E assertions.
-
----
-
-## 6. Replay Mode Details
-
-Replay mode relies on the `SemanticMatcher` class defined in section 4. For each protocol, the replay interceptor is the paired counterpart of the capture hook (see **§3.1 Capture–Replay Protocol Pairs**). The driver interceptions below map directly to the matcher using the same protocol and identifier semantics as capture.
-
-```typescript
-// src/replay/postgres.ts
-import shimmer from 'shimmer';
-import { softprobe } from '../api'; // The test-time API state holder
-
-export function setupPostgresReplay() {
-  const pg = require('pg');
-  shimmer.wrap(pg.Client.prototype, 'query', function (originalQuery) {
-    return async function wrappedQuery(config: any, values: any, callback: any) {
-      const queryString = typeof config === 'string' ? config : config.text;
-      
-      const matcher = softprobe.getActiveMatcher(); // Retrieves matcher for current traceId
-      
-      const mockedPayload = matcher.findMatch({
-        protocol: 'postgres',
-        identifier: queryString,
-        requestBody: values
+it("replays a recorded production transaction", async () => {
+  await softprobe.runWithContext(
+    { traceId: "prod-trace-345", cassettePath: "./softprobe-cassettes.ndjson" },
+    async () => {
+      // Optional matcher override (inserted ahead of defaults)
+      softprobe.getActiveMatcher().use((span, records) => {
+        const r = RedisSpan.fromSpan(span);
+        if (r && r.identifier.includes("GET user:1:cache")) {
+          return { action: "MOCK", payload: null };
+        }
+        return { action: "CONTINUE" };
       });
 
-      const mockedResult = { rows: mockedPayload, rowCount: mockedPayload.length };
+      const res = await fetch("http://localhost:3000/users/1");
+      expect(res.status).toBe(200);
 
-      if (typeof callback === 'function') return callback(null, mockedResult);
-      return Promise.resolve(mockedResult);
+      // Optional: compare to recorded inbound response for this trace
+      const inbound = softprobe.getRecordedInboundResponse();
+      expect(await res.json()).toEqual(inbound?.responsePayload?.body);
+    }
+  );
+});
+```
+
+---
+
+## 5) Configuration (.softprobe/config.yml)
+
+Because `softprobe/init` must be imported first, configuration must be discoverable synchronously at boot.
+
+**File:** `./.softprobe/config.yml`
+```yaml
+capture:
+  maxPayloadSize: 1048576         # 1MB circuit breaker
+  outputFile: "./softprobe-cassettes.ndjson"
+
+replay:
+  ignoreUrls:
+    - "localhost:431[78]"
+    - "/v1/traces"
+    - "datadog-agent:8126"
+    - "api\.stripe\.com"        # optional “intentional live”
+```
+
+Centralized bypass check (used by capture + replay interceptors):
+```ts
+import fs from "fs";
+import { parse } from "yaml";
+
+class ConfigManager {
+  private ignoreRegexes: RegExp[] = [];
+  private cfg: any;
+
+  constructor() {
+    this.cfg = parse(fs.readFileSync("./.softprobe/config.yml", "utf8"));
+    this.ignoreRegexes = (this.cfg.replay?.ignoreUrls || []).map((p: string) => new RegExp(p));
+  }
+
+  shouldIgnore(url?: string) {
+    if (!url) return false;
+    return this.ignoreRegexes.some((re) => re.test(url));
+  }
+
+  get() { return this.cfg; }
+}
+
+export const softprobeConfig = new ConfigManager();
+```
+
+---
+
+## 6) Cassette format (NDJSON)
+
+v4 baseline is retained; v3.5 adds critical topology and direction fields.
+
+### 6.1 Schema
+```ts
+export type Protocol = "http" | "postgres" | "redis" | "amqp" | "grpc";
+export type RecordType = "inbound" | "outbound" | "metadata";
+
+export type SoftprobeCassetteRecord = {
+  version: "4.1";
+  traceId: string;
+
+  // identity + topology (enables optional topology matcher)
+  spanId: string;
+  parentSpanId?: string;
+  spanName?: string;
+  timestamp: string; // ISO
+
+  // direction
+  type: RecordType;
+
+  // matching keys
+  protocol: Protocol;
+  identifier: string; // “golden key” per protocol (must match capture+replay)
+
+  // payloads (side-channel only)
+  requestPayload?: any;
+  responsePayload?: any;
+
+  // optional helper fields
+  statusCode?: number;
+  error?: { message: string; stack?: string };
+};
+```
+
+### 6.2 Golden key rule
+`identifier` must be built **identically** in capture and replay.
+
+Recommended identifier builders:
+```ts
+export function httpIdentifier(method: string, url: string) {
+  return `${method.toUpperCase()} ${url}`;
+}
+export function redisIdentifier(cmd: string, args: string[]) {
+  return `${cmd.toUpperCase()} ${args.join(" ")}`.trim();
+}
+export function pgIdentifier(sql: string) {
+  return normalizeSql(sql); // optional; MUST be consistent
+}
+```
+
+---
+
+## 7) Matching model (v4) + Topology matcher (v2/v3) as an optional matcher
+
+### 7.1 MatcherAction + list (v4)
+```ts
+export type MatcherAction =
+  | { action: "MOCK"; payload: any }
+  | { action: "PASSTHROUGH" }
+  | { action: "CONTINUE" };
+
+export type MatcherFn = (
+  span: import("@opentelemetry/api").Span | undefined,
+  records: SoftprobeCassetteRecord[]
+) => MatcherAction;
+
+export class SoftprobeMatcher {
+  private fns: MatcherFn[] = [];
+  private records: SoftprobeCassetteRecord[] = [];
+
+  use(fn: MatcherFn) { this.fns.push(fn); }
+  clear() { this.fns = []; }
+  _setRecords(records: SoftprobeCassetteRecord[]) { this.records = records; }
+
+  match(): MatcherAction {
+    const span = require("@opentelemetry/api").trace.getActiveSpan();
+    for (const fn of this.fns) {
+      const r = fn(span, this.records);
+      if (r.action !== "CONTINUE") return r;
+    }
+    return { action: "CONTINUE" };
+  }
+}
+```
+
+**Policy note:** strict vs dev behavior is handled by wrappers, not matchers.
+
+### 7.2 Typed bindings (v4) — extended to Redis/AMQP
+
+Typed bindings encapsulate private keys. User code sees stable functions.
+
+#### PostgresSpan
+Keep the existing v4 `PostgresSpan.tagQuery()` and `.fromSpan()`.
+
+#### RedisSpan (added)
+```ts
+import { trace, Span } from "@opentelemetry/api";
+
+const REDIS = {
+  protocol: "softprobe.redis.protocol",
+  identifier: "softprobe.redis.identifier",
+  cmd: "softprobe.redis.cmd",
+  args_json: "softprobe.redis.args_json",
+} as const;
+
+export type RedisSpanData = {
+  protocol: "redis";
+  identifier: string;
+  cmd: string;
+  args: string[];
+};
+
+function set(span: Span | undefined, k: string, v: any) { if (span && v !== undefined) (span as any).setAttribute?.(k, v); }
+function get(span: any, k: string) { return span?.attributes?.[k]; }
+function activeSpan() { return trace.getActiveSpan(); }
+
+export class RedisSpan {
+  static tagCommand(cmd: string, args: string[], span: Span | undefined = activeSpan()) {
+    set(span, REDIS.protocol, "redis");
+    set(span, REDIS.cmd, cmd.toUpperCase());
+    set(span, REDIS.identifier, `${cmd.toUpperCase()} ${args.join(" ")}`.trim());
+    set(span, REDIS.args_json, JSON.stringify(args));
+  }
+
+  static fromSpan(span: Span | undefined): RedisSpanData | null {
+    const protocol = get(span, REDIS.protocol);
+    if (protocol !== "redis") return null;
+    const identifier = get(span, REDIS.identifier);
+    const cmd = get(span, REDIS.cmd);
+    const args_json = get(span, REDIS.args_json);
+    if (!identifier || !cmd) return null;
+    const args = typeof args_json === "string" ? (JSON.parse(args_json) ?? []) : [];
+    return { protocol: "redis", identifier, cmd, args };
+  }
+}
+```
+
+#### AMQPSpan (minimal placeholder)
+```ts
+const AMQP = {
+  protocol: "softprobe.amqp.protocol",
+  identifier: "softprobe.amqp.identifier",
+  op: "softprobe.amqp.op",
+  exchange: "softprobe.amqp.exchange",
+  routingKey: "softprobe.amqp.routingKey",
+} as const;
+
+export type AmqpSpanData = {
+  protocol: "amqp";
+  identifier: string;
+  op: "publish" | "consume";
+  exchange?: string;
+  routingKey?: string;
+};
+
+export class AmqpSpan {
+  static tagPublish(exchange: string, routingKey: string, span?: any) {
+    // implement same pattern as RedisSpan
+  }
+  static fromSpan(span: any): AmqpSpanData | null {
+    // implement same pattern as RedisSpan
+    return null;
+  }
+}
+```
+
+### 7.3 Default matcher (v4)
+Flat key match:
+- derive (protocol, identifier) via typed bindings
+- pick recorded outbound record(s)
+- handle loops via per-key call sequence mapping
+
+### 7.4 Optional topology-aware matcher (v2/v3)
+Implemented as a matcher fn inserted before the default matcher.
+
+Heuristic:
+- candidates filtered by protocol+identifier
+- prefer recorded candidates whose recorded parent span name matches live parent span name
+- handle loops with wrap-around
+
+```ts
+import { trace } from "@opentelemetry/api";
+
+export function createTopologyMatcher(): MatcherFn {
+  const callSeq = new Map<string, number>();
+
+  return (span, records) => {
+    if (!span) return { action: "CONTINUE" };
+
+    const pg = PostgresSpan.fromSpan(span);
+    const http = HttpSpan.fromSpan(span);
+    const redis = RedisSpan.fromSpan(span);
+
+    const key =
+      pg ? { protocol: "postgres" as const, identifier: pg.identifier } :
+      http ? { protocol: "http" as const, identifier: http.identifier } :
+      redis ? { protocol: "redis" as const, identifier: redis.identifier } :
+      null;
+
+    if (!key) return { action: "CONTINUE" };
+
+    const liveParentName = (span as any)?._parentSpanName ?? "root";
+
+    const candidates = records.filter(r =>
+      r.type === "outbound" &&
+      r.protocol === key.protocol &&
+      r.identifier === key.identifier
+    );
+    if (candidates.length === 0) return { action: "CONTINUE" };
+
+    const bySpanId = new Map(records.map(r => [r.spanId, r]));
+    const lineageMatches = candidates.filter(c => {
+      if (!c.parentSpanId) return liveParentName == "root";
+      const parent = bySpanId.get(c.parentSpanId);
+      return (parent?.spanName ?? "root") === liveParentName;
+    });
+
+    const pool = lineageMatches.length > 0 ? lineageMatches : candidates;
+
+    const seqKey = `${key.protocol}::${key.identifier}::${liveParentName}`;
+    const n = callSeq.get(seqKey) ?? 0;
+    const picked = pool[n] ?? pool[0];
+    callSeq.set(seqKey, n + 1);
+
+    return { action: "MOCK", payload: picked.responsePayload };
+  };
+}
+```
+
+---
+
+## 8) Replay context, record loading, and inbound response retrieval (v3.5)
+
+### 8.1 `runWithContext()` loads records once
+```ts
+export async function runWithContext(
+  opts: { traceId?: string; cassettePath: string },
+  fn: () => Promise<void>
+) {
+  const records = await loadNdjson(opts.cassettePath, opts.traceId);
+
+  const m = softprobe.getActiveMatcher();
+  m._setRecords(records);
+
+  softprobe._setInboundRecord(findInbound(records));
+
+  return softprobe._als.run(
+    { traceId: opts.traceId, cassettePath: opts.cassettePath },
+    fn
+  );
+}
+```
+
+### 8.2 Streaming NDJSON loader
+```ts
+import fs from "fs";
+import readline from "readline";
+
+export async function loadNdjson(path: string, traceId?: string) {
+  const out: SoftprobeCassetteRecord[] = [];
+  const rl = readline.createInterface({ input: fs.createReadStream(path), crlfDelay: Infinity });
+
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    const rec = JSON.parse(line) as SoftprobeCassetteRecord;
+    if (!traceId || rec.traceId === traceId) out.push(rec);
+  }
+  return out;
+}
+
+function findInbound(records: SoftprobeCassetteRecord[]) {
+  return records.find(r => r.type === "inbound" && r.protocol === "http");
+}
+```
+
+### 8.3 `getRecordedInboundResponse()`
+Expose:
+```ts
+softprobe.getRecordedInboundResponse(): SoftprobeCassetteRecord | undefined
+```
+
+---
+
+## 9) Replay interceptors (implementation details)
+
+### 9.1 Postgres replay (shimmer) + import-order guard
+```ts
+import shimmer from "shimmer";
+
+export function patchPostgresReplay(softprobe: any) {
+  let pg: any; try { pg = require("pg"); } catch { return; }
+
+  // Import-order guard: must shim before OTel wraps
+  if ((pg.Client.prototype.query as any).__wrapped) {
+    throw new Error(
+      "[Softprobe FATAL] OTel already wrapped pg. Import 'softprobe/init' BEFORE OTel initialization."
+    );
+  }
+
+  shimmer.wrap(pg.Client.prototype, "query", function (originalQuery) {
+    return function softprobeReplayQuery(...args: any[]) {
+      const a0 = args[0];
+      const sql = typeof a0 === "string" ? a0 : a0?.text;
+      const values = typeof a0 === "string" ? args[1] : a0?.values;
+
+      if (typeof sql === "string") {
+        PostgresSpan.tagQuery(sql, Array.isArray(values) ? values : undefined);
+      }
+
+      const r = softprobe.getActiveMatcher().match();
+
+      if (r.action === "MOCK") {
+        const payload = r.payload;
+        const rows = Array.isArray(payload) ? payload : (payload?.rows ?? []);
+        const rowCount = payload?.rowCount ?? rows.length;
+        const command = payload?.command ?? "MOCKED";
+        const pgResult = { rows, rowCount, command };
+
+        const isCb = typeof args[args.length - 1] === "function";
+        if (isCb) { process.nextTick(() => args[args.length - 1](null, pgResult)); return; }
+        return Promise.resolve(pgResult);
+      }
+
+      if (r.action === "PASSTHROUGH") return originalQuery.apply(this, args);
+
+      // CONTINUE policy is wrapper-owned (strict vs dev)
+      if (process.env.SOFTPROBE_STRICT_REPLAY === "1") {
+        throw new Error("Softprobe replay: no match for pg.query");
+      }
+      return originalQuery.apply(this, args);
     };
   });
 }
 ```
-**Postgres replay note:** The snippet assumes `mockedPayload` is the recorded rows array; `rowCount` is derived from `length`. If capture stores a different shape (e.g. `{ rows, rowCount }`), replay should normalize and preserve `rowCount` from the recorded payload when available.
 
-### 6.2 HTTP (Undici) Replay
+### 9.2 HTTP replay (MSW interceptors) + ignoreUrls + consistent error shape
+```ts
+import { BatchInterceptor } from "@mswjs/interceptors";
+import { ClientRequestInterceptor } from "@mswjs/interceptors/ClientRequest";
+import { FetchInterceptor } from "@mswjs/interceptors/fetch";
+import { softprobeConfig } from "../utils/config";
 
-Patch undici (e.g. via `MockAgent` or `Dispatcher` wrap). On each request, call `matcher.findMatch({ protocol: 'http', identifier: methodAndUrl, requestBody })` and return the recorded status and body. Identifier must match the format used by the HTTP capture hook (see §3.1).
+export function setupUniversalHttpReplay(softprobe: any) {
+  const httpInterceptor = new BatchInterceptor({
+    name: "softprobe-http-replay",
+    interceptors: [new ClientRequestInterceptor(), new FetchInterceptor()],
+  });
 
-### 6.3 Redis Replay
+  httpInterceptor.apply();
 
-Patch the Redis client (e.g. `send_command` or ioredis `call`). On each command, call `matcher.findMatch({ protocol: 'redis', identifier: commandAndKey, requestBody: args })` and return the recorded reply. Identifier must match the format used by the Redis capture hook (see §3.1).
+  httpInterceptor.on("request", async ({ request, controller }) => {
+    try {
+      const url = typeof request.url === "string" ? request.url : request.url.toString();
+      if (softprobeConfig.shouldIgnore(url)) return; // allow passthrough
 
-### 6.4 AMQP Replay
+      let bodyText: string | undefined;
+      try { bodyText = await request.clone().text(); } catch {}
 
-Patch the amqplib channel (publish/consume). On each publish or when delivering a consumed message, use `matcher.findMatch({ protocol: 'amqp', identifier: ... })` and return or inject the recorded payload. Identifier must match the format used by the AMQP capture hook (see §3.1).
+      HttpSpan.tagRequest(request.method, url, bodyText);
+
+      const r = softprobe.getActiveMatcher().match();
+
+      if (r.action === "MOCK") {
+        const p = r.payload ?? {};
+        controller.respondWith(new Response(p.body ?? "", {
+          status: p.status ?? p.statusCode ?? 200,
+          headers: p.headers ?? {},
+        }));
+        return;
+      }
+
+      if (r.action === "PASSTHROUGH") return;
+
+      if (process.env.SOFTPROBE_STRICT_REPLAY === "1") {
+        controller.respondWith(new Response(
+          JSON.stringify({ error: "[Softprobe] No recorded traces found for http request" }),
+          { status: 500, headers: { "x-softprobe-error": "true", "content-type": "application/json" } }
+        ));
+      }
+      // else CONTINUE: do nothing => real request proceeds
+    } catch (err: any) {
+      controller.respondWith(new Response(
+        JSON.stringify({ error: "Softprobe Replay Error", details: err?.message ?? String(err) }),
+        { status: 500, headers: { "x-softprobe-error": "true", "content-type": "application/json" } }
+      ));
+    }
+  });
+}
+```
+
+### 9.3 Redis replay (shimmer)
+Patch either node-redis v4 command path or ioredis. Example for a `sendCommand`-style API:
+```ts
+import shimmer from "shimmer";
+
+export function patchRedisReplay(redisClientProto: any, softprobe: any) {
+  shimmer.wrap(redisClientProto, "sendCommand", function (original) {
+    return function softprobeSendCommand(cmd: any, ...rest: any[]) {
+      const name = cmd?.name ?? cmd?.command ?? cmd?.[0];
+      const args = cmd?.args ?? cmd?.[1] ?? [];
+      const cmdName = String(name || "").toUpperCase();
+      const cmdArgs = Array.isArray(args) ? args.map(String) : [];
+
+      RedisSpan.tagCommand(cmdName, cmdArgs);
+
+      const r = softprobe.getActiveMatcher().match();
+      if (r.action === "MOCK") return Promise.resolve(r.payload);
+      if (r.action === "PASSTHROUGH") return original.apply(this, arguments as any);
+
+      if (process.env.SOFTPROBE_STRICT_REPLAY === "1") {
+        throw new Error("Softprobe replay: no match for redis command");
+      }
+      return original.apply(this, arguments as any);
+    };
+  });
+}
+```
 
 ---
 
-## 7. Acceptance Criteria & Edge Case Validation
+## 10) Production capture engine (v3.5)
 
-To certify this framework for production, the engineering team must satisfy the following complex test cases:
+### 10.1 NDJSON write queue (single-threaded, flush-on-exit)
+Requirements:
+- Async append queue to prevent interleaving.
+- `maxQueueSize` safety valve (drop & count) under pressure.
+- Best-effort flush on `exit`, `SIGINT`, `SIGTERM`.
 
-* **AC1: Non-Deterministic DB Fallback (The Cache Miss Scenario).** * *Setup:* Record a trace where a cache hit occurs (1 Redis call, 0 DB calls).
-* *Test:* During replay, inject a custom matcher via `softprobe.addMatcher()` that forces the Redis call to return `null`. The application will logically branch to query Postgres.
-* *Assert:* The system must cleanly throw an error indicating no recorded call matched (e.g. `[Softprobe] No recorded traces found for <protocol>: <identifier>`). It MUST NOT crash silently or return undefined data.
+### 10.2 HTTP payload tapping without consuming streams
+Use safe stream tap utilities (PassThrough/tee pattern) with:
+- Never throw from production hooks.
+- Payload max-size circuit breaker.
+- Do not starve original stream consumers.
 
+### 10.3 Capture hook contracts (must be verified per instrumentation)
+Mandate: verify hook signatures against real instrumentation packages.
 
-* **AC2: Semantic N+1 Query Handling.**
-* *Setup:* Record a trace that runs `SELECT * FROM items WHERE user_id = $1` three consecutive times in a loop.
-* *Assert:* The replay engine must correctly increment the `callSequenceMap` and return the exact row payloads in the sequence they were recorded, proving the heuristic tree matcher works.
+Examples of “gotchas”:
+- Postgres query text is in `requestHook(span, { query: { text, values } })`
+- Redis hook may be positional args: `responseHook(span, cmdName, cmdArgs, response)`
 
+### 10.4 What gets recorded
+- **Inbound HTTP**: request body + response status/body.
+- **Outbound HTTP**: request body + response status/body.
+- **Outbound Postgres**: query identifier + rows/rowCount/command (or rows only; be consistent).
+- **Outbound Redis**: cmd+args + response.
 
-* **AC3: Trace Isolation.** * *Assert:* When running a parallel test runner (like Jest with multiple workers), the `softprobe.setReplayContext({ traceId: '...' })` must utilize `AsyncLocalStorage` to ensure concurrent tests replaying different `traceIds` do not pollute each other's matcher instances.
-* **AC4: Full Span Integrity.**
-* *Assert:* The output `softprobe-traces.json` preserves topology (parent-child relationships) and all `softprobe.*` attributes on leaf spans. The serialized format is a minimal subset (traceId, spanId, parentSpanId, name, attributes); import into Jaeger or Zipkin is best-effort unless additional OTel fields (e.g. startTime, endTime, kind) are serialized.
+All written as NDJSON `SoftprobeCassetteRecord` lines.
 
 ---
 
-## 8. E2E Testing Constraints
+## 11) E2E testing constraints (Jest module loader)
 
-### 8.1 Jest Module System vs OTel Instrumentation
+Many OTel instrumentations rely on `require-in-the-middle`. Jest replaces Node’s native `require`, so pg/redis/amqp instrumentation often won’t activate inside Jest.
 
-OTel auto-instrumentations for CJS libraries (pg, redis, ioredis, amqplib) rely on `require-in-the-middle` to intercept `require()` calls and patch modules at load time. **Jest replaces Node's native `require` with its own module loader**, which bypasses `require-in-the-middle` entirely. This means:
+Workaround:
+- Run capture workload in a **child process** using native Node require, then assert on output NDJSON.
 
-- **HTTP/undici works in Jest** — the undici instrumentation hooks via `diagnostics_channel` (a Node.js built-in), not `require-in-the-middle`.
-- **pg, redis, and other CJS libraries are NOT instrumented inside Jest tests** — their `require()` calls go through Jest's loader and never trigger OTel's patching hooks.
+Also note:
+- `OTEL_TRACES_EXPORTER=none` produces non-recording spans; capture will see nothing.
 
-**Required workaround for E2E capture tests:** For protocols that rely on `require-in-the-middle` (postgres, redis, amqp), E2E tests must run the capture workload in a **child process** (via `execSync` + `ts-node`) where native Node.js `require` is used. The test then reads and asserts on the trace file produced by the child process. See `src/__tests__/e2e/helpers/*-capture-worker.ts` for the pattern.
+---
 
-### 8.2 `OTEL_TRACES_EXPORTER=none` in Tests
+## 12) Implementation checklist (v4.1)
 
-Do **not** set `OTEL_TRACES_EXPORTER=none` in capture E2E test environments. As documented in §5.2, this causes the SDK to produce non-recording spans that bypass all processors. The default OTLP exporter will fail to connect (no collector running) but this is harmless — our `SoftprobeTraceExporter` still receives and writes spans.
+### Capture
+- [ ] Config loader (`.softprobe/config.yml`) + precompiled ignore regexes
+- [ ] CassetteStore write queue + exit flush
+- [ ] HTTP stream tap utilities + payload size cap
+- [ ] Protocol capture hooks with tests validating hook signatures
+- [ ] NDJSON schema v4.1 (version field, identifiers consistent)
+- [ ] Inbound capture support and retrieval helper
+
+### Replay
+- [ ] Import-order guard for DB shims
+- [ ] pg shimmer wrapper using `PostgresSpan.tagQuery`
+- [ ] HTTP interceptors using `HttpSpan.tagRequest` + ignoreUrls
+- [ ] redis wrapper + `RedisSpan.tagCommand`
+- [ ] strict mode behavior handled in wrappers (not in matcher)
+
+### Matching
+- [ ] Matcher list (user matchers first)
+- [ ] Optional `TopologyMatcher` (insert before default)
+- [ ] Default matcher last (flat protocol+identifier, loop callSeq)
+
+---
+
+## 13) Appendix: Default matcher sketch
+
+```ts
+export function createDefaultMatcher(): MatcherFn {
+  const callSeq = new Map<string, number>();
+
+  return (span, records) => {
+    if (!span) return { action: "CONTINUE" };
+
+    const pg = PostgresSpan.fromSpan(span);
+    const http = HttpSpan.fromSpan(span);
+    const redis = RedisSpan.fromSpan(span);
+
+    const key =
+      pg ? { protocol: "postgres" as const, identifier: pg.identifier } :
+      http ? { protocol: "http" as const, identifier: http.identifier } :
+      redis ? { protocol: "redis" as const, identifier: redis.identifier } :
+      null;
+
+    if (!key) return { action: "CONTINUE" };
+
+    const candidates = records.filter(r =>
+      r.type === "outbound" &&
+      r.protocol === key.protocol &&
+      r.identifier === key.identifier
+    );
+
+    if (candidates.length === 0) return { action: "CONTINUE" };
+
+    const seqKey = `${key.protocol}::${key.identifier}`;
+    const n = callSeq.get(seqKey) ?? 0;
+    const picked = candidates[n] ?? candidates[0];
+    callSeq.set(seqKey, n + 1);
+
+    return { action: "MOCK", payload: picked.responsePayload };
+  };
+}
+```
