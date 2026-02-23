@@ -2,6 +2,8 @@
  * HTTP inbound capture: write one NDJSON record per inbound request/response.
  * Design §10.4: Inbound HTTP — request body + response status/body.
  * Single record embeds both requestPayload and responsePayload when available.
+ * Task 14.3.1: requestPayload.body is populated from req.body when Express
+ * middleware is placed after body-parser (via queueInboundResponse.requestBody).
  */
 
 import type { CassetteStore } from '../store/cassette-store';

@@ -300,7 +300,6 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 ## 12.2 Postgres E2E
 - [x] Task 12.2.1 CAPTURE script writes NDJSON with rows *(feat: init CAPTURE sets CassetteStore + flush; pg-cassette-capture-worker; postgres-cassette-capture.e2e.test)*
 - [x] Task 12.2.2 REPLAY script works with DB disconnected *(feat: runWithContext registers default matcher; postgres wrapper uses SoftprobeMatcher.match(spanLike); E2E in-process replay)*
-- [ ] Task 12.2.3 Assert “zero span bloat” (no payload in span attrs)
 
 ## 12.3 Redis E2E
 - [x] Task 12.3.1 CAPTURE writes NDJSON *(feat: redis-cassette.e2e + redis-cassette-capture-worker; asserts outbound redis NDJSON records)*
@@ -319,7 +318,92 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 
 ---
 
-# 14) User-Facing Example App + Record/Replay Demo — Atomic
+# 14) Server-Side Integration (Inbound & Frameworks) — Atomic
+
+## 14.1 Express Middleware (Environment Aware)
+
+* [x] Task 14.1.1 Implement `softprobeExpressMiddleware` capture path *(feat: capture/express.ts; taps res.send)*
+* Test: when `SOFTPROBE_MODE=CAPTURE`, `res.send` triggers `CaptureEngine.queueInboundResponse` with status/body *(feat: CaptureEngine + express middleware; capture-express.test.ts)*
+
+
+* [x] Task 14.1.2 Implement `softprobeExpressMiddleware` replay trigger *(feat: replay/express.ts; detect traceId and mode)*
+* Test: when `SOFTPROBE_MODE=REPLAY` and traceId is in context, `activateReplayForContext(traceId)` is called *(feat: replay/express.ts + api getRecordsForTrace/activateReplayForContext/globalReplayMatcher; capture-express.test.ts)*
+
+
+* [x] Task 14.1.3 Middleware correctly extracts Trace ID via native OTel context *(feat: trace.getActiveSpan().spanContext().traceId)*
+* Test: middleware correctly identifies the traceId without manual header parsing *(test: req has wrong x-trace-id/traceparent; assert OTel traceId used; capture-express.test.ts)*
+
+
+
+## 14.2 Fastify Plugin
+
+* [x] Task 14.2.1 Implement `softprobeFastifyPlugin` using `onSend` hook *(feat: capture/fastify.ts; onSend for payload)*
+* Test: `onSend` captures full payload and writes `inbound` record to side-channel *(feat: capture/fastify.ts + capture-fastify.test.ts; use fastify-plugin so hook runs for app routes)*
+
+
+* [x] Task 14.2.2 Implement `preHandler` hook for replay initialization *(feat: replay/fastify.ts; preHandler primes matcher by traceId)*
+* Test: hook primes the `SoftprobeMatcher` with records matching the active OTel traceId
+
+
+- [x] Task 14.2.3 Apply framework mutators (feat: init calls applyFrameworkMutators() to hook Express/Fastify)
+  - Test: require('express'); assert app.use was called internally by Softprobe without user intervention. *(feat: capture/framework-mutator.ts + init CAPTURE/REPLAY)*
+
+## 14.3 Body Parsing Coordination
+
+* [x] Task 14.3.1 Ensure `HttpSpan.tagInboundRequest` captures `req.body` correctly *(feat: capture/http-inbound.ts)*
+* Test: request record in NDJSON contains parsed JSON body when middleware is placed after `body-parser` *(feat: Express middleware passes req.body to queueInboundResponse → writeInboundHttpRecord)*
+
+## 14.4 Server-Side E2E Coverage (Child Process)
+
+* [x] Task 14.4.1 Express capture E2E writes inbound + outbound records *(feat: src/__tests__/e2e/express-inbound-capture.e2e.test.ts + helper worker)*
+* Test: run express app in `CAPTURE`; hit one route; NDJSON contains inbound record (status/body) and at least one outbound record (http/redis/postgres) *(express-inbound-capture.e2e.test + runServer/waitForServer + /exit flush)*
+
+
+* [ ] Task 14.4.2 Express replay E2E succeeds with dependencies offline *(feat: src/__tests__/e2e/express-inbound-replay.e2e.test.ts + helper worker)*
+* Test: run express app in `REPLAY` + strict mode with Postgres/Redis/http dependency disabled; request succeeds from cassette only
+
+
+* [ ] Task 14.4.3 Fastify capture/replay E2E parity *(feat: src/__tests__/e2e/fastify-inbound-cassette.e2e.test.ts + helper worker)*
+* Test: same route flow in Fastify captures inbound payload and replays without live dependencies
+
+
+* [ ] Task 14.4.4 Server-side strict negative E2E proves network isolation *(feat: src/__tests__/e2e/server-inbound-strict-negative.e2e.test.ts)*
+* Test: replay request with an unrecorded outbound call fails deterministically and verifies passthrough/network call is not invoked
+
+---
+# 15) Automated Replay Coordination & Comparison — Atomic
+
+## 15.1 OTel Baggage Propagation
+
+* [ ] Task 15.1.1 Inject `softprobe-mode: REPLAY` into OTel Baggage *(feat: api/baggage.ts)*
+* Test: setting global REPLAY mode adds entry to current OTel baggage
+
+
+* [ ] Task 15.1.2 Downstream shims check baggage for mode *(feat: replay/http-shim.ts)*
+* Test: outbound fetch shim automatically switches to MOCK when baggage contains `softprobe-mode: REPLAY`
+
+
+
+## 15.2 Inbound Comparison Utility
+
+* [ ] Task 15.2.1 Implement `softprobe.compareInbound(actualResponse)` helper *(feat: api/compare.ts)*
+* Test: helper retrieves recorded `inbound` record and performs deep equality check on status/body
+
+
+* [ ] Task 15.2.2 Add `SOFTPROBE_STRICT_COMPARISON` env check *(feat: compare.ts strict flag)*
+* Test: when strict, mismatched headers cause failure; when off, only status/body matter
+
+
+
+## 15.3 Automatic Record Loading in Middleware
+
+* [ ] Task 15.3.1 Middleware loads specific trace records from eager-loaded global store *(feat: replay/store-accessor.ts)*
+* Test: middleware retrieves only records for the current `traceId` from the store initialized at boot
+
+
+---
+
+# 16) User-Facing Example App + Record/Replay Demo — Atomic
 
 **Goal:** Provide a runnable, **customer-visible demo** showing:
 - A **normal** example app with **real** connections to **Postgres**, **Redis**, and outbound **HTTP** (e.g. httpbin.org). Users run dependencies via **Docker** (docker-compose); the app is the kind of code a customer would write.
@@ -334,8 +418,8 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 > - `npm run example:capture` / `npm run example:replay`
 > - `npm test` (or `npm run example:test`)
 
-## 14.1 Example app skeleton (no Softprobe yet)
-- [x] Task 14.1.1 Scaffold `examples/basic-app` with a single entry script *(feat: examples/basic-app/run.ts + basic-app-example.e2e.test)*
+## 16.1 Example app skeleton (no Softprobe yet)
+- [x] Task 16.1.1 Scaffold `examples/basic-app` with a single entry script *(feat: examples/basic-app/run.ts + basic-app-example.e2e.test)*
   - **User-facing**: normal app with real Postgres + Redis + HTTP. Default env points at local Docker (docker-compose); no mocks in the app itself.
   - App behavior (single request/flow):
     1) Insert/select from Postgres (or select-only if easier)
@@ -344,16 +428,16 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
     4) Return a JSON response containing all three results
   - Test: `node examples/basic-app/run.js` (or ts) exits 0 and prints JSON (E2E can use Testcontainers; demo assumes Docker).
 
-- [x] Task 14.1.2 HTTP for demo: deterministic outbound call *(feat: httpbin.org in run.ts; E2E asserts http.url contains httpbin.org)*
+- [x] Task 16.1.2 HTTP for demo: deterministic outbound call *(feat: httpbin.org in run.ts; E2E asserts http.url contains httpbin.org)*
   - Use httpbin.org (or optional local stub) so the example has a deterministic HTTP dependency.
   - Test: app run includes `http` in output; optional `curl` test for stub if used.
 
-- [ ] Task 14.1.3 Provide docker-compose for Postgres + Redis (example-only)
+- [x] Task 16.1.3 Provide docker-compose for Postgres + Redis (example-only) *(feat: docker-compose.e2e.test.ts; compose already present, test verifies up → run → JSON)*
   - Standard way to run the demo: `docker compose up -d` in examples/basic-app (or repo root); app connects via default PG_URL / REDIS_URL (e.g. localhost).
   - Test: `docker compose up -d` brings services up; `npm run example:run` (or equivalent) connects and prints JSON
 
-## 14.2 Capture demo (record NDJSON)
-- [ ] Task 14.2.1 Add capture runner script: `npm run example:capture`
+## 16.2 Capture demo (record NDJSON)
+- [ ] Task 16.2.1 Add capture runner script: `npm run example:capture`
   - Env:
     - `SOFTPROBE_MODE=CAPTURE`
     - `SOFTPROBE_CASSETTE=./examples/basic-app/softprobe-cassettes.ndjson` (or your chosen config path)
@@ -366,14 +450,14 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
       - (optional) inbound http record if you wrap the app as an HTTP server
   - Test: after capture run, cassette file exists and has ≥ 3 lines
 
-- [ ] Task 14.2.2 Add a test to validate “no span bloat” in capture demo
+- [ ] Task 16.2.2 Add a test to validate “no span bloat” in capture demo
   - Minimal approach:
     - assert the produced cassette includes payload bodies
     - assert captured spans (if exported/printed) do not contain large payload fields
   - Test: verify payload appears in NDJSON but not in span attributes output (if you emit spans)
 
-## 14.3 Replay demo (no live deps)
-- [ ] Task 14.3.1 Add replay runner script: `npm run example:replay`
+## 16.3 Replay demo (no live deps)
+- [ ] Task 16.3.1 Add replay runner script: `npm run example:replay`
   - Env:
     - `SOFTPROBE_MODE=REPLAY`
     - `SOFTPROBE_STRICT_REPLAY=1`
@@ -385,26 +469,26 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
     - Output JSON should match the capture run (or match a golden snapshot)
   - Test: with services stopped, replay run still succeeds and output matches snapshot
 
-- [ ] Task 14.3.2 Add strict-mode negative test (proves isolation)
+- [ ] Task 16.3.2 Add strict-mode negative test (proves isolation)
   - Modify the example flow to perform an extra, unrecorded call (e.g., different SQL or new URL)
   - Test: replay fails with strict error and does NOT attempt live network (assert passthrough not called)
 
-## 14.4 Custom matcher example (customer control)
-- [ ] Task 14.4.1 Add `examples/basic-app/custom-matcher.ts` demonstrating matcher injection
+## 16.4 Custom matcher example (customer control)
+- [ ] Task 16.4.1 Add `examples/basic-app/custom-matcher.ts` demonstrating matcher injection
   - Example behaviors (pick 1–2):
     - Override Redis GET for a specific key to return `null` (force cache miss)
     - Normalize dynamic HTTP query params (e.g., `?ts=`) by matching only path
     - Force a specific SQL to map to a specific recorded response regardless of call sequence
   - Test: unit test custom matcher is invoked before default matcher and wins
 
-- [ ] Task 14.4.2 Add “how to use custom matcher” snippet to README
+- [ ] Task 16.4.2 Add “how to use custom matcher” snippet to README
   - Include a complete code sample using:
     - `softprobe.runWithContext({ traceId, cassettePath }, async () => { ... })`
     - `softprobe.getActiveMatcher().use((span, records) => { ... })`
   - Test: docs lint (if any) or simple presence check
 
-## 14.5 Documentation polish (customer-facing)
-- [ ] Task 14.5.1 Add `examples/basic-app/README.md`
+## 16.5 Documentation polish (customer-facing)
+- [ ] Task 16.5.1 Add `examples/basic-app/README.md`
   - Must include:
     - prerequisites (node, docker)
     - start services
@@ -415,7 +499,7 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
     - custom matcher explanation
   - Test: smoke check: all commands referenced exist in package.json scripts
 
-- [ ] Task 14.5.2 Add top-level docs section “Quickstart: Record & Replay”
+- [ ] Task 16.5.2 Add top-level docs section “Quickstart: Record & Replay”
   - Link to the example
   - Show expected output snippets (short)
   - Test: docs build/lint if applicable
@@ -423,9 +507,11 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 ---
 
 ## Done Criteria (V4.1)
-- Matcher list model is the only matcher system in use.
-- Typed bindings exist for pg/redis/http.
-- Capture writes NDJSON via queue; payload never stored in span attributes.
-- Wrappers own strict vs dev behavior.
-- Optional topology matcher works as a matcher fn.
-- E2E child-process tests validate capture + replay + strict isolation.
+
+* Matcher list model is the only matcher system in use.
+* Typed bindings exist for pg/redis/http.
+* Capture writes NDJSON via queue; payload never stored in span attributes.
+* Wrappers own strict vs dev behavior.
+* Optional topology matcher works as a matcher fn.
+* E2E child-process tests validate capture + replay + strict isolation.
+* Server-side frameworks (Express/Fastify) support high-fidelity inbound capture and automatic mock injection.

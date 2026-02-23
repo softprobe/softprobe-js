@@ -73,11 +73,13 @@ export function clearReplayContext(): void {
 
 /**
  * Returns the active matcher (SemanticMatcher or SoftprobeMatcher) for the current
- * replay context, if any. Replay interceptors use this to resolve live calls to recorded spans.
+ * replay context, if any. In REPLAY mode without ALS context (e.g. server request), returns globalReplayMatcher.
  */
 export function getActiveMatcher(): SemanticMatcher | SoftprobeMatcher | undefined {
   const ctx = getReplayContext();
-  return ctx?.matcher;
+  if (ctx?.matcher) return ctx.matcher;
+  if (process.env.SOFTPROBE_MODE === 'REPLAY' && globalReplayMatcher) return globalReplayMatcher;
+  return undefined;
 }
 
 /**
@@ -90,6 +92,46 @@ export function getRecordedInboundResponse(): SoftprobeCassetteRecord | undefine
   return ctx?.inboundRecord;
 }
 
+/** Records loaded at REPLAY init (or set by tests). Used by getRecordsForTrace. */
+let replayRecordsCache: SoftprobeCassetteRecord[] = [];
+
+/**
+ * Sets the global replay records cache (used by REPLAY init or tests).
+ * Design §16.1: middleware primes matcher from records for the request traceId.
+ */
+export function setReplayRecordsCache(records: SoftprobeCassetteRecord[]): void {
+  replayRecordsCache = records;
+}
+
+/**
+ * Returns recorded cassette records for the given traceId.
+ * Used by server-side replay (e.g. Express middleware) to prime the matcher per request.
+ */
+export function getRecordsForTrace(traceId: string): SoftprobeCassetteRecord[] {
+  return replayRecordsCache.filter((r) => r.traceId === traceId);
+}
+
+/** Global matcher used in REPLAY mode when no ALS context (e.g. server request). Set by init. */
+let globalReplayMatcher: SoftprobeMatcher | undefined;
+
+/**
+ * Sets the global replay matcher (used by REPLAY init so getActiveMatcher returns it when ALS has no context).
+ */
+export function setGlobalReplayMatcher(matcher: SoftprobeMatcher | undefined): void {
+  globalReplayMatcher = matcher;
+}
+
+/**
+ * Primes the active matcher with records for the given traceId.
+ * Called by server middleware (Express/Fastify) when SOFTPROBE_MODE=REPLAY so subsequent outbound calls use the right cassette.
+ */
+export function activateReplayForContext(traceId: string): void {
+  const matcher = getActiveMatcher();
+  if (matcher && '_setRecords' in matcher) {
+    (matcher as SoftprobeMatcher)._setRecords(getRecordsForTrace(traceId));
+  }
+}
+
 export const softprobe = {
   runWithContext,
   getReplayContext,
@@ -97,4 +139,8 @@ export const softprobe = {
   clearReplayContext,
   getActiveMatcher,
   getRecordedInboundResponse,
+  getRecordsForTrace,
+  setReplayRecordsCache,
+  setGlobalReplayMatcher,
+  activateReplayForContext,
 };

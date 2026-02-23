@@ -776,6 +776,31 @@ export const softprobeFastifyPlugin = async (fastify: FastifyInstance) => {
 
 ```
 
+### Automatic Middleware Hooking
+When softprobe/init runs, it registers a "mutator" for known server frameworks. This mutator essentially "wraps" the framework's constructor or initialization method.
+
+For Express:
+Softprobe patches express.application.lazyrouter. When the first route or middleware is added to an Express app, Softprobe automatically pushes its softprobeExpressMiddleware to the top of the internal middleware stack (app._router.stack).
+
+For Fastify:
+Softprobe patches the Fastify factory function. When a new instance is created, it immediately calls fastify.addHook() for preHandler and onSend before the user code even has a chance to define routes.
+
+In `init.ts` logic, the `applyAutoInstrumentationMutator()` call handles this framework-specific "wrapping" based on the `SOFTPROBE_MODE`:
+
+```TypeScript
+// Inside softprobe/init
+if (mode === 'CAPTURE') {
+  // ... store setup ...
+  // This automatically finds Express/Fastify in node_modules and injects hooks
+  applyAutoInstrumentationMutator(); 
+}
+
+if (mode === 'REPLAY') {
+  // Replay patches also happen here synchronously (Task 11.1.3)
+  setupHttpReplayInterceptor(); 
+  // etc.
+}
+```
 ---
 
 ## 17) Implementation Checklist Refinement

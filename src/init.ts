@@ -11,6 +11,7 @@ if (mode === 'CAPTURE') {
   const { setCaptureStore } = require('./capture/store-accessor');
   const { CassetteStore } = require('./store/cassette-store');
   const { applyAutoInstrumentationMutator } = require('./capture/mutator');
+  const { applyFrameworkMutators } = require('./capture/framework-mutator');
 
   initCapture();
 
@@ -21,6 +22,7 @@ if (mode === 'CAPTURE') {
   process.on('beforeExit', () => store.flushOnExit());
 
   applyAutoInstrumentationMutator();
+  applyFrameworkMutators();
 }
 
 if (mode === 'REPLAY') {
@@ -34,8 +36,10 @@ if (mode === 'REPLAY') {
   const { setupRedisReplay } = require('./replay/redis');
   const { setupUndiciReplay } = require('./replay/undici');
   const { setupHttpReplayInterceptor } = require('./replay/http');
+  const { applyFrameworkMutators } = require('./capture/framework-mutator');
   setupPostgresReplay();
   setupRedisReplay();
   setupUndiciReplay();
   setupHttpReplayInterceptor();
+  applyFrameworkMutators();
 }
