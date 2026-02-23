@@ -1,3 +1,4 @@
+import type { Span } from '@opentelemetry/api';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 
 /**
@@ -10,6 +11,24 @@ export type MatcherResult =
   | { action: 'MOCK'; payload: unknown }
   | { action: 'CONTINUE' }
   | { action: 'PASSTHROUGH' };
+
+/**
+ * V4 matcher result: discriminated union. Wrappers branch on action; only MOCK carries payload.
+ * Design §7.1: first non-CONTINUE wins; matchers do not execute passthrough.
+ */
+export type MatcherAction =
+  | { action: 'MOCK'; payload: unknown }
+  | { action: 'PASSTHROUGH' }
+  | { action: 'CONTINUE' };
+
+/**
+ * V4 matcher function: (span, records) => MatcherAction. Used by SoftprobeMatcher list.
+ * Design §7.1: first non-CONTINUE return wins; matchers do not execute passthrough.
+ */
+export type MatcherFn = (
+  span: Span | undefined,
+  records: SoftprobeCassetteRecord[]
+) => MatcherAction;
 
 /** Custom matcher function. Evaluated before default tree matching. */
 export type CustomMatcherFn = (

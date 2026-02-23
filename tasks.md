@@ -50,11 +50,11 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
   - Test: valid record returns true; missing version returns false
 
 ## 1.2 Identifier builders (pure)
-- [ ] Task 1.2.1 Implement `httpIdentifier(method, url)`
+- [x] Task 1.2.1 Implement `httpIdentifier(method, url)` *(feat: identifier.ts; METHOD url)*
   - Test: `POST`, `https://a/b` => `POST https://a/b`
-- [ ] Task 1.2.2 Implement `redisIdentifier(cmd, args)`
+- [x] Task 1.2.2 Implement `redisIdentifier(cmd, args)` *(feat: CMD args joined; identifier.test)*
   - Test: `get`, `["k"]` => `GET k`
-- [ ] Task 1.2.3 Implement `pgIdentifier(sql)` (pass-through for now)
+- [x] Task 1.2.3 Implement `pgIdentifier(sql)` (pass-through for now) *(feat: pgIdentifier pass-through)*
   - Test: keeps input string exactly (normalization deferred)
 
 ---
@@ -62,21 +62,21 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 # 2) Matcher Model (v4 list-of-fns) — Atomic
 
 ## 2.1 MatcherAction + MatcherFn
-- [ ] Task 2.1.1 Define `MatcherAction` discriminated union
+- [x] Task 2.1.1 Define `MatcherAction` discriminated union *(feat: MatcherAction in schema.ts; matcher.types.test.ts)*
   - Test: compilation; `action` narrows payload fields
-- [ ] Task 2.1.2 Define `MatcherFn(span, records)`
+- [x] Task 2.1.2 Define `MatcherFn(span, records)` *(feat: MatcherFn in schema.ts; matcher.types.test)*
   - Test: compilation; signature matches intended use
 
 ## 2.2 SoftprobeMatcher class behavior
-- [ ] Task 2.2.1 `use(fn)` appends matcher fns
+- [x] Task 2.2.1 `use(fn)` appends matcher fns *(feat: SoftprobeMatcher in replay/softprobe-matcher.ts; match order test)*
   - Test: after 2 uses, internal list length is 2 (use a public-only behavior check, e.g., match order)
-- [ ] Task 2.2.2 `clear()` removes all matchers
+- [x] Task 2.2.2 `clear()` removes all matchers *(feat: clear() in SoftprobeMatcher)*
   - Test: after clear, match returns CONTINUE
-- [ ] Task 2.2.3 `_setRecords(records)` stores record list
+- [x] Task 2.2.3 `_setRecords(records)` stores record list *(test: fn receives list in softprobe-matcher.test)*
   - Test: when fn inspects records, it receives the new list
-- [ ] Task 2.2.4 `match()` returns first non-CONTINUE
+- [x] Task 2.2.4 `match()` returns first non-CONTINUE *(test: fn1 CONTINUE fn2 MOCK => MOCK)*
   - Test: fn1 CONTINUE, fn2 MOCK => MOCK
-- [ ] Task 2.2.5 `match()` returns CONTINUE when all CONTINUE
+- [x] Task 2.2.5 `match()` returns CONTINUE when all CONTINUE *(test: all CONTINUE => CONTINUE)*
   - Test: all CONTINUE => CONTINUE
 
 ---
@@ -86,25 +86,25 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 > All binding tests should use a **mock span** with a `setAttribute(k,v)` method and an `attributes` bag.
 
 ## 3.1 Shared helpers
-- [ ] Task 3.1.1 Create `testSpan()` helper for binding tests
+- [x] Task 3.1.1 Create `testSpan()` helper for binding tests *(feat: bindings/test-span.ts + test-span.test.ts)*
   - Test: calling `setAttribute` populates `attributes`
 
 ## 3.2 PostgresSpan
-- [ ] Task 3.2.1 Implement `PostgresSpan.tagQuery(sql, values?)`
+- [x] Task 3.2.1 Implement `PostgresSpan.tagQuery(sql, values?)` *(feat: bindings/postgres-span.ts; uses pgIdentifier)*
   - Test: sets protocol attr and identifier attr
-- [ ] Task 3.2.2 Implement `PostgresSpan.fromSpan(span)`
+- [x] Task 3.2.2 Implement `PostgresSpan.fromSpan(span)` *(feat: fromSpan + PostgresSpanData; sql=identifier, values=[])*
   - Test: returns `{protocol:"postgres", identifier, sql, values}` (whatever fields you choose) or null when protocol mismatched
 
 ## 3.3 RedisSpan
-- [ ] Task 3.3.1 Implement `RedisSpan.tagCommand(cmd, args)`
+- [x] Task 3.3.1 Implement `RedisSpan.tagCommand(cmd, args)` *(feat: bindings/redis-span.ts; redisIdentifier + args_json)*
   - Test: identifier uses `redisIdentifier` and args_json is JSON
-- [ ] Task 3.3.2 Implement `RedisSpan.fromSpan(span)`
+- [x] Task 3.3.2 Implement `RedisSpan.fromSpan(span)` *(feat: fromSpan + RedisSpanData; parses args_json)*
   - Test: parses args_json; returns null when missing cmd/identifier
 
 ## 3.4 HttpSpan
-- [ ] Task 3.4.1 Implement `HttpSpan.tagRequest(method, url, bodyText?)`
+- [x] Task 3.4.1 Implement `HttpSpan.tagRequest(method, url, bodyText?)` *(feat: bindings/http-span.ts; httpIdentifier + optional body)*
   - Test: identifier uses `httpIdentifier`; body stored optionally (small)
-- [ ] Task 3.4.2 Implement `HttpSpan.fromSpan(span)`
+- [x] Task 3.4.2 Implement `HttpSpan.fromSpan(span)` *(feat: fromSpan + HttpSpanData)*
   - Test: returns protocol+identifier or null
 
 ---
@@ -112,23 +112,23 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 # 4) Default Matcher (flat + sequence) — Atomic
 
 ## 4.1 Key extraction helper
-- [ ] Task 4.1.1 Implement `extractKeyFromSpan(span)` using typed bindings
+- [x] Task 4.1.1 Implement `extractKeyFromSpan(span)` using typed bindings *(feat: replay/extract-key.ts; pg/redis/http fromSpan)*
   - Test: pg/redis/http span yields `{protocol, identifier}`; unknown yields null
 
 ## 4.2 Candidate selection
-- [ ] Task 4.2.1 Implement `filterOutboundCandidates(records, key)`
+- [x] Task 4.2.1 Implement `filterOutboundCandidates(records, key)` *(feat: replay/extract-key.ts; type=outbound + protocol+identifier)*
   - Test: only outbound records with protocol+identifier returned
 
 ## 4.3 Call sequencing
-- [ ] Task 4.3.1 Implement `CallSeq` map (per protocol+identifier)
+- [x] Task 4.3.1 Implement `CallSeq` map (per protocol+identifier) *(feat: CallSeq.getAndIncrement in replay/extract-key.ts)*
   - Test: two calls pick candidates[0], then candidates[1]
-- [ ] Task 4.3.2 Wrap-around behavior (optional)
+- [x] Task 4.3.2 Wrap-around behavior (optional) *(feat: getAndIncrement(key, candidateCount) uses index % count)*
   - Test: if only 1 candidate, always returns it; if 2 and called 3 times returns 0,1,0 (or define your rule)
 
 ## 4.4 createDefaultMatcher()
-- [ ] Task 4.4.1 `createDefaultMatcher()` returns MatcherFn
+- [x] Task 4.4.1 `createDefaultMatcher()` returns MatcherFn *(feat: createDefaultMatcher in replay/extract-key.ts)*
   - Test: returns MOCK with `responsePayload` from picked record
-- [ ] Task 4.4.2 When no candidates, returns CONTINUE
+- [x] Task 4.4.2 When no candidates, returns CONTINUE *(test: empty candidates => CONTINUE)*
   - Test: empty candidates => CONTINUE
 
 ---
