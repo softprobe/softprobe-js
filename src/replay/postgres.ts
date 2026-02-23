@@ -8,13 +8,20 @@ import shimmer from 'shimmer';
 import type { SemanticMatcher } from './matcher';
 import { softprobe } from '../api';
 
+const FATAL_IMPORT_ORDER =
+  "[Softprobe FATAL] OTel already wrapped pg. Import 'softprobe/init' BEFORE OTel initialization.";
+
 /**
  * Sets up Postgres replay by wrapping pg.Client.prototype.query. When replay context
  * has a matcher, queries are intercepted and return the recorded response payload
  * (rows/rowCount). If no matcher or no match, throws per AC4 (unmocked query).
+ * Throws fatally if OTel wrapped pg first (import-order guard).
  */
 export function setupPostgresReplay(): void {
   const pg = require('pg');
+  if ((pg.Client.prototype.query as { __wrapped?: boolean }).__wrapped) {
+    throw new Error(FATAL_IMPORT_ORDER);
+  }
   shimmer.wrap(
     pg.Client.prototype,
     'query',

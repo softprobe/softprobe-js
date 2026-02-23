@@ -210,7 +210,7 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 > Each wrapper suite should validate 3 paths: MOCK / PASSTHROUGH / CONTINUE (strict vs dev).
 
 ## 9.1 Import-order guard (pg)
-- [ ] Task 9.1.1 Detect OTel-wrapped pg query and throw fatal
+- [x] Task 9.1.1 Detect OTel-wrapped pg query and throw fatal *(feat: __wrapped check in setupPostgresReplay; import-order-guard.test.ts)*
   - Test: mark query fn with `__wrapped = true`, assert throw message includes “import softprobe/init BEFORE OTel”
 
 ## 9.2 Postgres replay wrapper
