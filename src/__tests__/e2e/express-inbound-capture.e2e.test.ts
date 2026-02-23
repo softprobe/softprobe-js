@@ -6,7 +6,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { runServer, waitForServer } from './run-child';
+import { runServer, waitForServer, closeServer } from './run-child';
 import { loadNdjson } from '../../store/load-ndjson';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
 
@@ -54,12 +54,12 @@ describe('E2E Express inbound capture (Task 14.4.1)', () => {
       const res = await fetch(`http://127.0.0.1:${port}/`);
       expect(res.ok).toBe(true);
       await fetch(`http://127.0.0.1:${port}/exit`).catch(() => {});
-      await new Promise<void>((resolve) => {
-        child.on('exit', () => resolve());
-        setTimeout(resolve, 3000);
+      await new Promise<void>((r) => {
+        child.once('exit', r);
+        setTimeout(r, 3000);
       });
     } finally {
-      if (child.exitCode === null) child.kill('SIGKILL');
+      await closeServer(child);
     }
 
     expect(fs.existsSync(cassettePath)).toBe(true);

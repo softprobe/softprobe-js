@@ -359,8 +359,8 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 * Test: run express app in `CAPTURE`; hit one route; NDJSON contains inbound record (status/body) and at least one outbound record (http/redis/postgres) *(express-inbound-capture.e2e.test + runServer/waitForServer + /exit flush)*
 
 
-* [ ] Task 14.4.2 Express replay E2E succeeds with dependencies offline *(feat: src/__tests__/e2e/express-inbound-replay.e2e.test.ts + helper worker)*
-* Test: run express app in `REPLAY` + strict mode with Postgres/Redis/http dependency disabled; request succeeds from cassette only
+* [x] Task 14.4.2 Express replay E2E succeeds with dependencies offline *(feat: src/__tests__/e2e/express-inbound-replay.e2e.test.ts + helper worker)*
+* Test: run express app in `REPLAY` + strict mode with Postgres/Redis/http dependency disabled; request succeeds from cassette only *(shared express-inbound-worker; HTTP replay passes span override; toTextBody returns {} when body missing; closeServer for handles)*
 
 
 * [ ] Task 14.4.3 Fastify capture/replay E2E parity *(feat: src/__tests__/e2e/fastify-inbound-cassette.e2e.test.ts + helper worker)*

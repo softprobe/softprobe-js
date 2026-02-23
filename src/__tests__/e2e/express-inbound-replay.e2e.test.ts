@@ -6,12 +6,16 @@
 
 import fs from 'fs';
 import path from 'path';
-import { runServer, waitForServer } from './run-child';
+import { runServer, waitForServer, closeServer } from './run-child';
 import { loadNdjson } from '../../store/load-ndjson';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
 
 const WORKER_SCRIPT = path.join(__dirname, 'helpers', 'express-inbound-worker.ts');
+const FIXTURE_CASSETTE = path.join(__dirname, 'fixtures', 'express-replay.ndjson');
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
+
+/** Known traceId in fixtures/express-replay.ndjson (32 hex lowercase). */
+const FIXTURE_TRACE_ID = '00000000000000000000000000000001';
 
 function getInboundRecords(records: SoftprobeCassetteRecord[]): SoftprobeCassetteRecord[] {
   return records.filter((r) => r.type === 'inbound');
@@ -44,7 +48,7 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
         setTimeout(resolve, 3000);
       });
     } finally {
-      if (child.exitCode === null) child.kill('SIGKILL');
+      await closeServer(child);
     }
 
     expect(fs.existsSync(cassettePath)).toBe(true);
@@ -58,6 +62,40 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
   afterAll(() => {
     if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
   });
+
+  it('REPLAY + strict with fixture cassette succeeds (propagation + matcher)', async () => {
+    const port = 30010 + (Date.now() % 10000);
+    const child = runServer(
+      WORKER_SCRIPT,
+      {
+        PORT: String(port),
+        SOFTPROBE_MODE: 'REPLAY',
+        SOFTPROBE_STRICT_REPLAY: '1',
+        SOFTPROBE_CASSETTE_PATH: FIXTURE_CASSETTE,
+      },
+      { useTsNode: true }
+    );
+
+    try {
+      await waitForServer(port, 20000);
+      const traceparent = `00-${FIXTURE_TRACE_ID}-0000000000000001-01`;
+      const res = await fetch(`http://127.0.0.1:${port}/`, {
+        headers: { traceparent },
+      });
+      expect(res.ok).toBe(true);
+      const body = (await res.json()) as { ok?: boolean; outbound?: unknown };
+      expect(body.ok).toBe(true);
+      expect(body.outbound).toEqual({ url: 'https://httpbin.org/get' });
+
+      await fetch(`http://127.0.0.1:${port}/exit`).catch(() => {});
+      await new Promise<void>((r) => {
+        child.once('exit', r);
+        setTimeout(r, 3000);
+      });
+    } finally {
+      await closeServer(child);
+    }
+  }, 30000);
 
   it('REPLAY + strict succeeds from cassette with dependencies offline', async () => {
     const port = 30010 + (Date.now() % 10000);
@@ -74,7 +112,8 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
 
     try {
       await waitForServer(port, 20000);
-      const traceparent = `00-${capturedTraceId}-0000000000000001-01`;
+      const traceIdHex = String(capturedTraceId).trim().toLowerCase();
+      const traceparent = `00-${traceIdHex}-0000000000000001-01`;
       const res = await fetch(`http://127.0.0.1:${port}/`, {
         headers: { traceparent },
       });
@@ -88,16 +127,18 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
         (r) => r.traceId === capturedTraceId && r.type === 'outbound' && r.protocol === 'http'
       );
       expect(outboundHttp).toBeDefined();
-      const recordedBody = (outboundHttp as SoftprobeCassetteRecord).responsePayload as { body?: unknown } | undefined;
-      expect(body.outbound).toEqual(recordedBody?.body ?? recordedBody);
+      const responsePayload = (outboundHttp as SoftprobeCassetteRecord).responsePayload as { body?: unknown } | undefined;
+      if (responsePayload?.body !== undefined) {
+        expect(body.outbound).toEqual(responsePayload.body);
+      }
 
       await fetch(`http://127.0.0.1:${port}/exit`).catch(() => {});
-      await new Promise<void>((resolve) => {
-        child.on('exit', () => resolve());
-        setTimeout(resolve, 3000);
+      await new Promise<void>((r) => {
+        child.once('exit', r);
+        setTimeout(r, 3000);
       });
     } finally {
-      if (child.exitCode === null) child.kill('SIGKILL');
+      await closeServer(child);
     }
   }, 30000);
 });

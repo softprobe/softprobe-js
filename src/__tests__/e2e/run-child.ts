@@ -42,9 +42,8 @@ export function runChild(
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 
 /**
- * Spawns a long-running Node script (e.g. Express server). Caller must kill the
- * returned child when done. Used for E2E where the test hits the server then
- * stops it (e.g. Task 14.4.1 Express capture E2E).
+ * Spawns a long-running Node script (e.g. Express server). Caller must call
+ * closeServer(child) when done so pipes are destroyed and Jest can exit.
  */
 export function runServer(
   scriptPath: string,
@@ -61,6 +60,23 @@ export function runServer(
     stdio: ['ignore', 'pipe', 'pipe'],
     cwd: PROJECT_ROOT,
   });
+}
+
+/**
+ * Kills the child if still running, waits for exit, then destroys stdio streams
+ * so Jest does not report open PIPEWRAP handles.
+ */
+export async function closeServer(child: ChildProcess): Promise<void> {
+  if (child.exitCode === null) {
+    child.kill('SIGKILL');
+    await new Promise<void>((r) => {
+      child.once('exit', r);
+      setTimeout(r, 5000);
+    });
+  }
+  child.stdin?.destroy();
+  child.stdout?.destroy();
+  child.stderr?.destroy();
 }
 
 /** Poll until GET http://127.0.0.1:port/ returns 2xx or timeout. */

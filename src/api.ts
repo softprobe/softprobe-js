@@ -106,9 +106,11 @@ export function setReplayRecordsCache(records: SoftprobeCassetteRecord[]): void 
 /**
  * Returns recorded cassette records for the given traceId.
  * Used by server-side replay (e.g. Express middleware) to prime the matcher per request.
+ * Compares traceIds in lowercase so W3C traceparent propagation (lowercase) matches cassette records.
  */
 export function getRecordsForTrace(traceId: string): SoftprobeCassetteRecord[] {
-  return replayRecordsCache.filter((r) => r.traceId === traceId);
+  const normalized = traceId.toLowerCase();
+  return replayRecordsCache.filter((r) => r.traceId.toLowerCase() === normalized);
 }
 
 /** Global matcher used in REPLAY mode when no ALS context (e.g. server request). Set by init. */

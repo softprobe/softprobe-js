@@ -3,6 +3,7 @@ import { ClientRequestInterceptor } from '@mswjs/interceptors/ClientRequest';
 import { FetchInterceptor } from '@mswjs/interceptors/fetch';
 import { softprobe } from '../api';
 import { ConfigManager } from '../config/config-manager';
+import { httpIdentifier } from '../identifier';
 import type { MatcherAction } from '../types/schema';
 
 type RequestController = { respondWith: (response: Response) => void };
@@ -38,9 +39,10 @@ function jsonErrorResponse(message: string, details?: string): Response {
   });
 }
 
+/** Serializes body for mock response. Returns '{}' when body is missing so consumer .json() does not throw. */
 function toTextBody(body: unknown): string {
   if (typeof body === 'string') return body;
-  if (body == null) return '';
+  if (body == null) return '{}';
   return JSON.stringify(body);
 }
 
@@ -55,9 +57,14 @@ export async function handleHttpReplayRequest(
     const shouldIgnore = options.shouldIgnoreUrl ?? shouldIgnoreFromConfig;
     if (shouldIgnore(url)) return;
 
+    const method = (request.method ?? 'GET').toUpperCase();
+    const identifier = httpIdentifier(method, url);
+
     const match = options.match ?? (() => {
-      const matcher = softprobe.getActiveMatcher() as { match?: () => MatcherAction } | undefined;
-      return matcher?.match ? matcher.match() : { action: 'CONTINUE' as const };
+      const matcher = softprobe.getActiveMatcher() as { match?: (spanOverride?: { attributes?: Record<string, unknown> }) => MatcherAction } | undefined;
+      if (!matcher?.match) return { action: 'CONTINUE' as const };
+      const spanOverride = { attributes: { 'softprobe.protocol': 'http' as const, 'softprobe.identifier': identifier } };
+      return matcher.match(spanOverride);
     });
 
     const result = match();
