@@ -54,17 +54,28 @@ export function applyFrameworkMutators(): void {
     const result = originalRequire.apply(this, arguments as unknown as [id: string]);
     try {
       if (id === 'express') patchExpress(result);
-      if (id === 'fastify' && typeof result === 'function') {
+      if (id === 'fastify') {
         const ModLoad = nodeRequire('module') as { _resolveFilename: (id: string, parent: Module) => string };
         const path = ModLoad._resolveFilename(id, this as Module);
         const mod = req.cache?.[path];
         if (mod) {
-          const orig = mod.exports as (options?: unknown) => Promise<{ register: (p: unknown) => Promise<void> }>;
-          (mod as NodeModule).exports = function fastifyWrapper(this: unknown, options?: unknown) {
-            return Promise.resolve(orig.call(this, options)).then((app) =>
-              app.register(softprobeFastifyPlugin).then(() => app)
-            );
-          };
+          const orig = mod.exports as unknown;
+          const origFactory = (typeof orig === 'function' ? orig : (orig as Record<string, unknown>).fastify ?? (orig as Record<string, unknown>).default) as (opts?: unknown) => unknown;
+          if (typeof origFactory !== 'function') return result;
+          const wrapped = fastifyWrapper(origFactory as (o?: unknown) => Promise<{ register: (p: unknown) => Promise<void> }>);
+          (wrapped as unknown as Record<string, unknown>).fastify = wrapped;
+          (wrapped as unknown as Record<string, unknown>).default = wrapped;
+          if (typeof orig === 'object' && orig !== null) {
+            const o = orig as Record<string, unknown>;
+            for (const k of Object.keys(o)) {
+              if (k !== 'fastify' && k !== 'default' && Object.prototype.hasOwnProperty.call(o, k)) {
+                (wrapped as unknown as Record<string, unknown>)[k] = o[k];
+              }
+            }
+          }
+          (mod as NodeModule).exports = typeof orig === 'object' && orig !== null
+            ? Object.assign({}, orig as object, { fastify: wrapped, default: wrapped })
+            : wrapped;
           return (mod as NodeModule).exports;
         }
       }
@@ -89,14 +100,22 @@ export function applyFrameworkMutators(): void {
     if (key.endsWith('node_modules/fastify/fastify.js') || key.endsWith('node_modules/fastify/build/fastify.js')) {
       try {
         const mod = cache[key as keyof typeof cache] as NodeModule & { exports: unknown };
-        const ex = mod?.exports;
-        const F = ex && typeof ex === 'object' && ex !== null && 'default' in ex
-          ? (ex as { default: (o?: unknown) => Promise<{ register: (p: unknown) => Promise<void> }> }).default
-          : (ex as (options?: unknown) => Promise<{ register: (p: unknown) => Promise<void> }>);
+        const ex = mod?.exports as unknown;
+        const F = (typeof ex === 'function' ? ex : (ex as Record<string, unknown>)?.fastify ?? (ex as Record<string, unknown>)?.default) as (opts?: unknown) => unknown;
         if (typeof F === 'function') {
-          const wrapped = fastifyWrapper(F);
-          mod.exports = ex && typeof ex === 'object' && ex !== null && 'default' in ex
-            ? Object.assign({}, ex, { default: wrapped })
+          const wrapped = fastifyWrapper(F as (o?: unknown) => Promise<{ register: (p: unknown) => Promise<void> }>);
+          (wrapped as unknown as Record<string, unknown>).fastify = wrapped;
+          (wrapped as unknown as Record<string, unknown>).default = wrapped;
+          if (typeof ex === 'object' && ex !== null) {
+            const o = ex as Record<string, unknown>;
+            for (const k of Object.keys(o)) {
+              if (k !== 'fastify' && k !== 'default' && Object.prototype.hasOwnProperty.call(o, k)) {
+                (wrapped as unknown as Record<string, unknown>)[k] = o[k];
+              }
+            }
+          }
+          mod.exports = typeof ex === 'object' && ex !== null
+            ? Object.assign({}, ex as object, { fastify: wrapped, default: wrapped })
             : wrapped;
         }
       } catch (_) {}
@@ -109,8 +128,10 @@ function fastifyWrapper(
   original: (options?: unknown) => Promise<{ register: (p: unknown) => Promise<void> }>
 ): (options?: unknown) => Promise<{ register: (p: unknown) => Promise<void> }> {
   return function (this: unknown, options?: unknown) {
-    return Promise.resolve(original.call(this, options)).then((app) =>
-      app.register(softprobeFastifyPlugin).then(() => app)
-    );
+    return Promise.resolve(original.call(this, options)).then((app) => {
+      const fp = nodeRequire?.('fastify-plugin');
+      const plugin = typeof fp === 'function' ? fp(softprobeFastifyPlugin) : softprobeFastifyPlugin;
+      return app.register(plugin).then(() => app);
+    });
   };
 }

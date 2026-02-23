@@ -363,12 +363,12 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 * Test: run express app in `REPLAY` + strict mode with Postgres/Redis/http dependency disabled; request succeeds from cassette only *(shared express-inbound-worker; HTTP replay passes span override; toTextBody returns {} when body missing; closeServer for handles)*
 
 
-* [ ] Task 14.4.3 Fastify capture/replay E2E parity *(feat: src/__tests__/e2e/fastify-inbound-cassette.e2e.test.ts + helper worker)*
+* [x] Task 14.4.3 Fastify capture/replay E2E parity *(feat: fastify-inbound-cassette.e2e.test.ts + fastify-inbound-worker; mutator .fastify/.default + fastify-plugin)*
 * Test: same route flow in Fastify captures inbound payload and replays without live dependencies
 
 
-* [ ] Task 14.4.4 Server-side strict negative E2E proves network isolation *(feat: src/__tests__/e2e/server-inbound-strict-negative.e2e.test.ts)*
-* Test: replay request with an unrecorded outbound call fails deterministically and verifies passthrough/network call is not invoked
+* [x] Task 14.4.4 Server-side strict negative E2E proves network isolation *(feat: server-inbound-strict-negative.e2e.test.ts; GET /unrecorded + propagate 500)*
+* Test: replay request with an unrecorded outbound call fails deterministically and verifies passthrough/network call is not invoked, use the same Fastify app as Task 14.4.3
 
 ---
 # 15) Automated Replay Coordination & Comparison — Atomic

@@ -9343,5 +9343,3033 @@
         "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
       }
     }
+  ],
+  "b2ca61e797ff476758e416fbde555e22": [
+    {
+      "traceId": "b2ca61e797ff476758e416fbde555e22",
+      "spanId": "d7f97005968d3d6d",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "0be534c6bc35e769730eab89a4b22cd7": [
+    {
+      "traceId": "0be534c6bc35e769730eab89a4b22cd7",
+      "spanId": "6b81d25d03523eab",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "9cca5051e5c1032c65dc78397bf2d7f7": [
+    {
+      "traceId": "9cca5051e5c1032c65dc78397bf2d7f7",
+      "spanId": "34d7bf4fff405c4e",
+      "parentSpanId": "5b152719ef5ade21",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "3.93.97.64",
+        "peer[1].ipv4": "52.6.202.211",
+        "peer[2].ipv4": "52.200.102.227",
+        "peer[3].ipv4": "3.94.221.249",
+        "peer[4].ipv4": "44.195.71.76",
+        "peer[5].ipv4": "52.202.125.113"
+      }
+    },
+    {
+      "traceId": "9cca5051e5c1032c65dc78397bf2d7f7",
+      "spanId": "7fe570c3ecd0ffd1",
+      "parentSpanId": "5b152719ef5ade21",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.93.97.64",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "9cca5051e5c1032c65dc78397bf2d7f7",
+      "spanId": "5b152719ef5ade21",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:35837/",
+        "http.host": "127.0.0.1:35837",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 35837,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56516,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "b83bebb256a49780962696f169aa7552": [
+    {
+      "traceId": "b83bebb256a49780962696f169aa7552",
+      "spanId": "9ad584caf460f40e",
+      "parentSpanId": "4fcaf9082e9a293c",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.93.97.64",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "b83bebb256a49780962696f169aa7552",
+      "spanId": "4fcaf9082e9a293c",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:35837/",
+        "http.host": "127.0.0.1:35837",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 35837,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56519,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "1c0fc0e1f1e6628a05fbebd07945eb1a": [
+    {
+      "traceId": "1c0fc0e1f1e6628a05fbebd07945eb1a",
+      "spanId": "c4259555a8cc3731",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:35837/exit",
+        "http.host": "127.0.0.1:35837",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 35837,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56516,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "de93303a9ff67f43f11e3360a8fd558c": [
+    {
+      "traceId": "de93303a9ff67f43f11e3360a8fd558c",
+      "spanId": "2357e9c8e097fe91",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "8e36cba5854c992048ba208781c41c98": [
+    {
+      "traceId": "8e36cba5854c992048ba208781c41c98",
+      "spanId": "9aaf25d0095ea125",
+      "parentSpanId": "c7899f3c9b01fbe8",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "52.6.202.211",
+        "peer[1].ipv4": "52.200.102.227",
+        "peer[2].ipv4": "3.94.221.249",
+        "peer[3].ipv4": "44.195.71.76",
+        "peer[4].ipv4": "52.202.125.113",
+        "peer[5].ipv4": "3.93.97.64"
+      }
+    },
+    {
+      "traceId": "8e36cba5854c992048ba208781c41c98",
+      "spanId": "73b14f750104e5e6",
+      "parentSpanId": "c7899f3c9b01fbe8",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "52.6.202.211",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "8e36cba5854c992048ba208781c41c98",
+      "spanId": "c7899f3c9b01fbe8",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:31335/",
+        "http.host": "127.0.0.1:31335",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 31335,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56541,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "d0ac25a4b6cdb5e75cce1475890acec6": [
+    {
+      "traceId": "d0ac25a4b6cdb5e75cce1475890acec6",
+      "spanId": "de39d81785eeaba5",
+      "parentSpanId": "9713c00995a6fc17",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "52.6.202.211",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "d0ac25a4b6cdb5e75cce1475890acec6",
+      "spanId": "9713c00995a6fc17",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:31335/",
+        "http.host": "127.0.0.1:31335",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 31335,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56543,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "8d315562c6b935cfc09025168dedef17": [
+    {
+      "traceId": "8d315562c6b935cfc09025168dedef17",
+      "spanId": "901c2b97ac6b1773",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:31335/exit",
+        "http.host": "127.0.0.1:31335",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 31335,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56541,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "4ae9371cf5b9f20eb3808a194b64741a": [
+    {
+      "traceId": "4ae9371cf5b9f20eb3808a194b64741a",
+      "spanId": "7cd2660db87adb47",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "3742244fcbbe1f8a73099f1f23d68536": [
+    {
+      "traceId": "3742244fcbbe1f8a73099f1f23d68536",
+      "spanId": "e36ba9d360d1cdb8",
+      "parentSpanId": "296feba339e4b8b7",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "44.195.71.76",
+        "peer[1].ipv4": "52.6.202.211",
+        "peer[2].ipv4": "52.200.102.227",
+        "peer[3].ipv4": "3.94.221.249",
+        "peer[4].ipv4": "52.202.125.113",
+        "peer[5].ipv4": "3.93.97.64"
+      }
+    },
+    {
+      "traceId": "3742244fcbbe1f8a73099f1f23d68536",
+      "spanId": "5579720b5fd4a452",
+      "parentSpanId": "296feba339e4b8b7",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "44.195.71.76",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "3742244fcbbe1f8a73099f1f23d68536",
+      "spanId": "296feba339e4b8b7",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:33494/",
+        "http.host": "127.0.0.1:33494",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 33494,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56565,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "cb26f3a930c0a3de632dcb31aeb06bfa": [
+    {
+      "traceId": "cb26f3a930c0a3de632dcb31aeb06bfa",
+      "spanId": "8803cc8b8fc76f52",
+      "parentSpanId": "0b1ed3111495cafe",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "44.195.71.76",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "cb26f3a930c0a3de632dcb31aeb06bfa",
+      "spanId": "0b1ed3111495cafe",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:33494/",
+        "http.host": "127.0.0.1:33494",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 33494,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56567,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "2c56e5cb4fc8934935615aad0c15eced": [
+    {
+      "traceId": "2c56e5cb4fc8934935615aad0c15eced",
+      "spanId": "0eab5a12c750028c",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:33494/exit",
+        "http.host": "127.0.0.1:33494",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 33494,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56565,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "5c371c5db3c1d9b8b4043cb7f004ddef": [
+    {
+      "traceId": "5c371c5db3c1d9b8b4043cb7f004ddef",
+      "spanId": "41342e003394b02b",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "dfd56e7292286faceec5a14615415ad3": [
+    {
+      "traceId": "dfd56e7292286faceec5a14615415ad3",
+      "spanId": "0e47c3a8850504e5",
+      "parentSpanId": "7d7df4729bd7d22d",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "52.6.202.211",
+        "peer[1].ipv4": "52.200.102.227",
+        "peer[2].ipv4": "3.94.221.249",
+        "peer[3].ipv4": "52.202.125.113",
+        "peer[4].ipv4": "3.93.97.64",
+        "peer[5].ipv4": "44.195.71.76"
+      }
+    },
+    {
+      "traceId": "dfd56e7292286faceec5a14615415ad3",
+      "spanId": "23b395b0f9afdb9e",
+      "parentSpanId": "7d7df4729bd7d22d",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "52.6.202.211",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "dfd56e7292286faceec5a14615415ad3",
+      "spanId": "7d7df4729bd7d22d",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:37896/",
+        "http.host": "127.0.0.1:37896",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 37896,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56591,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "d2f5b6b99ccde20e1fbc52a34d94e99d": [
+    {
+      "traceId": "d2f5b6b99ccde20e1fbc52a34d94e99d",
+      "spanId": "3a8178d1b00c458e",
+      "parentSpanId": "c73bd698496d6e16",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "52.6.202.211",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "d2f5b6b99ccde20e1fbc52a34d94e99d",
+      "spanId": "c73bd698496d6e16",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:37896/",
+        "http.host": "127.0.0.1:37896",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 37896,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56593,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "1e3d419448591a4c174392822d4130e4": [
+    {
+      "traceId": "1e3d419448591a4c174392822d4130e4",
+      "spanId": "a450b85d705a3ac8",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:37896/exit",
+        "http.host": "127.0.0.1:37896",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 37896,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56591,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "41f20968b8073d3a1d094dc96d7b5390": [
+    {
+      "traceId": "41f20968b8073d3a1d094dc96d7b5390",
+      "spanId": "915f960864e0673e",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "e854be8bbefb6d64e244eb6966b1d674": [
+    {
+      "traceId": "e854be8bbefb6d64e244eb6966b1d674",
+      "spanId": "53723222b7454ba3",
+      "parentSpanId": "4970a672e4953f81",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "44.195.71.76",
+        "peer[1].ipv4": "3.93.97.64",
+        "peer[2].ipv4": "52.202.125.113",
+        "peer[3].ipv4": "52.6.202.211",
+        "peer[4].ipv4": "3.94.221.249",
+        "peer[5].ipv4": "52.200.102.227"
+      }
+    },
+    {
+      "traceId": "e854be8bbefb6d64e244eb6966b1d674",
+      "spanId": "77c6f7e635e54c49",
+      "parentSpanId": "4970a672e4953f81",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "44.195.71.76",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "e854be8bbefb6d64e244eb6966b1d674",
+      "spanId": "4970a672e4953f81",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:36761/",
+        "http.host": "127.0.0.1:36761",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 36761,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56658,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "553cf35341fb5f09a0032569ee0c281f": [
+    {
+      "traceId": "553cf35341fb5f09a0032569ee0c281f",
+      "spanId": "51965c3fdac68aca",
+      "parentSpanId": "6cd8a1119075e697",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "44.195.71.76",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "553cf35341fb5f09a0032569ee0c281f",
+      "spanId": "6cd8a1119075e697",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:36761/",
+        "http.host": "127.0.0.1:36761",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 36761,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56660,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "0dbfb24aa461b3bcbe953a2e2a144461": [
+    {
+      "traceId": "0dbfb24aa461b3bcbe953a2e2a144461",
+      "spanId": "5f1ecfa877efc5e4",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:36761/exit",
+        "http.host": "127.0.0.1:36761",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 36761,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56658,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "55abeb596e28fc37b8ff8906cb33a83b": [
+    {
+      "traceId": "55abeb596e28fc37b8ff8906cb33a83b",
+      "spanId": "d9748b5c2078b460",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "7a24f847075920c18d8f11e173bdb3f2": [
+    {
+      "traceId": "7a24f847075920c18d8f11e173bdb3f2",
+      "spanId": "e9716be0c52efd10",
+      "parentSpanId": "440aa26f1dbf2325",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "3.93.97.64",
+        "peer[1].ipv4": "52.202.125.113",
+        "peer[2].ipv4": "52.6.202.211",
+        "peer[3].ipv4": "3.94.221.249",
+        "peer[4].ipv4": "52.200.102.227",
+        "peer[5].ipv4": "44.195.71.76"
+      }
+    },
+    {
+      "traceId": "7a24f847075920c18d8f11e173bdb3f2",
+      "spanId": "bd725e86a44e4ad5",
+      "parentSpanId": "440aa26f1dbf2325",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.93.97.64",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "7a24f847075920c18d8f11e173bdb3f2",
+      "spanId": "440aa26f1dbf2325",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:31351/",
+        "http.host": "127.0.0.1:31351",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 31351,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56680,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "c4699ca36f32fb613279c332bfba2bc5": [
+    {
+      "traceId": "c4699ca36f32fb613279c332bfba2bc5",
+      "spanId": "2234695fbee0ee46",
+      "parentSpanId": "8e2eed441bb142a1",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.93.97.64",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "c4699ca36f32fb613279c332bfba2bc5",
+      "spanId": "8e2eed441bb142a1",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:31351/",
+        "http.host": "127.0.0.1:31351",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 31351,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56682,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "fa757ed7f55bbadeef6905c04a14a8a0": [
+    {
+      "traceId": "fa757ed7f55bbadeef6905c04a14a8a0",
+      "spanId": "f180e6da60003a5e",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:31351/exit",
+        "http.host": "127.0.0.1:31351",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 31351,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56680,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "3010ee4d4d400d7aaf6ad7a41e9afdf9": [
+    {
+      "traceId": "3010ee4d4d400d7aaf6ad7a41e9afdf9",
+      "spanId": "d686d6a6c01a65e0",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "8acbc1236785ab01c625c2563678612f": [
+    {
+      "traceId": "8acbc1236785ab01c625c2563678612f",
+      "spanId": "50fec35fcc9f7a8f",
+      "parentSpanId": "76add98e6da94a0b",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "44.195.71.76",
+        "peer[1].ipv4": "3.93.97.64",
+        "peer[2].ipv4": "52.202.125.113",
+        "peer[3].ipv4": "52.6.202.211",
+        "peer[4].ipv4": "3.94.221.249",
+        "peer[5].ipv4": "52.200.102.227"
+      }
+    },
+    {
+      "traceId": "8acbc1236785ab01c625c2563678612f",
+      "spanId": "2491c7a9dba56d92",
+      "parentSpanId": "76add98e6da94a0b",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "44.195.71.76",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "8acbc1236785ab01c625c2563678612f",
+      "spanId": "76add98e6da94a0b",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:37832/",
+        "http.host": "127.0.0.1:37832",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 37832,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56712,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "3f423fc0ab3a24ef487a15b8809706c7": [
+    {
+      "traceId": "3f423fc0ab3a24ef487a15b8809706c7",
+      "spanId": "477d9f1fa7e3e8c0",
+      "parentSpanId": "3cf2ab41e3f1cc27",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "44.195.71.76",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "3f423fc0ab3a24ef487a15b8809706c7",
+      "spanId": "3cf2ab41e3f1cc27",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:37832/",
+        "http.host": "127.0.0.1:37832",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 37832,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56714,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "e1afe5786e6cca7cdadbacaa15e3fb42": [
+    {
+      "traceId": "e1afe5786e6cca7cdadbacaa15e3fb42",
+      "spanId": "ec746e19b1d15ff4",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:37832/exit",
+        "http.host": "127.0.0.1:37832",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 37832,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56712,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "056955463c1a5ef954d3bcdba9fd2f82": [
+    {
+      "traceId": "056955463c1a5ef954d3bcdba9fd2f82",
+      "spanId": "e3c18ffe45bc1a8c",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "514eb40584b3a3e98ae754be58d858ad": [
+    {
+      "traceId": "514eb40584b3a3e98ae754be58d858ad",
+      "spanId": "87f412cd2e8228ee",
+      "parentSpanId": "72b2631f212ed3f4",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "3.93.97.64",
+        "peer[1].ipv4": "52.202.125.113",
+        "peer[2].ipv4": "52.6.202.211",
+        "peer[3].ipv4": "3.94.221.249",
+        "peer[4].ipv4": "52.200.102.227",
+        "peer[5].ipv4": "44.195.71.76"
+      }
+    },
+    {
+      "traceId": "514eb40584b3a3e98ae754be58d858ad",
+      "spanId": "3f7e69dade2c4173",
+      "parentSpanId": "72b2631f212ed3f4",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.93.97.64",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "514eb40584b3a3e98ae754be58d858ad",
+      "spanId": "72b2631f212ed3f4",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:33384/",
+        "http.host": "127.0.0.1:33384",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 33384,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56736,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "802b284125b6e76a083a575bfd576ba1": [
+    {
+      "traceId": "802b284125b6e76a083a575bfd576ba1",
+      "spanId": "e6d8f027b1ed2d54",
+      "parentSpanId": "b07c52321087b71c",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.93.97.64",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "802b284125b6e76a083a575bfd576ba1",
+      "spanId": "b07c52321087b71c",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:33384/",
+        "http.host": "127.0.0.1:33384",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 33384,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56738,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "11caf74b8161bdbbe030f2e18f485bdc": [
+    {
+      "traceId": "11caf74b8161bdbbe030f2e18f485bdc",
+      "spanId": "f9286f5c4d531c0b",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:33384/exit",
+        "http.host": "127.0.0.1:33384",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 33384,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56736,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "e2555bca98971c782a229ca1cdfff0fe": [
+    {
+      "traceId": "e2555bca98971c782a229ca1cdfff0fe",
+      "spanId": "41f7752d46bf2b1f",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "dc6101fba9b9880ba75acda5833aa31b": [
+    {
+      "traceId": "dc6101fba9b9880ba75acda5833aa31b",
+      "spanId": "b5680a65d2b2551c",
+      "parentSpanId": "6e718b0be9836cb2",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "httpbin.org",
+        "net.peer.port": 443,
+        "net.peer.ip": "44.195.71.76",
+        "net.host.ip": "10.0.0.188",
+        "net.host.port": 56796
+      }
+    },
+    {
+      "traceId": "dc6101fba9b9880ba75acda5833aa31b",
+      "spanId": "6e718b0be9836cb2",
+      "parentSpanId": "51a08cd3706aa48d",
+      "name": "tls.connect",
+      "attributes": {
+        "tls.protocol": "TLSv1.2",
+        "tls.authorized": "true",
+        "tls.cipher.name": "ECDHE-RSA-AES128-GCM-SHA256",
+        "tls.cipher.version": "TLSv1.2",
+        "tls.certificate.fingerprint": "DC:F3:DC:23:FC:EB:CE:46:DD:40:91:F4:6A:62:00:61:3B:6B:05:E6",
+        "tls.certificate.serialNumber": "0E2558D492728E9C01A8DADEDC05D13D",
+        "tls.certificate.validFrom": "Jul 20 00:00:00 2025 GMT",
+        "tls.certificate.validTo": "Aug 17 23:59:59 2026 GMT",
+        "tls.alpnProtocol": "http/1.1"
+      }
+    },
+    {
+      "traceId": "dc6101fba9b9880ba75acda5833aa31b",
+      "spanId": "35525c22dec72ed1",
+      "parentSpanId": "51a08cd3706aa48d",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "44.195.71.76",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "dc6101fba9b9880ba75acda5833aa31b",
+      "spanId": "51a08cd3706aa48d",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:34783/",
+        "http.host": "127.0.0.1:34783",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "::ffff:127.0.0.1",
+        "net.host.port": 34783,
+        "net.peer.ip": "::ffff:127.0.0.1",
+        "net.peer.port": 56794,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "a4a163da6ba0d0d569e3914d9790472b": [
+    {
+      "traceId": "a4a163da6ba0d0d569e3914d9790472b",
+      "spanId": "9d1a4e7c20a0809a",
+      "parentSpanId": "ec3b8e17a5c82b08",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "3.93.97.64",
+        "peer[1].ipv4": "52.202.125.113",
+        "peer[2].ipv4": "52.6.202.211",
+        "peer[3].ipv4": "3.94.221.249",
+        "peer[4].ipv4": "52.200.102.227",
+        "peer[5].ipv4": "44.195.71.76"
+      }
+    },
+    {
+      "traceId": "a4a163da6ba0d0d569e3914d9790472b",
+      "spanId": "53c97d5bf0943669",
+      "parentSpanId": "ec3b8e17a5c82b08",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.93.97.64",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "a4a163da6ba0d0d569e3914d9790472b",
+      "spanId": "ec3b8e17a5c82b08",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:34717/",
+        "http.host": "127.0.0.1:34717",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 34717,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56797,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "32c504729197fbb04929c7d4380685c1": [
+    {
+      "traceId": "32c504729197fbb04929c7d4380685c1",
+      "spanId": "d581f5494956fd49",
+      "parentSpanId": "70cc1faa7b4e15e9",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55444,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 56802
+      }
+    },
+    {
+      "traceId": "32c504729197fbb04929c7d4380685c1",
+      "spanId": "70cc1faa7b4e15e9",
+      "name": "redis-connect",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55444,
+        "db.connection_string": "redis://localhost:55444"
+      }
+    }
+  ],
+  "c12f3de34e51932672ba57fb9e7ce545": [
+    {
+      "traceId": "c12f3de34e51932672ba57fb9e7ce545",
+      "spanId": "2cc173601c3726f3",
+      "name": "redis-SET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55444,
+        "db.connection_string": "redis://localhost:55444",
+        "db.statement": "SET softprobe:e2e:1771841555482 [1 other arguments]",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "SET softprobe:e2e:1771841555482 redis-e2e-value",
+        "softprobe.request.body": "[\"softprobe:e2e:1771841555482\",\"redis-e2e-value\"]",
+        "softprobe.response.body": "\"OK\""
+      }
+    }
+  ],
+  "1453ec13bb08111b17bc6971dde8d8e2": [
+    {
+      "traceId": "1453ec13bb08111b17bc6971dde8d8e2",
+      "spanId": "3f6e27a7228f1307",
+      "name": "redis-GET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55444,
+        "db.connection_string": "redis://localhost:55444",
+        "db.statement": "GET softprobe:e2e:1771841555482",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "GET softprobe:e2e:1771841555482",
+        "softprobe.request.body": "[\"softprobe:e2e:1771841555482\"]",
+        "softprobe.response.body": "\"redis-e2e-value\""
+      }
+    }
+  ],
+  "251f83b424c44cba45624e89b90ee9b1": [
+    {
+      "traceId": "251f83b424c44cba45624e89b90ee9b1",
+      "spanId": "e760963665ba7477",
+      "parentSpanId": "a3f03d885ca0dc5b",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "44.195.71.76",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "251f83b424c44cba45624e89b90ee9b1",
+      "spanId": "a3f03d885ca0dc5b",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:34783/",
+        "http.host": "127.0.0.1:34783",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "::ffff:127.0.0.1",
+        "net.host.port": 34783,
+        "net.peer.ip": "::ffff:127.0.0.1",
+        "net.peer.port": 56801,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "09b1e947c79d6afda75946d2cacd1154": [
+    {
+      "traceId": "09b1e947c79d6afda75946d2cacd1154",
+      "spanId": "1a9fcb30b0a5c19f",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:34783/exit",
+        "http.host": "127.0.0.1:34783",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "::ffff:127.0.0.1",
+        "net.host.port": 34783,
+        "net.peer.ip": "::ffff:127.0.0.1",
+        "net.peer.port": 56794,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "94e830880f04cad37262add30ff646e5": [
+    {
+      "traceId": "94e830880f04cad37262add30ff646e5",
+      "spanId": "760beb3c54e79290",
+      "parentSpanId": "22d3797df21d325b",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "94e830880f04cad37262add30ff646e5",
+      "spanId": "82dea7fe6ad735cf",
+      "parentSpanId": "22d3797df21d325b",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55446,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 56817
+      }
+    },
+    {
+      "traceId": "94e830880f04cad37262add30ff646e5",
+      "spanId": "22d3797df21d325b",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55446/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55446,
+        "db.user": "test"
+      }
+    }
+  ],
+  "28820fb597acf49e523b5bda61551549": [
+    {
+      "traceId": "28820fb597acf49e523b5bda61551549",
+      "spanId": "02102641f0423d4d",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55446/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55446,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "96b89d92fa03e7629ea52fe4d0600d69": [
+    {
+      "traceId": "96b89d92fa03e7629ea52fe4d0600d69",
+      "spanId": "66a7a6509952405f",
+      "parentSpanId": "8257967fddc7d2fe",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.93.97.64",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "96b89d92fa03e7629ea52fe4d0600d69",
+      "spanId": "8257967fddc7d2fe",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:34717/",
+        "http.host": "127.0.0.1:34717",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 34717,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56819,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "eb6c57071c12a852b5629a847ca097ab": [
+    {
+      "traceId": "eb6c57071c12a852b5629a847ca097ab",
+      "spanId": "b699b692de4089e3",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:34717/exit",
+        "http.host": "127.0.0.1:34717",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 34717,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56797,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "9c235730fc17f745902ae5e0393944aa": [
+    {
+      "traceId": "9c235730fc17f745902ae5e0393944aa",
+      "spanId": "baba3f3f21b85f24",
+      "parentSpanId": "2c33fcfe0956a203",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "httpbin.org",
+        "net.peer.port": 443,
+        "net.peer.ip": "52.6.202.211",
+        "net.host.ip": "10.0.0.188",
+        "net.host.port": 56896
+      }
+    },
+    {
+      "traceId": "9c235730fc17f745902ae5e0393944aa",
+      "spanId": "2c33fcfe0956a203",
+      "parentSpanId": "c6a9c543c285a1c9",
+      "name": "tls.connect",
+      "attributes": {
+        "tls.protocol": "TLSv1.2",
+        "tls.authorized": "true",
+        "tls.cipher.name": "ECDHE-RSA-AES128-GCM-SHA256",
+        "tls.cipher.version": "TLSv1.2",
+        "tls.certificate.fingerprint": "DC:F3:DC:23:FC:EB:CE:46:DD:40:91:F4:6A:62:00:61:3B:6B:05:E6",
+        "tls.certificate.serialNumber": "0E2558D492728E9C01A8DADEDC05D13D",
+        "tls.certificate.validFrom": "Jul 20 00:00:00 2025 GMT",
+        "tls.certificate.validTo": "Aug 17 23:59:59 2026 GMT",
+        "tls.alpnProtocol": "http/1.1"
+      }
+    },
+    {
+      "traceId": "9c235730fc17f745902ae5e0393944aa",
+      "spanId": "77817bbd248a0cd4",
+      "parentSpanId": "c6a9c543c285a1c9",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "52.6.202.211",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "9c235730fc17f745902ae5e0393944aa",
+      "spanId": "c6a9c543c285a1c9",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:30238/",
+        "http.host": "127.0.0.1:30238",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "::ffff:127.0.0.1",
+        "net.host.port": 30238,
+        "net.peer.ip": "::ffff:127.0.0.1",
+        "net.peer.port": 56894,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "be44a5cd112cbb6581e36e5d1f979d1e": [
+    {
+      "traceId": "be44a5cd112cbb6581e36e5d1f979d1e",
+      "spanId": "0b9d139f551c3b77",
+      "parentSpanId": "450f70cb1df3da56",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "be44a5cd112cbb6581e36e5d1f979d1e",
+      "spanId": "212f777ee5545db7",
+      "parentSpanId": "450f70cb1df3da56",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55448,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 56919
+      }
+    },
+    {
+      "traceId": "be44a5cd112cbb6581e36e5d1f979d1e",
+      "spanId": "450f70cb1df3da56",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55448/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55448,
+        "db.user": "test"
+      }
+    }
+  ],
+  "ca165e7b44a8a69f75afeff6e46ec1aa": [
+    {
+      "traceId": "ca165e7b44a8a69f75afeff6e46ec1aa",
+      "spanId": "36ad76d0c1283d45",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55448/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55448,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "ce525f3f712aba54b4789416184c8bba": [
+    {
+      "traceId": "ce525f3f712aba54b4789416184c8bba",
+      "spanId": "c49df46c951a8260",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "0aca4549e6e356b83bb5f9af0697cbb7": [
+    {
+      "traceId": "0aca4549e6e356b83bb5f9af0697cbb7",
+      "spanId": "2323acfd651fe3c7",
+      "parentSpanId": "1e0b9d64b0380b6c",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "3.94.221.249",
+        "peer[1].ipv4": "52.200.102.227",
+        "peer[2].ipv4": "44.195.71.76",
+        "peer[3].ipv4": "3.93.97.64",
+        "peer[4].ipv4": "52.202.125.113",
+        "peer[5].ipv4": "52.6.202.211"
+      }
+    },
+    {
+      "traceId": "0aca4549e6e356b83bb5f9af0697cbb7",
+      "spanId": "f836618aa5884ab6",
+      "parentSpanId": "1e0b9d64b0380b6c",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.94.221.249",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "0aca4549e6e356b83bb5f9af0697cbb7",
+      "spanId": "1e0b9d64b0380b6c",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:34067/",
+        "http.host": "127.0.0.1:34067",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 34067,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56925,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "bb4496b3c364d25c32ab6e9595bdf4c8": [
+    {
+      "traceId": "bb4496b3c364d25c32ab6e9595bdf4c8",
+      "spanId": "3538ad24d3f4e0e6",
+      "parentSpanId": "b4ed6a5f5668b186",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "52.6.202.211",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "bb4496b3c364d25c32ab6e9595bdf4c8",
+      "spanId": "b4ed6a5f5668b186",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:30238/",
+        "http.host": "127.0.0.1:30238",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "::ffff:127.0.0.1",
+        "net.host.port": 30238,
+        "net.peer.ip": "::ffff:127.0.0.1",
+        "net.peer.port": 56916,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "d4505aa469eaf0b38b1c7e6d3984b3b6": [
+    {
+      "traceId": "d4505aa469eaf0b38b1c7e6d3984b3b6",
+      "spanId": "623b8b09e4379aab",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:30238/exit",
+        "http.host": "127.0.0.1:30238",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "::ffff:127.0.0.1",
+        "net.host.port": 30238,
+        "net.peer.ip": "::ffff:127.0.0.1",
+        "net.peer.port": 56894,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "dfe394f3ce3b5f08006ff82346746510": [
+    {
+      "traceId": "dfe394f3ce3b5f08006ff82346746510",
+      "spanId": "e605e740e1158682",
+      "parentSpanId": "3381b0eb95820f86",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.94.221.249",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":502}",
+        "http.response.status_code": 502,
+        "http.response.header.content-length": 122
+      }
+    },
+    {
+      "traceId": "dfe394f3ce3b5f08006ff82346746510",
+      "spanId": "3381b0eb95820f86",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:34067/",
+        "http.host": "127.0.0.1:34067",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 34067,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56927,
+        "http.status_code": 500,
+        "http.status_text": "INTERNAL SERVER ERROR"
+      }
+    }
+  ],
+  "58d94bc962246ebd23fa5c327cf80e7a": [
+    {
+      "traceId": "58d94bc962246ebd23fa5c327cf80e7a",
+      "spanId": "d832c3be646b12ba",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:34067/exit",
+        "http.host": "127.0.0.1:34067",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 34067,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 56925,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "89bd990357214b7ec65708313f76535c": [
+    {
+      "traceId": "89bd990357214b7ec65708313f76535c",
+      "spanId": "69fc6e976184db86",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "0bd360304c1c65fbdd946d34e87eb0f3": [
+    {
+      "traceId": "0bd360304c1c65fbdd946d34e87eb0f3",
+      "spanId": "6256c4efef3f2581",
+      "parentSpanId": "a9fd3ca1ba212459",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "52.202.125.113",
+        "peer[1].ipv4": "44.195.71.76",
+        "peer[2].ipv4": "3.94.221.249",
+        "peer[3].ipv4": "3.93.97.64",
+        "peer[4].ipv4": "52.6.202.211",
+        "peer[5].ipv4": "52.200.102.227"
+      }
+    },
+    {
+      "traceId": "0bd360304c1c65fbdd946d34e87eb0f3",
+      "spanId": "583d68db4da7b5fb",
+      "parentSpanId": "a9fd3ca1ba212459",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "52.202.125.113",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "0bd360304c1c65fbdd946d34e87eb0f3",
+      "spanId": "a9fd3ca1ba212459",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:30309/",
+        "http.host": "127.0.0.1:30309",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 30309,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 57344,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "389d9ea7366904a25e60c8a151ace473": [
+    {
+      "traceId": "389d9ea7366904a25e60c8a151ace473",
+      "spanId": "030b36193de892de",
+      "parentSpanId": "34e4ab735ffebd08",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "52.202.125.113",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "389d9ea7366904a25e60c8a151ace473",
+      "spanId": "34e4ab735ffebd08",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:30309/",
+        "http.host": "127.0.0.1:30309",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 30309,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 57346,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "88f0f8fd1f941dee37762540cd5f4bcb": [
+    {
+      "traceId": "88f0f8fd1f941dee37762540cd5f4bcb",
+      "spanId": "964833516059cd97",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:30309/exit",
+        "http.host": "127.0.0.1:30309",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 30309,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 57344,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "c9c9d4bed404eb698005cf3b3a3efcdc": [
+    {
+      "traceId": "c9c9d4bed404eb698005cf3b3a3efcdc",
+      "spanId": "3fd8b223a956e654",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "c644c317e8ec7b79ad4e9707a81b0ddb": [
+    {
+      "traceId": "c644c317e8ec7b79ad4e9707a81b0ddb",
+      "spanId": "0113f69de48250fc",
+      "parentSpanId": "dfbb80cb920f9aef",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "44.195.71.76",
+        "peer[1].ipv4": "3.94.221.249",
+        "peer[2].ipv4": "3.93.97.64",
+        "peer[3].ipv4": "52.6.202.211",
+        "peer[4].ipv4": "52.200.102.227",
+        "peer[5].ipv4": "52.202.125.113"
+      }
+    },
+    {
+      "traceId": "c644c317e8ec7b79ad4e9707a81b0ddb",
+      "spanId": "d41e55a29b8271cf",
+      "parentSpanId": "dfbb80cb920f9aef",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "44.195.71.76",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "c644c317e8ec7b79ad4e9707a81b0ddb",
+      "spanId": "dfbb80cb920f9aef",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:34490/",
+        "http.host": "127.0.0.1:34490",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 34490,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 57367,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "7b34aaa799e4151294466eed2d006841": [
+    {
+      "traceId": "7b34aaa799e4151294466eed2d006841",
+      "spanId": "11a223511d72ac43",
+      "parentSpanId": "4312d54d6be08d98",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "44.195.71.76",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "7b34aaa799e4151294466eed2d006841",
+      "spanId": "4312d54d6be08d98",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:34490/",
+        "http.host": "127.0.0.1:34490",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 34490,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 57370,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "07a4f11e38f8da8ce98201ade5c54269": [
+    {
+      "traceId": "07a4f11e38f8da8ce98201ade5c54269",
+      "spanId": "f1a143fa7928392b",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:34490/exit",
+        "http.host": "127.0.0.1:34490",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 34490,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 57367,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "7a92c1244c74457ade13c1d1836b1022": [
+    {
+      "traceId": "7a92c1244c74457ade13c1d1836b1022",
+      "spanId": "634fd0618b99ec40",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "6864b3c1f381f34079f83bc4d691fab9": [
+    {
+      "traceId": "6864b3c1f381f34079f83bc4d691fab9",
+      "spanId": "695c747853926e9f",
+      "parentSpanId": "b36cc5dc3bc90617",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "3.94.221.249",
+        "peer[1].ipv4": "3.93.97.64",
+        "peer[2].ipv4": "52.6.202.211",
+        "peer[3].ipv4": "52.200.102.227",
+        "peer[4].ipv4": "52.202.125.113",
+        "peer[5].ipv4": "44.195.71.76"
+      }
+    },
+    {
+      "traceId": "6864b3c1f381f34079f83bc4d691fab9",
+      "spanId": "2040571e7565db07",
+      "parentSpanId": "b36cc5dc3bc90617",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.94.221.249",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "6864b3c1f381f34079f83bc4d691fab9",
+      "spanId": "b36cc5dc3bc90617",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:32786/",
+        "http.host": "127.0.0.1:32786",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 32786,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 57465,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "ea385ec3b58de374e865196f3500f0d1": [
+    {
+      "traceId": "ea385ec3b58de374e865196f3500f0d1",
+      "spanId": "7f5e8f216713a6fd",
+      "parentSpanId": "897d1a73668add48",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "httpbin.org",
+        "net.peer.port": 443,
+        "net.peer.ip": "3.93.97.64",
+        "net.host.ip": "10.0.0.188",
+        "net.host.port": 57469
+      }
+    },
+    {
+      "traceId": "ea385ec3b58de374e865196f3500f0d1",
+      "spanId": "897d1a73668add48",
+      "parentSpanId": "6e3a4606e5f50339",
+      "name": "tls.connect",
+      "attributes": {
+        "tls.protocol": "TLSv1.2",
+        "tls.authorized": "true",
+        "tls.cipher.name": "ECDHE-RSA-AES128-GCM-SHA256",
+        "tls.cipher.version": "TLSv1.2",
+        "tls.certificate.fingerprint": "DC:F3:DC:23:FC:EB:CE:46:DD:40:91:F4:6A:62:00:61:3B:6B:05:E6",
+        "tls.certificate.serialNumber": "0E2558D492728E9C01A8DADEDC05D13D",
+        "tls.certificate.validFrom": "Jul 20 00:00:00 2025 GMT",
+        "tls.certificate.validTo": "Aug 17 23:59:59 2026 GMT",
+        "tls.alpnProtocol": "http/1.1"
+      }
+    },
+    {
+      "traceId": "ea385ec3b58de374e865196f3500f0d1",
+      "spanId": "fb2e764c4bf7570b",
+      "parentSpanId": "6e3a4606e5f50339",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.93.97.64",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "ea385ec3b58de374e865196f3500f0d1",
+      "spanId": "6e3a4606e5f50339",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:32797/",
+        "http.host": "127.0.0.1:32797",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "::ffff:127.0.0.1",
+        "net.host.port": 32797,
+        "net.peer.ip": "::ffff:127.0.0.1",
+        "net.peer.port": 57468,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "bbe7e3785a9331e7ec6d1c1a557e45c7": [
+    {
+      "traceId": "bbe7e3785a9331e7ec6d1c1a557e45c7",
+      "spanId": "d3b9d0d5761f9be1",
+      "parentSpanId": "1573725f1296c6a8",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.94.221.249",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "bbe7e3785a9331e7ec6d1c1a557e45c7",
+      "spanId": "1573725f1296c6a8",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:32786/",
+        "http.host": "127.0.0.1:32786",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 32786,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 57471,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "0bb47fc5047946ab6b8062c8487fd84f": [
+    {
+      "traceId": "0bb47fc5047946ab6b8062c8487fd84f",
+      "spanId": "b3628c2d5a7c2b3e",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:32786/exit",
+        "http.host": "127.0.0.1:32786",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 32786,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 57465,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "703fa39f306b338844472208a864f1b8": [
+    {
+      "traceId": "703fa39f306b338844472208a864f1b8",
+      "spanId": "5eded165bdc48a96",
+      "parentSpanId": "3b806e478433e7b1",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "3.93.97.64",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "703fa39f306b338844472208a864f1b8",
+      "spanId": "3b806e478433e7b1",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:32797/",
+        "http.host": "127.0.0.1:32797",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "::ffff:127.0.0.1",
+        "net.host.port": 32797,
+        "net.peer.ip": "::ffff:127.0.0.1",
+        "net.peer.port": 57473,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "434769ade281091ada71b4f7040b3079": [
+    {
+      "traceId": "434769ade281091ada71b4f7040b3079",
+      "spanId": "b969cab42cf01c50",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:32797/exit",
+        "http.host": "127.0.0.1:32797",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "::ffff:127.0.0.1",
+        "net.host.port": 32797,
+        "net.peer.ip": "::ffff:127.0.0.1",
+        "net.peer.port": 57468,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "b3cc9536ee0b566544b6fc326b807782": [
+    {
+      "traceId": "b3cc9536ee0b566544b6fc326b807782",
+      "spanId": "f8cbc7af79597fd4",
+      "parentSpanId": "47ba35d96f3fad93",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55451,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 57478
+      }
+    },
+    {
+      "traceId": "b3cc9536ee0b566544b6fc326b807782",
+      "spanId": "47ba35d96f3fad93",
+      "name": "redis-connect",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55451,
+        "db.connection_string": "redis://localhost:55451"
+      }
+    }
+  ],
+  "e97d090adcc322275e6d36d7f2240ee1": [
+    {
+      "traceId": "e97d090adcc322275e6d36d7f2240ee1",
+      "spanId": "4a4fa197263f1a2a",
+      "name": "redis-SET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55451,
+        "db.connection_string": "redis://localhost:55451",
+        "db.statement": "SET softprobe:e2e:1771842184652 [1 other arguments]",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "SET softprobe:e2e:1771842184652 redis-e2e-value",
+        "softprobe.request.body": "[\"softprobe:e2e:1771842184652\",\"redis-e2e-value\"]",
+        "softprobe.response.body": "\"OK\""
+      }
+    }
+  ],
+  "80e717ecf68d9b4b36685e80e8ea5a50": [
+    {
+      "traceId": "80e717ecf68d9b4b36685e80e8ea5a50",
+      "spanId": "a540f812d3b45509",
+      "name": "redis-GET",
+      "attributes": {
+        "db.system": "redis",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55451,
+        "db.connection_string": "redis://localhost:55451",
+        "db.statement": "GET softprobe:e2e:1771842184652",
+        "softprobe.protocol": "redis",
+        "softprobe.identifier": "GET softprobe:e2e:1771842184652",
+        "softprobe.request.body": "[\"softprobe:e2e:1771842184652\"]",
+        "softprobe.response.body": "\"redis-e2e-value\""
+      }
+    }
+  ],
+  "6ff035b31ad7e3277da1e41169d4461d": [
+    {
+      "traceId": "6ff035b31ad7e3277da1e41169d4461d",
+      "spanId": "42ef5764cce3699f",
+      "parentSpanId": "50d288b2e68ff0a6",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "6ff035b31ad7e3277da1e41169d4461d",
+      "spanId": "b17cd14a41eda132",
+      "parentSpanId": "50d288b2e68ff0a6",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55453,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 57529
+      }
+    },
+    {
+      "traceId": "6ff035b31ad7e3277da1e41169d4461d",
+      "spanId": "50d288b2e68ff0a6",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55453/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55453,
+        "db.user": "test"
+      }
+    }
+  ],
+  "37a3a9cb0044deb87138688df2b1bd07": [
+    {
+      "traceId": "37a3a9cb0044deb87138688df2b1bd07",
+      "spanId": "b9ed266f6b98863d",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55453/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55453,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
+  ],
+  "fc1b82a23ecc8ec3ed78c65f6b428171": [
+    {
+      "traceId": "fc1b82a23ecc8ec3ed78c65f6b428171",
+      "spanId": "2bf8a79018e39c3d",
+      "parentSpanId": "ce794b272db21179",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "httpbin.org",
+        "net.peer.port": 443,
+        "net.peer.ip": "52.200.102.227",
+        "net.host.ip": "10.0.0.188",
+        "net.host.port": 57555
+      }
+    },
+    {
+      "traceId": "fc1b82a23ecc8ec3ed78c65f6b428171",
+      "spanId": "ce794b272db21179",
+      "parentSpanId": "0e21cc3ca350ef21",
+      "name": "tls.connect",
+      "attributes": {
+        "tls.protocol": "TLSv1.2",
+        "tls.authorized": "true",
+        "tls.cipher.name": "ECDHE-RSA-AES128-GCM-SHA256",
+        "tls.cipher.version": "TLSv1.2",
+        "tls.certificate.fingerprint": "DC:F3:DC:23:FC:EB:CE:46:DD:40:91:F4:6A:62:00:61:3B:6B:05:E6",
+        "tls.certificate.serialNumber": "0E2558D492728E9C01A8DADEDC05D13D",
+        "tls.certificate.validFrom": "Jul 20 00:00:00 2025 GMT",
+        "tls.certificate.validTo": "Aug 17 23:59:59 2026 GMT",
+        "tls.alpnProtocol": "http/1.1"
+      }
+    },
+    {
+      "traceId": "fc1b82a23ecc8ec3ed78c65f6b428171",
+      "spanId": "02b915095f47126d",
+      "parentSpanId": "0e21cc3ca350ef21",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "52.200.102.227",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "fc1b82a23ecc8ec3ed78c65f6b428171",
+      "spanId": "0e21cc3ca350ef21",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:31418/",
+        "http.host": "127.0.0.1:31418",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "::ffff:127.0.0.1",
+        "net.host.port": 31418,
+        "net.peer.ip": "::ffff:127.0.0.1",
+        "net.peer.port": 57553,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "53509912fdaf9152d1eb86fee88ded89": [
+    {
+      "traceId": "53509912fdaf9152d1eb86fee88ded89",
+      "spanId": "2c64802a5ad8f33c",
+      "parentSpanId": "dd973ddd07c64985",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "52.200.102.227",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "53509912fdaf9152d1eb86fee88ded89",
+      "spanId": "dd973ddd07c64985",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:31418/",
+        "http.host": "127.0.0.1:31418",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "::ffff:127.0.0.1",
+        "net.host.port": 31418,
+        "net.peer.ip": "::ffff:127.0.0.1",
+        "net.peer.port": 57565,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "8d7ac774b04cf6495faf7ec5847b22d7": [
+    {
+      "traceId": "8d7ac774b04cf6495faf7ec5847b22d7",
+      "spanId": "2ee6cab019c742db",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:31418/exit",
+        "http.host": "127.0.0.1:31418",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "::ffff:127.0.0.1",
+        "net.host.port": 31418,
+        "net.peer.ip": "::ffff:127.0.0.1",
+        "net.peer.port": 57553,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "a3a685c29a4da17f53a33ad4934c34b5": [
+    {
+      "traceId": "a3a685c29a4da17f53a33ad4934c34b5",
+      "spanId": "c4a73fd586060a6f",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "0.0.0.0"
+      }
+    }
+  ],
+  "4e891346ba150afc46b8876476a1db14": [
+    {
+      "traceId": "4e891346ba150afc46b8876476a1db14",
+      "spanId": "0d0cd9547f30b0ea",
+      "parentSpanId": "673a6d4f8ac990fd",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv4": "52.202.125.113",
+        "peer[1].ipv4": "44.195.71.76",
+        "peer[2].ipv4": "3.94.221.249",
+        "peer[3].ipv4": "3.93.97.64",
+        "peer[4].ipv4": "52.6.202.211",
+        "peer[5].ipv4": "52.200.102.227"
+      }
+    },
+    {
+      "traceId": "4e891346ba150afc46b8876476a1db14",
+      "spanId": "a009eb200710b3a3",
+      "parentSpanId": "673a6d4f8ac990fd",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "52.202.125.113",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "4e891346ba150afc46b8876476a1db14",
+      "spanId": "673a6d4f8ac990fd",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:33432/",
+        "http.host": "127.0.0.1:33432",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 33432,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 57587,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "63a8dd89291c71328892238464135d8b": [
+    {
+      "traceId": "63a8dd89291c71328892238464135d8b",
+      "spanId": "1a7203edc7042172",
+      "parentSpanId": "74b9240dd3c611b0",
+      "name": "GET",
+      "attributes": {
+        "http.request.method": "GET",
+        "http.request.method_original": "GET",
+        "url.full": "https://httpbin.org/get",
+        "url.path": "/get",
+        "url.query": "",
+        "url.scheme": "https",
+        "server.address": "httpbin.org",
+        "server.port": 443,
+        "user_agent.original": "node",
+        "network.peer.address": "52.202.125.113",
+        "network.peer.port": 443,
+        "softprobe.protocol": "http",
+        "softprobe.identifier": "GET https://httpbin.org/get",
+        "softprobe.request.body": "null",
+        "softprobe.response.body": "{\"statusCode\":200}",
+        "http.response.status_code": 200,
+        "http.response.header.content-length": 433
+      }
+    },
+    {
+      "traceId": "63a8dd89291c71328892238464135d8b",
+      "spanId": "74b9240dd3c611b0",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:33432/",
+        "http.host": "127.0.0.1:33432",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 33432,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 57591,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "403591e1d6549d27686885fc9d2f7046": [
+    {
+      "traceId": "403591e1d6549d27686885fc9d2f7046",
+      "spanId": "b55806d005807cef",
+      "name": "GET",
+      "attributes": {
+        "http.url": "http://127.0.0.1:33432/exit",
+        "http.host": "127.0.0.1:33432",
+        "net.host.name": "127.0.0.1",
+        "http.method": "GET",
+        "http.scheme": "http",
+        "http.target": "/exit",
+        "http.user_agent": "node",
+        "http.flavor": "1.1",
+        "net.transport": "ip_tcp",
+        "net.host.ip": "127.0.0.1",
+        "net.host.port": 33432,
+        "net.peer.ip": "127.0.0.1",
+        "net.peer.port": 57587,
+        "http.status_code": 200,
+        "http.status_text": "OK"
+      }
+    }
+  ],
+  "560fef23e1e660a254c7f5c66b6d83bc": [
+    {
+      "traceId": "560fef23e1e660a254c7f5c66b6d83bc",
+      "spanId": "164fcb577538809c",
+      "parentSpanId": "2156e5c1e6d5bceb",
+      "name": "dns.lookup",
+      "attributes": {
+        "peer.ipv6": "::1",
+        "peer[1].ipv4": "127.0.0.1"
+      }
+    },
+    {
+      "traceId": "560fef23e1e660a254c7f5c66b6d83bc",
+      "spanId": "90f8195e2d4a9bad",
+      "parentSpanId": "2156e5c1e6d5bceb",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55454,
+        "net.peer.ip": "::1",
+        "net.host.ip": "::1",
+        "net.host.port": 57603
+      }
+    },
+    {
+      "traceId": "560fef23e1e660a254c7f5c66b6d83bc",
+      "spanId": "2156e5c1e6d5bceb",
+      "name": "pg.connect",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55454/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55454,
+        "db.user": "test"
+      }
+    }
+  ],
+  "95ed7be28c85ad881b674004b34b6c49": [
+    {
+      "traceId": "95ed7be28c85ad881b674004b34b6c49",
+      "spanId": "b9b6abb5dd141423",
+      "name": "pg.query:SELECT test",
+      "attributes": {
+        "db.system": "postgresql",
+        "db.name": "test",
+        "db.connection_string": "postgresql://localhost:55454/test",
+        "net.peer.name": "localhost",
+        "net.peer.port": 55454,
+        "db.user": "test",
+        "db.statement": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.protocol": "postgres",
+        "softprobe.identifier": "SELECT 1 AS num, $1::text AS label",
+        "softprobe.request.body": "{\"text\":\"SELECT 1 AS num, $1::text AS label\",\"values\":[\"e2e-cassette\"]}",
+        "softprobe.response.body": "{\"rows\":[{\"num\":1,\"label\":\"e2e-cassette\"}],\"rowCount\":1,\"command\":\"SELECT\"}"
+      }
+    }
   ]
 }
