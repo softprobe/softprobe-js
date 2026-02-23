@@ -136,21 +136,21 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 # 5) Topology Matcher (optional matcher fn) — Atomic
 
 ## 5.1 Parent name plumbing (test-only)
-- [ ] Task 5.1.1 Define how to read live parent name (stub for now)
+- [x] Task 5.1.1 Define how to read live parent name (stub for now) *(feat: getLiveParentName in replay/topology.ts; topology.test.ts)*
   - Test: if span has `_parentSpanName`, return it; else `"root"`
 
 ## 5.2 Lineage index
-- [ ] Task 5.2.1 Build `bySpanId` index from records
+- [x] Task 5.2.1 Build `bySpanId` index from records *(feat: buildBySpanIdIndex in replay/topology.ts)*
   - Test: recorded parent lookup works
 
 ## 5.3 Candidate ranking
-- [ ] Task 5.3.1 Filter candidates by protocol+identifier
+- [x] Task 5.3.1 Filter candidates by protocol+identifier *(feat: filterCandidatesByKey in topology; same as flat)*
   - Test: same as flat filter
-- [ ] Task 5.3.2 Prefer candidates whose recorded parent spanName matches live parent
+- [x] Task 5.3.2 Prefer candidates whose recorded parent spanName matches live parent *(feat: selectLineagePool in topology.ts)*
   - Test: returns lineageMatches pool when available, else candidates
 
 ## 5.4 createTopologyMatcher()
-- [ ] Task 5.4.1 Returns MOCK payload from selected candidate (with sequencing key including parent name)
+- [x] Task 5.4.1 Returns MOCK payload from selected candidate (with sequencing key including parent name) *(feat: createTopologyMatcher in topology.ts)*
   - Test: two identical identifiers under different parents return correct payloads
 
 ---
@@ -158,13 +158,13 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 # 6) Config Loader (.softprobe/config.yml) — Atomic
 
 ## 6.1 Parse + cache
-- [ ] Task 6.1.1 Implement `ConfigManager` that reads YAML synchronously at boot
+- [x] Task 6.1.1 Implement `ConfigManager` that reads YAML synchronously at boot *(feat: config/config-manager.ts + fixture; .get() returns parsed YAML)*
   - Test: reads fixture config file and exposes `.get()`
 
 ## 6.2 ignoreUrls regex compilation
-- [ ] Task 6.2.1 Compile ignore patterns into RegExp[]
+- [x] Task 6.2.1 Compile ignore patterns into RegExp[] *(feat: getIgnoreRegexes() from replay.ignoreUrls)*
   - Test: pattern `api\\.stripe\\.com` matches `https://api.stripe.com/v1/...`
-- [ ] Task 6.2.2 `shouldIgnore(url)` returns boolean
+- [x] Task 6.2.2 `shouldIgnore(url)` returns boolean *(feat: shouldIgnore uses ignoreRegexes; falsy url => false)*
   - Test: returns true for ignored, false for others
 
 ---
@@ -172,15 +172,15 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 # 7) NDJSON Store (side-channel) — Atomic
 
 ## 7.1 Append queue (single-threaded)
-- [ ] Task 7.1.1 Implement `CassetteStore.enqueue(line)` FIFO
+- [x] Task 7.1.1 Implement `CassetteStore.enqueue(line)` FIFO *(feat: store/cassette-store.ts; enqueue + flush FIFO)*
   - Test: enqueue 3 lines, flush writes 3 in order
-- [ ] Task 7.1.2 Implement `saveRecord(record)` serializes JSON + newline
+- [x] Task 7.1.2 Implement `saveRecord(record)` serializes JSON + newline *(feat: saveRecord in CassetteStore; one JSON per line)*
   - Test: file has exactly 1 JSON per line
 
 ## 7.2 Safety valves
-- [ ] Task 7.2.1 `maxQueueSize` drops and counts drops
+- [x] Task 7.2.1 `maxQueueSize` drops and counts drops *(feat: CassetteStoreOptions.maxQueueSize, getDropCount())*
   - Test: set max=2, enqueue 5, assert dropCount=3
-- [ ] Task 7.2.2 Best-effort flush on exit signals (SIGINT/SIGTERM)
+- [x] Task 7.2.2 Best-effort flush on exit signals (SIGINT/SIGTERM) *(feat: flushOnExit, register SIGINT/SIGTERM)*
   - Test: unit test by calling internal handler directly (don’t actually kill Jest)
 
 ## 7.3 Loader
