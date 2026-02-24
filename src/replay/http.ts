@@ -2,6 +2,7 @@ import { BatchInterceptor } from '@mswjs/interceptors';
 import { ClientRequestInterceptor } from '@mswjs/interceptors/ClientRequest';
 import { FetchInterceptor } from '@mswjs/interceptors/fetch';
 import { softprobe } from '../api';
+import { getSoftprobeContext } from '../context';
 import { ConfigManager } from '../config/config-manager';
 import { httpIdentifier } from '../identifier';
 import type { MatcherAction } from '../types/schema';
@@ -57,6 +58,9 @@ export async function handleHttpReplayRequest(
     const shouldIgnore = options.shouldIgnoreUrl ?? shouldIgnoreFromConfig;
     if (shouldIgnore(url)) return;
 
+    /** Task 18.2.2: use active context mode to decide MOCK vs PASSTHROUGH; only run matcher when REPLAY. */
+    if (getSoftprobeContext().mode !== 'REPLAY') return;
+
     const method = (request.method ?? 'GET').toUpperCase();
     const identifier = httpIdentifier(method, url);
 
@@ -88,7 +92,7 @@ export async function handleHttpReplayRequest(
 
     if (result.action === 'PASSTHROUGH') return;
 
-    if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
+    if (getSoftprobeContext().strictReplay) {
       controller.respondWith(
         jsonErrorResponse('[Softprobe] No recorded traces found for http request')
       );

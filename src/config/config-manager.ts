@@ -19,6 +19,10 @@ export class ConfigManager {
   constructor(configPath: string = DEFAULT_CONFIG_PATH) {
     const raw = fs.readFileSync(configPath, 'utf8');
     this.cfg = parse(raw) as Record<string, unknown>;
+    /** Default mode when not set in YAML (design: global default for bootstrap). */
+    if (this.cfg.mode === undefined) {
+      this.cfg.mode = 'PASSTHROUGH';
+    }
     const urls = (this.cfg.replay as { ignoreUrls?: string[] } | undefined)?.ignoreUrls ?? [];
     this.ignoreRegexes = urls.map((p: string) => new RegExp(p));
   }

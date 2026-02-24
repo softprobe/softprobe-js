@@ -956,3 +956,131 @@ it("replays even if the DB is disconnected", async () => {
 * **[ ] Context Priority**: Verify `getSoftprobeContext` correctly falls back to the global YAML settings when OTel context is missing.
 * **[ ] Propagation**: Ensure `softprobe-mode` from the YAML is injected into OTel Baggage for microservice-to-microservice consistency.
 * **[ ] Bootstrap Test**: Create a test case where a DB `connect()` is called at the module level (outside an `it` block) to ensure it no-ops correctly based on YAML.
+
+---
+
+This comprehensive design addresses the synchronization of state between the **Softprobe CLI** and a **Target Service** to enable high-fidelity regression testing without manual reconfiguration.
+
+---
+
+# Softprobe Holistic Design (v6.0) — CLI Coordination & Automated Replay
+
+## 1. Problem Statement: The "Split State" Conflict
+
+When executing `softprobe diff --file cassette.ndjson --target http://localhost:8080`, a disconnect occurs between the invoker and the System Under Test (SUT):
+
+1. **The CLI (Invoker):** Possesses the local cassette data and knows which specific `traceId` to replay.
+2. **The Target Service (SUT):** Operates as an independent process. To successfully mock outbound calls (DB, Redis, APIs), it must dynamically discover:
+* That this specific inbound request requires `REPLAY` mode.
+* Which specific `traceId` to load from the NDJSON.
+* The location of the NDJSON file (the "Cassette Path").
+
+
+
+If the service is running in a remote container or a pre-existing dev environment, we cannot rely on static YAML or environment variable changes. We require a **request-based priming mechanism**.
+
+---
+
+## 2. Solution: Header-Injected Context Coordination
+
+We solve the "Split State" problem by using the HTTP request itself as a transport for Softprobe coordination metadata.
+
+### 2.1 Coordination Headers
+
+The CLI injects "Golden Headers" into its outbound request to the target service:
+
+* `x-softprobe-mode`: Forces the service into `REPLAY` (or `CAPTURE`) for that branch.
+* `x-softprobe-trace-id`: Identifies the exact recording in the NDJSON file.
+* `x-softprobe-cassette-path`: Provides the file path to be loaded by the service.
+
+### 2.2 Execution Flow
+
+1. **CLI Preparation:** The CLI parses the NDJSON to find the `inbound` record and its `traceId`.
+2. **Request Trigger:** CLI fires the request to the target with injected coordination headers.
+3. **Service Interception:** Softprobe middleware detects the headers and overrides the global configuration.
+4. **Context Activation:** The middleware uses `runWithContext` to activate an OTel context that downstream drivers (Postgres, Redis) use for matching.
+
+---
+
+## 3. Implementation Blueprint
+
+### 3.1 The CLI Replay Engine (`softprobe diff`)
+
+The CLI acts as a "smart proxy" for the recorded transaction.
+
+```typescript
+// src/cli/diff.ts
+import axios from 'axios';
+import { loadNdjson } from '../store/load-ndjson';
+
+export async function runDiff(file: string, target: string) {
+  // 1. Locate the recorded entry request
+  const records = await loadNdjson(file);
+  const inbound = records.find(r => r.type === 'inbound');
+  if (!inbound) throw new Error("Cassette missing 'inbound' record.");
+
+  // 2. Transmit request with Coordination Headers
+  const response = await axios({
+    method: inbound.method,
+    url: `${target}${inbound.url}`,
+    data: inbound.requestPayload,
+    headers: {
+      ...inbound.headers,
+      'x-softprobe-mode': 'REPLAY',
+      'x-softprobe-trace-id': inbound.traceId,
+      'x-softprobe-cassette-path': file 
+    }
+  });
+
+  // 3. Compare live result against recorded payload
+  const diff = performDeepDiff(inbound.responsePayload, response.data);
+  return displayDiff(diff);
+}
+
+```
+
+### 3.2 Context-Aware Middleware (Target Service)
+
+The middleware prioritizes headers over global YAML config to allow for dynamic replay.
+
+```typescript
+// src/api/middleware.ts
+export function softprobeMiddleware(req: any, res: any, next: any) {
+  const mode = req.headers['x-softprobe-mode'];
+  const traceId = req.headers['x-softprobe-trace-id'];
+  const path = req.headers['x-softprobe-cassette-path'];
+
+  // If the CLI has provided coordination data, activate the replay context
+  if (mode === 'REPLAY' && traceId && path) {
+    return softprobe.runWithContext({ traceId, cassettePath: path }, async () => {
+      // Downstream code now uses context-matched mocks
+      next(); 
+    });
+  }
+  
+  // Fall back to global configuration (e.g., PASSTHROUGH)
+  next();
+}
+
+```
+
+---
+
+## 4. Addressing The "Path Problem"
+
+For the service to access the cassette path provided in headers:
+
+* **Local Development:** Both processes share the filesystem; paths are identical.
+* **Containerized Environments:** CLI and Service should use a shared Docker volume (e.g., `/softprobe/cassettes`) to ensure the file is visible to the service.
+
+---
+
+## 6. Testing Strategy for Engineers
+
+To verify the coordination without a full microservice environment:
+
+1. **Simple Server:** Build an Express app that logs the output of `softprobe.getSoftprobeContext()`.
+2. **CLI Invocation:** Execute the CLI `diff` pointing at the test server.
+3. **Verification:** Confirm the server logs the exact `traceId` and `REPLAY` mode passed via the CLI headers.
+
+Would you like me to refine the `CassetteStore` logic to support safe concurrent reads when multiple `softprobe diff` commands target the same file?

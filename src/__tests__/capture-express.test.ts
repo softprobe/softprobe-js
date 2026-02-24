@@ -1,24 +1,26 @@
 /**
  * Task 14.1.1 / 14.1.2: Express middleware capture and replay paths.
  * Task 14.3.1: Inbound request record contains parsed JSON body when middleware is after body-parser.
+ * Task 17.3.2: Middleware sets OTel context; downstream code can retrieve via getSoftprobeContext().
  */
 
+import * as otelApi from '@opentelemetry/api';
 import { trace } from '@opentelemetry/api';
+import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
+
 import type { CassetteStore } from '../store/cassette-store';
 import { CaptureEngine, softprobeExpressMiddleware } from '../capture/express';
 import * as storeAccessor from '../capture/store-accessor';
 import { softprobe } from '../api';
+import { getSoftprobeContext, initGlobalContext } from '../context';
 
 describe('softprobeExpressMiddleware capture path (Task 14.1.1)', () => {
-  const originalEnv = process.env.SOFTPROBE_MODE;
-
   afterEach(() => {
-    process.env.SOFTPROBE_MODE = originalEnv;
     jest.restoreAllMocks();
   });
 
-  it('when SOFTPROBE_MODE=CAPTURE, res.send triggers CaptureEngine.queueInboundResponse with status and body', () => {
-    process.env.SOFTPROBE_MODE = 'CAPTURE';
+  it('when mode=CAPTURE, res.send triggers CaptureEngine.queueInboundResponse with status and body', () => {
+    initGlobalContext({ mode: 'CAPTURE' });
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId: 'trace-express-1', spanId: 'span-express-1' }),
     } as ReturnType<typeof trace.getActiveSpan>);
@@ -48,15 +50,12 @@ describe('softprobeExpressMiddleware capture path (Task 14.1.1)', () => {
 });
 
 describe('softprobeExpressMiddleware replay trigger (Task 14.1.2)', () => {
-  const originalEnv = process.env.SOFTPROBE_MODE;
-
   afterEach(() => {
-    process.env.SOFTPROBE_MODE = originalEnv;
     jest.restoreAllMocks();
   });
 
-  it('when SOFTPROBE_MODE=REPLAY and traceId is in context, activateReplayForContext(traceId) is called', () => {
-    process.env.SOFTPROBE_MODE = 'REPLAY';
+  it('when mode=REPLAY and traceId is in context, activateReplayForContext(traceId) is called', () => {
+    initGlobalContext({ mode: 'REPLAY' });
     const traceId = 'trace-express-replay-1';
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId, spanId: 'span-replay-1' }),
@@ -76,15 +75,12 @@ describe('softprobeExpressMiddleware replay trigger (Task 14.1.2)', () => {
 });
 
 describe('softprobeExpressMiddleware trace ID source (Task 14.1.3)', () => {
-  const originalEnv = process.env.SOFTPROBE_MODE;
-
   afterEach(() => {
-    process.env.SOFTPROBE_MODE = originalEnv;
     jest.restoreAllMocks();
   });
 
   it('identifies traceId via native OTel context (trace.getActiveSpan().spanContext().traceId), not manual header parsing', () => {
-    process.env.SOFTPROBE_MODE = 'REPLAY';
+    initGlobalContext({ mode: 'REPLAY' });
     const otelTraceId = 'otel-trace-from-span-context';
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId: otelTraceId, spanId: 'span-1' }),
@@ -112,15 +108,12 @@ describe('softprobeExpressMiddleware trace ID source (Task 14.1.3)', () => {
 });
 
 describe('Task 14.3.1: inbound request record contains parsed JSON body when middleware is after body-parser', () => {
-  const originalEnv = process.env.SOFTPROBE_MODE;
-
   afterEach(() => {
-    process.env.SOFTPROBE_MODE = originalEnv;
     jest.restoreAllMocks();
   });
 
   it('request record in NDJSON contains parsed JSON body when middleware is placed after body-parser', () => {
-    process.env.SOFTPROBE_MODE = 'CAPTURE';
+    initGlobalContext({ mode: 'CAPTURE' });
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId: 'trace-body-1', spanId: 'span-body-1' }),
     } as ReturnType<typeof trace.getActiveSpan>);
@@ -144,5 +137,80 @@ describe('Task 14.3.1: inbound request record contains parsed JSON body when mid
     expect(record.type).toBe('inbound');
     expect(record.requestPayload).toBeDefined();
     expect((record.requestPayload as { body?: unknown })?.body).toEqual(parsedBody);
+  });
+});
+
+describe('Task 17.3.2: middleware sets OTel context for downstream getSoftprobeContext()', () => {
+  beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('Express middleware sets context on request; next() sees it via getSoftprobeContext()', () => {
+    initGlobalContext({ mode: 'REPLAY', cassettePath: '/cassettes.ndjson' });
+    const traceId = 'trace-middleware-ctx-1';
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
+      spanContext: () => ({ traceId, spanId: 'span-1' }),
+    } as ReturnType<typeof trace.getActiveSpan>);
+
+    let downstreamContext: ReturnType<typeof getSoftprobeContext> | undefined;
+    const next = () => {
+      downstreamContext = getSoftprobeContext();
+    };
+    const req = { method: 'GET', path: '/api' };
+    const res = { statusCode: 200, send: jest.fn() };
+
+    softprobeExpressMiddleware(req as any, res as any, next);
+
+    expect(downstreamContext).toBeDefined();
+    expect(downstreamContext?.traceId).toBe(traceId);
+    expect(downstreamContext?.mode).toBe('REPLAY');
+    expect(downstreamContext?.cassettePath).toBe('/cassettes.ndjson');
+  });
+});
+
+describe('Task 21.1.1: Header extraction in middleware — getSoftprobeContext() returns header values over YAML defaults', () => {
+  beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('request with coordination headers: getSoftprobeContext() returns header values, not YAML defaults', () => {
+    initGlobalContext({ mode: 'PASSTHROUGH', cassettePath: '/yaml-default.ndjson' });
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
+      spanContext: () => ({ traceId: 'otel-span-trace', spanId: 'span-1' }),
+    } as ReturnType<typeof trace.getActiveSpan>);
+
+    let downstreamContext: ReturnType<typeof getSoftprobeContext> | undefined;
+    const next = () => {
+      downstreamContext = getSoftprobeContext();
+    };
+    const req = {
+      method: 'GET',
+      path: '/api',
+      headers: {
+        'x-softprobe-mode': 'REPLAY',
+        'x-softprobe-trace-id': 'header-trace-99',
+        'x-softprobe-cassette-path': '/header-cassette.ndjson',
+      },
+    };
+    const res = { statusCode: 200, send: jest.fn() };
+
+    softprobeExpressMiddleware(req as any, res as any, next);
+
+    expect(downstreamContext).toBeDefined();
+    expect(downstreamContext?.mode).toBe('REPLAY');
+    expect(downstreamContext?.traceId).toBe('header-trace-99');
+    expect(downstreamContext?.cassettePath).toBe('/header-cassette.ndjson');
   });
 });

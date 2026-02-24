@@ -143,5 +143,11 @@ describe('Replay demo (Task 16.3.1)', () => {
     expect(replayOutput).toHaveProperty('postgres');
     expect(replayOutput).toHaveProperty('redis');
     expect(replayOutput).toHaveProperty('http');
+    // Task 20.3.1: with services stopped, replay output must match capture (snapshot)
+    expect(replayOutput.postgres).toEqual(captureResponse.postgres);
+    expect(replayOutput.redis).toEqual(captureResponse.redis);
+    expect((replayOutput.http as Record<string, unknown>)?.url).toEqual(
+      (captureResponse.http as Record<string, unknown>)?.url
+    );
   }, 30000);
 });

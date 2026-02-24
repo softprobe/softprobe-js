@@ -1,12 +1,13 @@
 /**
  * Fastify replay trigger: preHandler primes the matcher for the current request traceId.
- * Design §16.2: when SOFTPROBE_MODE=REPLAY, preHandler calls activateReplayForContext(traceId)
+ * Design §16.2: when mode=REPLAY, preHandler calls activateReplayForContext(traceId)
  * so subsequent outbound calls use records matching the active OTel traceId.
  */
 
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { trace } from '@opentelemetry/api';
 import { softprobe } from '../api';
+import { getSoftprobeContext } from '../context';
 
 /**
  * PreHandler hook that primes the active SoftprobeMatcher with records for the
@@ -19,7 +20,7 @@ export async function softprobeFastifyReplayPreHandler(
 ): Promise<void> {
   const span = trace.getActiveSpan();
   const traceId = span?.spanContext().traceId;
-  if (process.env.SOFTPROBE_MODE === 'REPLAY' && traceId) {
+  if (getSoftprobeContext().mode === 'REPLAY' && traceId) {
     softprobe.activateReplayForContext(traceId);
   }
 }

@@ -9,6 +9,7 @@ import { trace } from '@opentelemetry/api';
 import type { SemanticMatcher } from './matcher';
 import type { SoftprobeMatcher } from './softprobe-matcher';
 import { softprobe } from '../api';
+import { getSoftprobeContext } from '../context';
 import { PostgresSpan } from '../bindings/postgres-span';
 
 const FATAL_IMPORT_ORDER =
@@ -30,7 +31,7 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
       connectKey,
       (originalConnect: (...args: unknown[]) => unknown) =>
         function wrappedConnect(this: unknown, ...args: unknown[]): unknown {
-          if (process.env.SOFTPROBE_MODE === 'REPLAY') return Promise.resolve();
+          if (getSoftprobeContext().mode === 'REPLAY') return Promise.resolve();
           return (originalConnect as (...a: unknown[]) => unknown).apply(this, args);
         }
     );
@@ -43,7 +44,7 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
       endKey,
       (originalEnd: (...args: unknown[]) => unknown) =>
         function wrappedEnd(this: unknown, ...args: unknown[]): unknown {
-          if (process.env.SOFTPROBE_MODE === 'REPLAY') return Promise.resolve();
+          if (getSoftprobeContext().mode === 'REPLAY') return Promise.resolve();
           return (originalEnd as (...a: unknown[]) => unknown).apply(this, args);
         }
     );
@@ -87,7 +88,7 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
           } else if (r.action === 'PASSTHROUGH') {
             return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
           } else {
-            if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
+            if (getSoftprobeContext().strictReplay) {
               const strictErr = new Error('Softprobe replay: no match for pg.query');
               if (cb) {
                 process.nextTick(() => (cb as (err: Error | null, res?: unknown) => void)(strictErr));
@@ -105,7 +106,7 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
               requestBody: valsArray,
             });
           } catch (err) {
-            if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
+            if (getSoftprobeContext().strictReplay) {
               const strictErr = new Error('Softprobe replay: no match for pg.query');
               if (cb) {
                 process.nextTick(() => (cb as (err: Error | null, res?: unknown) => void)(strictErr));
@@ -136,7 +137,7 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
  */
 export function setupPostgresReplay(): void {
   const pg = require('pg');
-  if ((pg.Client.prototype.query as { __wrapped?: boolean }).__wrapped && process.env.SOFTPROBE_MODE !== 'REPLAY') {
+  if ((pg.Client.prototype.query as { __wrapped?: boolean }).__wrapped && getSoftprobeContext().mode !== 'REPLAY') {
     throw new Error(FATAL_IMPORT_ORDER);
   }
   applyPostgresReplay(pg);

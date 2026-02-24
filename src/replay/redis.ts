@@ -13,6 +13,7 @@ import shimmer from 'shimmer';
 import { RedisSpan } from '../bindings/redis-span';
 import type { MatcherAction } from '../types/schema';
 import { softprobe } from '../api';
+import { getSoftprobeContext } from '../context';
 
 /**
  * Builds the same identifier string as the Redis capture hook (capture/redis.ts):
@@ -51,6 +52,9 @@ export function setupRedisReplay(): void {
             _name: string
           ): unknown {
             const matcher = softprobe.getActiveMatcher();
+            if (getSoftprobeContext().mode === 'REPLAY' && !matcher) {
+              return Promise.reject(new Error('Softprobe replay: no match for redis command'));
+            }
             if (!matcher) {
               return (originalExecutor as (this: unknown, c: unknown, a: unknown[], n: string) => unknown).call(
                 this,
@@ -77,7 +81,7 @@ export function setupRedisReplay(): void {
                   args,
                   _name
                 );
-              } else if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
+              } else if (getSoftprobeContext().strictReplay) {
                 return Promise.reject(new Error('Softprobe replay: no match for redis command'));
               } else {
                 // CONTINUE + DEV: passthrough (design §9.3)
@@ -102,7 +106,7 @@ export function setupRedisReplay(): void {
                   requestBody: redisArgs,
                 });
               } catch (err) {
-                if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
+                if (getSoftprobeContext().strictReplay) {
                   return Promise.reject(new Error('Softprobe replay: no match for redis command'));
                 }
                 // CONTINUE + DEV: passthrough (design §9.3)
@@ -116,7 +120,7 @@ export function setupRedisReplay(): void {
             }
 
             if (typeof payload === 'undefined') {
-              if (process.env.SOFTPROBE_STRICT_REPLAY === '1') {
+              if (getSoftprobeContext().strictReplay) {
                 return Promise.reject(new Error('Softprobe replay: no match for redis command'));
               }
               // CONTINUE + DEV: passthrough (design §9.3)
@@ -154,23 +158,28 @@ export function applyRedisReplay(redis: Record<string, unknown>): void {
     (redis.default as { createClient?: () => unknown } | undefined)?.createClient;
   const stub = createClient?.();
   if (!stub?.constructor?.prototype || typeof (stub as { connect?: unknown }).connect !== 'function') return;
-  const proto = stub.constructor.prototype as { connect?: (...args: unknown[]) => unknown; _connectReplayNoop?: boolean };
+  const proto = stub.constructor.prototype as {
+    connect?: (...args: unknown[]) => unknown;
+    quit?: (...args: unknown[]) => unknown;
+    _connectReplayNoop?: boolean;
+    _quitReplayNoop?: boolean;
+  };
   if (proto._connectReplayNoop) return;
   shimmer.wrap(proto, 'connect', (original: (...args: unknown[]) => unknown) =>
     function (this: unknown, ...args: unknown[]): unknown {
-      if (process.env.SOFTPROBE_MODE === 'REPLAY') return Promise.resolve();
+      if (getSoftprobeContext().mode === 'REPLAY') return Promise.resolve();
       return (original as (...a: unknown[]) => unknown).apply(this, args);
     }
   );
   // quit() can trigger connect internally when client was never connected (Task 16.3.1).
-  if (typeof proto.quit === 'function' && !(proto as { _quitReplayNoop?: boolean })._quitReplayNoop) {
+  if (typeof proto.quit === 'function' && !proto._quitReplayNoop) {
     shimmer.wrap(proto, 'quit', (original: (...args: unknown[]) => unknown) =>
       function (this: unknown, ...args: unknown[]): unknown {
-        if (process.env.SOFTPROBE_MODE === 'REPLAY') return Promise.resolve('OK');
+        if (getSoftprobeContext().mode === 'REPLAY') return Promise.resolve('OK');
         return (original as (...a: unknown[]) => unknown).apply(this, args);
       }
     );
-    (proto as { _quitReplayNoop?: boolean })._quitReplayNoop = true;
+    proto._quitReplayNoop = true;
   }
   proto._connectReplayNoop = true;
 }

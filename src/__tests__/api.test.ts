@@ -4,15 +4,27 @@
  * Task 8.2.1: runWithContext loads records once and sets into matcher.
  * Task 8.2.2: runWithContext sets inbound record cache; getRecordedInboundResponse returns it.
  * Task 15.2.1: compareInbound retrieves recorded inbound and performs deep equality on status/body.
+ * Task 17.3.1: runWithContext sets OTel context so context.active().getValue(SOFTPROBE_CONTEXT_KEY) matches traceId/mode.
  */
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import * as otelApi from '@opentelemetry/api';
+import { context } from '@opentelemetry/api';
+import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
+
 import { softprobe } from '../api';
+import { SOFTPROBE_CONTEXT_KEY } from '../context';
 import type { SoftprobeMatcher } from '../replay/softprobe-matcher';
 
 describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
+  beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
+  });
+
   it('runs two async functions concurrently with different traceId contexts and each retrieves only its context', async () => {
     const traceId1 = 'trace-aaa';
     const traceId2 = 'trace-bbb';
@@ -56,6 +68,28 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
     } catch {
       // ignore cleanup
     }
+  });
+
+  /**
+   * Task 17.3.1: Inside runWithContext callback, OTel context.active().getValue(SOFTPROBE_CONTEXT_KEY) matches provided traceId/mode.
+   */
+  it('runWithContext sets OTel context so active context has traceId and mode', async () => {
+    const traceId = 'otel-trace-17';
+    const cassettePath = '';
+    const mode = 'REPLAY' as const;
+
+    const valueInside = await softprobe.runWithContext(
+      { traceId, cassettePath, mode },
+      async () => context.active().getValue(SOFTPROBE_CONTEXT_KEY)
+    );
+
+    expect(valueInside).toEqual({
+      traceId,
+      cassettePath,
+      mode,
+      strictReplay: false,
+      strictComparison: false,
+    });
   });
 
   /**
@@ -249,73 +283,71 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
     it('when strict, mismatched headers cause failure', async () => {
       const tmpPath = path.join(os.tmpdir(), `softprobe-strict-${Date.now()}.ndjson`);
       fs.writeFileSync(tmpPath, JSON.stringify(inboundWithHeaders) + '\n', 'utf8');
-      const prev = process.env.SOFTPROBE_STRICT_COMPARISON;
-      process.env.SOFTPROBE_STRICT_COMPARISON = '1';
       try {
-        await softprobe.runWithContext({ traceId, cassettePath: tmpPath }, async () => {
-          expect(() => {
-            softprobe.compareInbound({
-              status: 200,
-              body: {},
-              headers: { 'content-type': 'application/json', 'x-request-id': 'different' },
-            });
-          }).toThrow(/header/);
-        });
+        await softprobe.runWithContext(
+          { traceId, cassettePath: tmpPath, strictComparison: true },
+          async () => {
+            expect(() => {
+              softprobe.compareInbound({
+                status: 200,
+                body: {},
+                headers: { 'content-type': 'application/json', 'x-request-id': 'different' },
+              });
+            }).toThrow(/header/);
+          }
+        );
       } finally {
-        if (prev === undefined) delete process.env.SOFTPROBE_STRICT_COMPARISON;
-        else process.env.SOFTPROBE_STRICT_COMPARISON = prev;
-      }
-      try {
-        fs.unlinkSync(tmpPath);
-      } catch {
-        // ignore
+        try {
+          fs.unlinkSync(tmpPath);
+        } catch {
+          // ignore
+        }
       }
     });
 
     it('when strict, matching headers do not cause failure', async () => {
       const tmpPath = path.join(os.tmpdir(), `softprobe-strict-ok-${Date.now()}.ndjson`);
       fs.writeFileSync(tmpPath, JSON.stringify(inboundWithHeaders) + '\n', 'utf8');
-      const prev = process.env.SOFTPROBE_STRICT_COMPARISON;
-      process.env.SOFTPROBE_STRICT_COMPARISON = '1';
       try {
-        await softprobe.runWithContext({ traceId, cassettePath: tmpPath }, async () => {
-          softprobe.compareInbound({
-            status: 200,
-            body: {},
-            headers: { 'content-type': 'application/json', 'x-request-id': 'abc' },
-          });
-        });
+        await softprobe.runWithContext(
+          { traceId, cassettePath: tmpPath, strictComparison: true },
+          async () => {
+            softprobe.compareInbound({
+              status: 200,
+              body: {},
+              headers: { 'content-type': 'application/json', 'x-request-id': 'abc' },
+            });
+          }
+        );
       } finally {
-        if (prev === undefined) delete process.env.SOFTPROBE_STRICT_COMPARISON;
-        else process.env.SOFTPROBE_STRICT_COMPARISON = prev;
-      }
-      try {
-        fs.unlinkSync(tmpPath);
-      } catch {
-        // ignore
+        try {
+          fs.unlinkSync(tmpPath);
+        } catch {
+          // ignore
+        }
       }
     });
 
     it('when off, only status and body matter (mismatched headers do not cause failure)', async () => {
       const tmpPath = path.join(os.tmpdir(), `softprobe-nostrict-${Date.now()}.ndjson`);
       fs.writeFileSync(tmpPath, JSON.stringify(inboundWithHeaders) + '\n', 'utf8');
-      const prev = process.env.SOFTPROBE_STRICT_COMPARISON;
-      delete process.env.SOFTPROBE_STRICT_COMPARISON;
       try {
-        await softprobe.runWithContext({ traceId, cassettePath: tmpPath }, async () => {
-          softprobe.compareInbound({
-            status: 200,
-            body: {},
-            headers: { 'content-type': 'text/plain', 'x-other': 'ignored' },
-          });
-        });
+        await softprobe.runWithContext(
+          { traceId, cassettePath: tmpPath, strictComparison: false },
+          async () => {
+            softprobe.compareInbound({
+              status: 200,
+              body: {},
+              headers: { 'content-type': 'text/plain', 'x-other': 'ignored' },
+            });
+          }
+        );
       } finally {
-        if (prev !== undefined) process.env.SOFTPROBE_STRICT_COMPARISON = prev;
-      }
-      try {
-        fs.unlinkSync(tmpPath);
-      } catch {
-        // ignore
+        try {
+          fs.unlinkSync(tmpPath);
+        } catch {
+          // ignore
+        }
       }
     });
   });

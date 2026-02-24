@@ -1,13 +1,19 @@
 /**
  * Task 15.1.2: Downstream shims check baggage for mode.
- * Test: outbound fetch shim automatically switches to MOCK when baggage contains softprobe-mode: REPLAY.
+ * Task 18.2.2: HTTP interceptor uses getSoftprobeContext().mode (context); middleware syncs baggage → context.
+ * Test: when context has REPLAY (e.g. set from baggage by middleware), outbound fetch shim switches to MOCK.
  */
-import { propagation } from '@opentelemetry/api';
+import * as otelApi from '@opentelemetry/api';
+import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import { handleHttpReplayRequest } from '../replay/http';
 import { setGlobalReplayMatcher } from '../api';
+import { setSoftprobeContext } from '../context';
 import { SoftprobeMatcher } from '../replay/softprobe-matcher';
 import { createDefaultMatcher } from '../replay/extract-key';
 import type { SoftprobeCassetteRecord } from '../types/schema';
+import { initGlobalContext } from '../context';
+
+const { context, propagation } = otelApi;
 
 function makeController() {
   return { respondWith: jest.fn<void, [Response]>() };
@@ -19,10 +25,12 @@ const replayBaggage = {
 };
 
 describe('HTTP replay shim + baggage (Task 15.1.2)', () => {
-  const originalMode = process.env.SOFTPROBE_MODE;
   let getActiveBaggageSpy: jest.SpyInstance;
 
   beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
     getActiveBaggageSpy = jest.spyOn(propagation, 'getActiveBaggage').mockReturnValue(replayBaggage as ReturnType<typeof propagation.getActiveBaggage>);
   });
 
@@ -32,12 +40,11 @@ describe('HTTP replay shim + baggage (Task 15.1.2)', () => {
 
   afterEach(() => {
     setGlobalReplayMatcher(undefined);
-    if (originalMode !== undefined) process.env.SOFTPROBE_MODE = originalMode;
-    else delete process.env.SOFTPROBE_MODE;
+    initGlobalContext({});
   });
 
   it('outbound fetch shim switches to MOCK when baggage contains softprobe-mode: REPLAY', async () => {
-    process.env.SOFTPROBE_MODE = 'CAPTURE'; // not REPLAY, so without baggage we would not use global matcher
+    initGlobalContext({ mode: 'CAPTURE' }); // global not REPLAY; active context will be set to REPLAY (as middleware would from baggage)
 
     const record: SoftprobeCassetteRecord = {
       version: '4.1',
@@ -56,13 +63,20 @@ describe('HTTP replay shim + baggage (Task 15.1.2)', () => {
 
     const controller = makeController();
 
-    await handleHttpReplayRequest(
-      {
-        request: new Request('http://example.com/', { method: 'GET' }),
-        controller,
-      },
-      {} // no custom match — handler uses getActiveMatcher(), which now checks baggage
-    );
+    const ctxReplay = setSoftprobeContext(context.active(), {
+      mode: 'REPLAY',
+      cassettePath: '',
+      matcher,
+    });
+    await context.with(ctxReplay, async () => {
+      await handleHttpReplayRequest(
+        {
+          request: new Request('http://example.com/', { method: 'GET' }),
+          controller,
+        },
+        {} // no custom match — handler uses getSoftprobeContext().mode (REPLAY) and getActiveMatcher()
+      );
+    });
 
     expect(controller.respondWith).toHaveBeenCalledTimes(1);
     const response = controller.respondWith.mock.calls[0][0] as Response;

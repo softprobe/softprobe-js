@@ -1,10 +1,45 @@
 /**
  * Boot entry: softprobe/init.
- * Must be imported first (before OTel). Reads SOFTPROBE_MODE and runs
- * CAPTURE or REPLAY init accordingly; design §4.1, §11.
+ * Must be imported first (before OTel). Reads config from .softprobe/config.yml
+ * (or SOFTPROBE_CONFIG_PATH) and runs CAPTURE or REPLAY init accordingly; design §4.1, §11.
+ * No SOFTPROBE_MODE / SOFTPROBE_CASSETTE_PATH; mode and cassettePath come from config only.
  */
 
-const mode = process.env.SOFTPROBE_MODE;
+const { ConfigManager } = require('./config/config-manager');
+const { initGlobalContext } = require('./context');
+
+let mode: string = 'PASSTHROUGH';
+let cassettePath: string = '';
+
+const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
+try {
+  const mgr = new ConfigManager(configPath);
+  const g = mgr.get() as {
+    mode?: string;
+    cassettePath?: string;
+    replay?: { strictReplay?: boolean; strictComparison?: boolean };
+  };
+  initGlobalContext({
+    mode: g.mode,
+    cassettePath: g.cassettePath,
+    strictReplay: g.replay?.strictReplay,
+    strictComparison: g.replay?.strictComparison,
+  });
+  mode = (g.mode as string) ?? 'PASSTHROUGH';
+  cassettePath = (g.cassettePath as string) ?? '';
+} catch {
+  // No config file (e.g. E2E child or examples): fall back to env so callers can pass mode/cassettePath.
+  const envMode = process.env.SOFTPROBE_MODE ?? 'PASSTHROUGH';
+  const envPath = process.env.SOFTPROBE_CASSETTE_PATH ?? '';
+  initGlobalContext({
+    mode: envMode,
+    cassettePath: envPath,
+    strictReplay: process.env.SOFTPROBE_STRICT_REPLAY === '1',
+    strictComparison: process.env.SOFTPROBE_STRICT_COMPARISON === '1',
+  });
+  mode = envMode;
+  cassettePath = envPath;
+}
 
 if (mode === 'CAPTURE') {
   const { initCapture } = require('./capture/init');
@@ -15,8 +50,7 @@ if (mode === 'CAPTURE') {
 
   initCapture();
 
-  const outPath =
-    process.env.SOFTPROBE_CASSETTE_PATH ?? './softprobe-cassettes.ndjson';
+  const outPath = cassettePath || './softprobe-cassettes.ndjson';
   const store = new CassetteStore(outPath);
   setCaptureStore(store);
   process.on('beforeExit', () => store.flushOnExit());
@@ -26,10 +60,9 @@ if (mode === 'CAPTURE') {
 }
 
 if (mode === 'REPLAY') {
-  const path = process.env.SOFTPROBE_CASSETTE_PATH;
-  if (path) {
+  if (cassettePath) {
     const { loadNdjson } = require('./store/load-ndjson');
-    loadNdjson(path); // eager load, called exactly once (task 11.1.2)
+    loadNdjson(cassettePath); // eager load, called exactly once (task 11.1.2)
   }
   // Patch pg/redis when first required by any module so example app and E2E use the same patched instance (Task 16.3.1).
   const { applyPostgresReplay } = require('./replay/postgres');

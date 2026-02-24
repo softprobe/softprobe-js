@@ -1,12 +1,14 @@
 /**
  * Express middleware for Softprobe: capture path taps res.send; replay path primes matcher by traceId.
  * Design §16.1: CAPTURE → queueInboundResponse; REPLAY → activateReplayForContext(traceId).
+ * Task 17.3.2: Set OTel softprobe context so downstream code can use getSoftprobeContext().
  */
 
-import { trace } from '@opentelemetry/api';
+import { context, trace } from '@opentelemetry/api';
 import { getCaptureStore } from './store-accessor';
 import { writeInboundHttpRecord } from './http-inbound';
 import { activateReplayForContext } from '../replay/express';
+import { getSoftprobeContext, setSoftprobeContext, softprobeValueFromHeaders } from '../context';
 
 export type QueueInboundResponsePayload = {
   status: number;
@@ -52,30 +54,39 @@ export const CaptureEngine = {
  * Environment-aware Express middleware. In REPLAY mode primes matcher for request traceId;
  * in CAPTURE mode wraps res.send to record status/body via CaptureEngine.queueInboundResponse.
  * When placed after body-parser, req.body is captured in the inbound record (Task 14.3.1).
+ * Task 17.3.2: Runs the request in an OTel context with softprobe traceId/mode/cassettePath so getSoftprobeContext() works downstream.
  */
 export function softprobeExpressMiddleware(
-  req: { method: string; path: string; body?: unknown },
+  req: { method: string; path: string; body?: unknown; headers?: Record<string, string | string[] | undefined> },
   res: { statusCode: number; send: (body?: unknown) => unknown },
   next: () => void
 ): void {
   const span = trace.getActiveSpan();
   const traceId = span?.spanContext().traceId;
+  const base = getSoftprobeContext();
+  const withTrace = { ...base, traceId };
+  const softprobeValue = softprobeValueFromHeaders(withTrace, req.headers ?? {});
+  const activeCtx = context.active();
+  const ctxWithSoftprobe = setSoftprobeContext(activeCtx, softprobeValue);
 
-  if (process.env.SOFTPROBE_MODE === 'REPLAY' && traceId) {
-    activateReplayForContext(traceId);
-  }
+  context.with(ctxWithSoftprobe, () => {
+    const ctxTraceId = getSoftprobeContext().traceId ?? traceId;
+    if (getSoftprobeContext().mode === 'REPLAY' && ctxTraceId) {
+      activateReplayForContext(ctxTraceId);
+    }
 
-  if (process.env.SOFTPROBE_MODE === 'CAPTURE') {
-    const originalSend = res.send.bind(res);
-    res.send = function (body?: unknown) {
-      CaptureEngine.queueInboundResponse(traceId ?? '', {
-        status: res.statusCode,
-        body,
-        identifier: `${req.method} ${req.path}`,
-        requestBody: req.body,
-      });
-      return originalSend.apply(res, arguments as any);
-    };
-  }
-  next();
+    if (getSoftprobeContext().mode === 'CAPTURE') {
+      const originalSend = res.send.bind(res);
+      res.send = function (body?: unknown) {
+        CaptureEngine.queueInboundResponse(ctxTraceId ?? '', {
+          status: res.statusCode,
+          body,
+          identifier: `${req.method} ${req.path}`,
+          requestBody: req.body,
+        });
+        return originalSend.apply(res, arguments as any);
+      };
+    }
+    next();
+  });
 }

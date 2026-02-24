@@ -6,6 +6,7 @@
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { SemanticMatcher } from '../replay/matcher';
 import { softprobe } from '../api';
+import { initGlobalContext } from '../context';
 import { setupPostgresReplay } from '../replay/postgres';
 
 const mockQueryImpl = jest.fn().mockRejectedValue(new Error('pg not connected'));
@@ -37,8 +38,7 @@ afterEach(() => {
 
 describe('Postgres Replay (Task 9.2.5)', () => {
   it('CONTINUE + DEV passthrough calls original when no match and strict not set', async () => {
-    const strict = process.env.SOFTPROBE_STRICT_REPLAY;
-    delete process.env.SOFTPROBE_STRICT_REPLAY;
+    initGlobalContext({ strictReplay: false });
 
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: [], rowCount: 0 })),
@@ -52,7 +52,5 @@ describe('Postgres Replay (Task 9.2.5)', () => {
 
     expect(mockQueryImpl).toHaveBeenCalledTimes(1);
     expect(mockQueryImpl).toHaveBeenCalledWith('SELECT other');
-
-    if (strict !== undefined) process.env.SOFTPROBE_STRICT_REPLAY = strict;
   });
 });

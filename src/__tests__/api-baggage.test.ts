@@ -4,17 +4,15 @@
  */
 import { propagation } from '@opentelemetry/api';
 import { getContextWithReplayBaggage } from '../api/baggage';
+import { initGlobalContext } from '../context';
 
 describe('api/baggage (OTel baggage propagation)', () => {
-  const originalMode = process.env.SOFTPROBE_MODE;
-
   afterEach(() => {
-    if (originalMode !== undefined) process.env.SOFTPROBE_MODE = originalMode;
-    else delete process.env.SOFTPROBE_MODE;
+    initGlobalContext({});
   });
 
-  it('adds softprobe-mode=REPLAY to current OTel baggage when SOFTPROBE_MODE=REPLAY', () => {
-    process.env.SOFTPROBE_MODE = 'REPLAY';
+  it('adds softprobe-mode=REPLAY to current OTel baggage when mode=REPLAY', () => {
+    initGlobalContext({ mode: 'REPLAY' });
 
     const ctx = getContextWithReplayBaggage();
     const bag = propagation.getBaggage(ctx);
@@ -24,8 +22,8 @@ describe('api/baggage (OTel baggage propagation)', () => {
     expect(entry?.value).toBe('REPLAY');
   });
 
-  it('does not add softprobe-mode when SOFTPROBE_MODE is not REPLAY', () => {
-    process.env.SOFTPROBE_MODE = 'CAPTURE';
+  it('does not add softprobe-mode when mode is not REPLAY', () => {
+    initGlobalContext({ mode: 'CAPTURE' });
 
     const ctx = getContextWithReplayBaggage();
     const bag = propagation.getBaggage(ctx);

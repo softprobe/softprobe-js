@@ -7,6 +7,7 @@
  */
 
 import { handleHttpReplayRequest } from '../replay/http';
+import { initGlobalContext } from '../context';
 
 type MockController = { respondWith: jest.Mock<void, [Response]> };
 
@@ -15,11 +16,11 @@ function makeController(): MockController {
 }
 
 describe('HTTP replay interceptor (Task 9.4)', () => {
-  const prevStrict = process.env.SOFTPROBE_STRICT_REPLAY;
-
+  beforeAll(() => {
+    initGlobalContext({ mode: 'REPLAY', strictReplay: false });
+  });
   afterEach(() => {
-    if (prevStrict === undefined) delete process.env.SOFTPROBE_STRICT_REPLAY;
-    else process.env.SOFTPROBE_STRICT_REPLAY = prevStrict;
+    initGlobalContext({ mode: 'REPLAY', strictReplay: false });
   });
 
   it('9.4.1 ignores configured URLs and does not call matcher', async () => {
@@ -70,7 +71,7 @@ describe('HTTP replay interceptor (Task 9.4)', () => {
   });
 
   it('9.4.3 CONTINUE + STRICT returns JSON error Response(500)', async () => {
-    process.env.SOFTPROBE_STRICT_REPLAY = '1';
+    initGlobalContext({ mode: 'REPLAY', strictReplay: true });
     const controller = makeController();
 
     await handleHttpReplayRequest(
@@ -95,7 +96,7 @@ describe('HTTP replay interceptor (Task 9.4)', () => {
   });
 
   it('9.4.4 CONTINUE + DEV allows passthrough (no response)', async () => {
-    delete process.env.SOFTPROBE_STRICT_REPLAY;
+    initGlobalContext({ strictReplay: false });
     const controller = makeController();
 
     await handleHttpReplayRequest(
@@ -108,6 +109,72 @@ describe('HTTP replay interceptor (Task 9.4)', () => {
         match: () => ({ action: 'CONTINUE' }),
       }
     );
+
+    expect(controller.respondWith).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Task 18.2.2: HTTP interceptor retrieves mode from active context to decide between MOCK and PASSTHROUGH.
+ */
+describe('Task 18.2.2 HTTP interceptor context mode', () => {
+  const { context } = require('@opentelemetry/api');
+  const { AsyncHooksContextManager } = require('@opentelemetry/context-async-hooks');
+  const otelApi = require('@opentelemetry/api');
+  const { setSoftprobeContext } = require('../context');
+
+  beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
+  });
+
+  it('when mode is REPLAY, interceptor uses matcher and can MOCK', async () => {
+    const controller = makeController();
+    const match = jest.fn(() => ({ action: 'MOCK' as const, payload: { status: 200, body: { replayed: true } } }));
+
+    const activeCtx = context.active();
+    const ctxReplay = setSoftprobeContext(activeCtx, {
+      mode: 'REPLAY',
+      cassettePath: '',
+    });
+
+    await context.with(ctxReplay, async () => {
+      await handleHttpReplayRequest(
+        {
+          request: new Request('https://api.example.com/foo', { method: 'GET' }),
+          controller,
+        },
+        { shouldIgnoreUrl: () => false, match }
+      );
+    });
+
+    expect(match).toHaveBeenCalled();
+    expect(controller.respondWith).toHaveBeenCalledTimes(1);
+    const response = controller.respondWith.mock.calls[0][0];
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ replayed: true });
+  });
+
+  it('when mode is PASSTHROUGH, interceptor does not MOCK (passthrough)', async () => {
+    const controller = makeController();
+    const match = jest.fn(() => ({ action: 'MOCK' as const, payload: { status: 200, body: 'ignored' } }));
+
+    const activeCtx = context.active();
+    const ctxPassthrough = setSoftprobeContext(activeCtx, {
+      mode: 'PASSTHROUGH',
+      cassettePath: '',
+    });
+
+    await context.with(ctxPassthrough, async () => {
+      await handleHttpReplayRequest(
+        {
+          request: new Request('https://api.example.com/bar', { method: 'GET' }),
+          controller,
+        },
+        { shouldIgnoreUrl: () => false, match }
+      );
+    });
 
     expect(controller.respondWith).not.toHaveBeenCalled();
   });

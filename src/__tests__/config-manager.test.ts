@@ -30,6 +30,12 @@ describe('ConfigManager', () => {
     expect(cfg.cassettePath).toBe('./softprobe-cassettes.ndjson');
   });
 
+  it('get().mode defaults to PASSTHROUGH when missing in YAML', () => {
+    const manager = new ConfigManager(FIXTURE_PATH);
+    const cfg = manager.get();
+    expect(cfg.mode).toBe('PASSTHROUGH');
+  });
+
   it('compiles ignore patterns into RegExp[] (pattern api\\.stripe\\.com matches URL)', () => {
     const manager = new ConfigManager(FIXTURE_PATH);
     const regexes = manager.getIgnoreRegexes();

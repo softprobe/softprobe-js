@@ -12,8 +12,10 @@ import path from 'path';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
+/** Build W3C traceparent (trace-id must be 32 hex chars, no dashes). */
 function traceparentHeader(traceId: string): string {
-  return `00-${traceId.padStart(32, '0').slice(-32)}-0000000000000001-01`;
+  const normalized = String(traceId).trim().toLowerCase().replace(/-/g, '').padStart(32, '0').slice(-32);
+  return `00-${normalized}-0000000000000001-01`;
 }
 
 async function waitForServer(timeoutMs = 15000): Promise<void> {

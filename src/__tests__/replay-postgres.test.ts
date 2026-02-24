@@ -7,6 +7,7 @@
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { SemanticMatcher } from '../replay/matcher';
 import { softprobe } from '../api';
+import { initGlobalContext } from '../context';
 import { setupPostgresReplay } from '../replay/postgres';
 import { PostgresSpan } from '../bindings/postgres-span';
 
@@ -46,8 +47,7 @@ describe('Postgres Replay (Task 5.1)', () => {
   });
 
   it('throws when query is unmocked (no recorded span for identifier)', async () => {
-    const strict = process.env.SOFTPROBE_STRICT_REPLAY;
-    process.env.SOFTPROBE_STRICT_REPLAY = '1';
+    initGlobalContext({ strictReplay: true });
 
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: [], rowCount: 0 })),
@@ -59,8 +59,7 @@ describe('Postgres Replay (Task 5.1)', () => {
 
     await expect(client.query('SELECT other')).rejects.toThrow(/no match for pg\.query/);
 
-    if (strict !== undefined) process.env.SOFTPROBE_STRICT_REPLAY = strict;
-    else delete process.env.SOFTPROBE_STRICT_REPLAY;
+    initGlobalContext({ strictReplay: false });
   });
 });
 
@@ -149,9 +148,8 @@ describe('Postgres Replay (Task 9.2)', () => {
     expect(result).toMatchObject({ rows: recordedRows, rowCount: 1, command: 'SELECT' });
   });
 
-  it('9.2.4 CONTINUE + STRICT throws when env SOFTPROBE_STRICT_REPLAY=1 and no match', async () => {
-    const strict = process.env.SOFTPROBE_STRICT_REPLAY;
-    process.env.SOFTPROBE_STRICT_REPLAY = '1';
+  it('9.2.4 CONTINUE + STRICT throws when strictReplay and no match', async () => {
+    initGlobalContext({ strictReplay: true });
 
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: [], rowCount: 0 })),
@@ -163,8 +161,71 @@ describe('Postgres Replay (Task 9.2)', () => {
 
     await expect(client.query('SELECT other')).rejects.toThrow(/no match for pg\.query/);
 
-    if (strict !== undefined) process.env.SOFTPROBE_STRICT_REPLAY = strict;
-    else delete process.env.SOFTPROBE_STRICT_REPLAY;
+    initGlobalContext({ strictReplay: false });
   });
 
+});
+
+/**
+ * Task 18.1.1: Postgres connect() shim uses Context lookup (globalDefault from YAML).
+ * When globalDefault mode is REPLAY, connect() must return Promise.resolve() immediately.
+ */
+describe('Task 18.1.1 Postgres connect() context-lookup', () => {
+  it('when globalDefault is REPLAY, client.connect() returns Promise.resolve() immediately', async () => {
+    initGlobalContext({ mode: 'REPLAY', cassettePath: '' });
+
+    const { Client } = require('pg');
+    const client = new Client();
+
+    await expect(client.connect()).resolves.toBeUndefined();
+
+    initGlobalContext({ mode: 'PASSTHROUGH', cassettePath: '' });
+  });
+});
+
+/**
+ * Task 18.1.2: Postgres query() matcher is pulled from the active OTel context first.
+ */
+describe('Task 18.1.2 Postgres query() context-matcher', () => {
+  const { context } = require('@opentelemetry/api');
+  const { AsyncHooksContextManager } = require('@opentelemetry/context-async-hooks');
+  const otelApi = require('@opentelemetry/api');
+  const { setSoftprobeContext } = require('../context');
+  const { SoftprobeMatcher } = require('../replay/softprobe-matcher');
+
+  beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
+  });
+
+  it('query matcher is pulled from the active OTel context first', async () => {
+    const contextMatcher = new SoftprobeMatcher();
+    contextMatcher.use((span: { attributes?: Record<string, unknown> }, _records: unknown) => {
+      const attrs = span?.attributes ?? {};
+      if (attrs['softprobe.identifier'] === 'SELECT 1') {
+        return { action: 'MOCK' as const, payload: { rows: [{ from: 'otel-context' }], rowCount: 1, command: 'SELECT' } };
+      }
+      return { action: 'CONTINUE' as const };
+    });
+
+    const activeCtx = context.active();
+    const ctxWithMatcher = setSoftprobeContext(activeCtx, {
+      mode: 'REPLAY',
+      cassettePath: '',
+      matcher: contextMatcher,
+    });
+
+    let queryResult: { rows: unknown[] } | undefined;
+    await context.with(ctxWithMatcher, async () => {
+      expect(softprobe.getActiveMatcher()).toBe(contextMatcher);
+
+      const { Client } = require('pg');
+      const client = new Client();
+      queryResult = await client.query('SELECT 1');
+    });
+
+    expect(queryResult).toBeDefined();
+    expect(queryResult!.rows).toEqual([{ from: 'otel-context' }]);
+  });
 });

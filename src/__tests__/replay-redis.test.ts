@@ -7,6 +7,7 @@
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { SemanticMatcher } from '../replay/matcher';
 import { softprobe } from '../api';
+import { initGlobalContext } from '../context';
 import { setupRedisReplay } from '../replay/redis';
 import { RedisSpan } from '../bindings/redis-span';
 
@@ -43,8 +44,7 @@ describe('Redis Replay (Task 5.3)', () => {
   });
 
   it('throws when command is unmocked (no recorded span for identifier)', async () => {
-    const strict = process.env.SOFTPROBE_STRICT_REPLAY;
-    process.env.SOFTPROBE_STRICT_REPLAY = '1';
+    initGlobalContext({ strictReplay: true });
 
     const matcher = new SemanticMatcher([
       mockRedisSpan('GET mykey', 'ok'),
@@ -58,8 +58,7 @@ describe('Redis Replay (Task 5.3)', () => {
       /no match for redis command/
     );
 
-    if (strict !== undefined) process.env.SOFTPROBE_STRICT_REPLAY = strict;
-    else delete process.env.SOFTPROBE_STRICT_REPLAY;
+    initGlobalContext({ strictReplay: false });
   });
 });
 
@@ -110,9 +109,8 @@ describe('Redis Replay (Task 9.3)', () => {
     expect(result).toEqual(mockedValue);
   });
 
-  it('9.3.3 CONTINUE + STRICT throws when env SOFTPROBE_STRICT_REPLAY=1 and no match', async () => {
-    const strict = process.env.SOFTPROBE_STRICT_REPLAY;
-    process.env.SOFTPROBE_STRICT_REPLAY = '1';
+  it('9.3.3 CONTINUE + STRICT throws when strictReplay and no match', async () => {
+    initGlobalContext({ strictReplay: true });
 
     const matcher = new SemanticMatcher([
       mockRedisSpan('GET mykey', 'ok'),
@@ -124,13 +122,11 @@ describe('Redis Replay (Task 9.3)', () => {
 
     await expect(client.get('otherkey')).rejects.toThrow(/no match for redis command/);
 
-    if (strict !== undefined) process.env.SOFTPROBE_STRICT_REPLAY = strict;
-    else delete process.env.SOFTPROBE_STRICT_REPLAY;
+    initGlobalContext({ strictReplay: false });
   });
 
   it('9.3.4 CONTINUE + DEV passthrough invokes original when no match and strict not set', async () => {
-    const strict = process.env.SOFTPROBE_STRICT_REPLAY;
-    delete process.env.SOFTPROBE_STRICT_REPLAY;
+    initGlobalContext({ strictReplay: false });
 
     const matcher = new SemanticMatcher([
       mockRedisSpan('GET mykey', 'ok'),
@@ -147,7 +143,29 @@ describe('Redis Replay (Task 9.3)', () => {
       const msg = (e as Error)?.message ?? '';
       expect(msg).not.toMatch(/No recorded traces|no match for redis command/);
     }
+  });
+});
 
-    if (strict !== undefined) process.env.SOFTPROBE_STRICT_REPLAY = strict;
+/**
+ * Task 18.2.1: Redis shim uses Context lookup; sendCommand no-ops when mode === 'REPLAY' (no real send).
+ */
+describe('Task 18.2.1 Redis shim context-lookup', () => {
+  beforeAll(() => {
+    setupRedisReplay();
+  });
+
+  afterEach(() => {
+    softprobe.clearReplayContext();
+  });
+
+  it('sendCommand no-ops when getSoftprobeContext().mode === REPLAY and no matcher', async () => {
+    initGlobalContext({ mode: 'REPLAY', cassettePath: '' });
+
+    const { createClient } = require('redis');
+    const client = createClient();
+
+    await expect(client.get('anykey')).rejects.toThrow(/no match for redis command/);
+
+    initGlobalContext({ mode: 'PASSTHROUGH', cassettePath: '' });
   });
 });

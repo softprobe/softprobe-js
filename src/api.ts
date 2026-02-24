@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'async_hooks';
-import { propagation } from '@opentelemetry/api';
+import { context, propagation } from '@opentelemetry/api';
 import type { SoftprobeCassetteRecord } from './types/schema';
 import type { SemanticMatcher } from './replay/matcher';
 import { SoftprobeMatcher } from './replay/softprobe-matcher';
@@ -12,15 +12,22 @@ import {
   getRecordsForTrace as getRecordsForTraceFromStore,
   setReplayRecordsCache as setReplayRecordsCacheInStore,
 } from './replay/store-accessor';
+import { getSoftprobeContext, setSoftprobeContext, type SoftprobeContextValue } from './context';
 
 /**
  * ALS store shape for replay context. traceId and cassettePath are used by
  * runWithContext; matcher is set when records are loaded (Task 8.2).
  * inboundRecord is set when loading a cassette that contains an inbound record (Task 8.2.2).
+ * Task 17.3.1: optional mode is propagated into OTel context.
  */
 export interface ReplayContext {
   traceId?: string;
   cassettePath?: string;
+  /** Optional mode (CAPTURE | REPLAY | PASSTHROUGH); when set, stored in OTel context. */
+  mode?: 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH';
+  /** Optional strict flags; when set, stored in OTel context. */
+  strictReplay?: boolean;
+  strictComparison?: boolean;
   /** Optional matcher for replay; when set, getActiveMatcher() returns it. */
   matcher?: SemanticMatcher | SoftprobeMatcher;
   /** Cached inbound record for this trace; used by getRecordedInboundResponse(). */
@@ -30,30 +37,63 @@ export interface ReplayContext {
 const replayStorage = new AsyncLocalStorage<ReplayContext | undefined>();
 
 /**
+ * Builds the OTel Softprobe context value from ReplayContext. Task 17.3.1.
+ * Task 18.1.2: includes matcher when present so getActiveMatcher() can prefer context.
+ */
+function toSoftprobeContextValue(ctx: ReplayContext): SoftprobeContextValue {
+  const base = getSoftprobeContext();
+  const mode =
+    ctx.mode ?? (ctx.cassettePath ? ('REPLAY' as const) : ('PASSTHROUGH' as const));
+  const value: SoftprobeContextValue = {
+    mode,
+    cassettePath: ctx.cassettePath ?? base.cassettePath,
+    traceId: ctx.traceId,
+    strictReplay: ctx.strictReplay ?? base.strictReplay,
+    strictComparison: ctx.strictComparison ?? base.strictComparison,
+  };
+  if (ctx.matcher !== undefined) value.matcher = ctx.matcher;
+  return value;
+}
+
+/**
  * Test-time API: run a function with the given replay context so that
  * concurrent tests (e.g. different workers) do not share matcher state.
  * When context.cassettePath is set, loads records once from NDJSON and sets
  * them on a SoftprobeMatcher before running the callback (Task 8.2.1).
+ * Task 17.3.1: Runs the callback inside OTel context so context.active().getValue(SOFTPROBE_CONTEXT_KEY) matches traceId/mode.
  */
 export function runWithContext<T>(
-  context: ReplayContext,
+  replayContext: ReplayContext,
   fn: () => T | Promise<T>
 ): T | Promise<T> {
-  if (context.cassettePath) {
-    const cassettePath = context.cassettePath;
-    return (async () => {
-      const records = await loadNdjson(cassettePath, context.traceId);
-      const matcher = new SoftprobeMatcher();
-      matcher._setRecords(records);
-      matcher.use(createDefaultMatcher());
-      const inboundRecord = records.find((r) => r.type === 'inbound');
-      return replayStorage.run(
-        { ...context, matcher, inboundRecord },
-        fn
-      ) as Promise<T>;
-    })();
-  }
-  return replayStorage.run(context, fn) as T | Promise<T>;
+  const otelValue = toSoftprobeContextValue(replayContext);
+  const activeCtx = context.active();
+  const ctxWithSoftprobe = setSoftprobeContext(activeCtx, otelValue);
+
+  const runInOtelContext = (): T | Promise<T> => {
+    if (replayContext.cassettePath) {
+      const cassettePath = replayContext.cassettePath;
+      return (async () => {
+        const records = await loadNdjson(cassettePath, replayContext.traceId);
+        const matcher = new SoftprobeMatcher();
+        matcher._setRecords(records);
+        matcher.use(createDefaultMatcher());
+        const inboundRecord = records.find((r) => r.type === 'inbound');
+        const ctxWithMatcher = setSoftprobeContext(context.active(), { ...otelValue, matcher });
+        return context.with(
+          ctxWithMatcher,
+          () =>
+            replayStorage.run(
+              { ...replayContext, matcher, inboundRecord },
+              fn
+            ) as Promise<T>
+        );
+      })();
+    }
+    return replayStorage.run(replayContext, fn) as T | Promise<T>;
+  };
+
+  return context.with(ctxWithSoftprobe, runInOtelContext) as T | Promise<T>;
 }
 
 /**
@@ -81,14 +121,17 @@ export function clearReplayContext(): void {
 
 /**
  * Returns the active matcher (SemanticMatcher or SoftprobeMatcher) for the current
- * replay context, if any. In REPLAY mode without ALS context (e.g. server request), returns globalReplayMatcher.
+ * replay context, if any. Task 18.1.2: prefers matcher from active OTel context first.
+ * In REPLAY mode without ALS context (e.g. server request), returns globalReplayMatcher.
  * Task 15.1.2: When OTel baggage contains softprobe-mode=REPLAY, also returns globalReplayMatcher so
  * downstream services (receiving propagated baggage) use the global matcher for outbound calls.
  */
 export function getActiveMatcher(): SemanticMatcher | SoftprobeMatcher | undefined {
+  const softCtx = getSoftprobeContext();
+  if (softCtx.matcher != null) return softCtx.matcher as SemanticMatcher | SoftprobeMatcher;
   const ctx = getReplayContext();
   if (ctx?.matcher) return ctx.matcher;
-  if (process.env.SOFTPROBE_MODE === 'REPLAY' && globalReplayMatcher) return globalReplayMatcher;
+  if (softCtx.mode === 'REPLAY' && globalReplayMatcher) return globalReplayMatcher;
   const baggageMode = propagation.getActiveBaggage()?.getEntry('softprobe-mode')?.value;
   if (baggageMode === 'REPLAY' && globalReplayMatcher) return globalReplayMatcher;
   return undefined;

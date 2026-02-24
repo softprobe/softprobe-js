@@ -3,6 +3,9 @@
   "version": "2.0.0",
   "description": "Topology-aware record & replay testing framework via OpenTelemetry",
   "main": "dist/index.js",
+  "bin": {
+    "softprobe": "./dist/cli.js"
+  },
   "exports": {
     ".": "./dist/index.js",
     "./init": "./dist/init.js"
@@ -16,7 +19,8 @@
     "example:replay": "cd examples/basic-app && npx ts-node --transpile-only replay-runner.ts",
     "example:up": "docker compose -f examples/basic-app/docker-compose.yml up -d",
     "example:down": "docker compose -f examples/basic-app/docker-compose.yml down",
-    "example:test": "jest --config examples/basic-app/jest.config.js"
+    "example:test": "jest --config examples/basic-app/jest.config.js",
+    "diff": "node dist/cli.js diff"
   },
   "dependencies": {
     "@mswjs/interceptors": "^0.39.8",
@@ -32,6 +36,7 @@
   },
   "devDependencies": {
     "@opentelemetry/auto-instrumentations-node": "^0.52.0",
+    "@opentelemetry/context-async-hooks": "^2.5.1",
     "@testcontainers/postgresql": "^11.0.0",
     "@testcontainers/redis": "^11.0.0",
     "@types/express": "^5.0.6",
