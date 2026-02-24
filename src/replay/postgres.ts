@@ -15,17 +15,14 @@ const FATAL_IMPORT_ORDER =
   "[Softprobe FATAL] OTel already wrapped pg. Import 'softprobe/init' BEFORE OTel initialization.";
 
 /**
- * Sets up Postgres replay by wrapping pg.Client.prototype.connect and query.
- * When a matcher is active, connect() is a no-op (no TCP) so replay works with DB offline;
- * query() returns recorded payloads. Design §9.1; Task 16.3.1 demo.
+ * Patches a pg module so connect is no-op and query uses matcher. Idempotent.
+ * Exported so init can call it from a require hook and patch whichever module first requires 'pg' (Task 16.3.1).
  */
-export function setupPostgresReplay(): void {
-  const pg = require('pg');
+export function applyPostgresReplay(pg: { Client: { prototype: Record<string, unknown> } }): void {
   if ((pg.Client.prototype.query as { __wrapped?: boolean }).__wrapped) {
-    throw new Error(FATAL_IMPORT_ORDER);
+    return;
   }
 
-  // No-op connect in replay so demo can run with Postgres offline (Task 16.3.1).
   const connectKey = 'connect' as const;
   if (!(pg.Client.prototype[connectKey] as { __wrapped?: boolean })?.__wrapped) {
     shimmer.wrap(
@@ -33,10 +30,21 @@ export function setupPostgresReplay(): void {
       connectKey,
       (originalConnect: (...args: unknown[]) => unknown) =>
         function wrappedConnect(this: unknown, ...args: unknown[]): unknown {
-          if (process.env.SOFTPROBE_MODE === 'REPLAY' && softprobe.getActiveMatcher()) {
-            return Promise.resolve();
-          }
+          if (process.env.SOFTPROBE_MODE === 'REPLAY') return Promise.resolve();
           return (originalConnect as (...a: unknown[]) => unknown).apply(this, args);
+        }
+    );
+  }
+  // end() must not touch the network when we never connected (Task 16.3.1).
+  const endKey = 'end' as const;
+  if (typeof pg.Client.prototype[endKey] === 'function' && !(pg.Client.prototype[endKey] as { __wrapped?: boolean })?.__wrapped) {
+    shimmer.wrap(
+      pg.Client.prototype,
+      endKey,
+      (originalEnd: (...args: unknown[]) => unknown) =>
+        function wrappedEnd(this: unknown, ...args: unknown[]): unknown {
+          if (process.env.SOFTPROBE_MODE === 'REPLAY') return Promise.resolve();
+          return (originalEnd as (...a: unknown[]) => unknown).apply(this, args);
         }
     );
   }
@@ -120,4 +128,16 @@ export function setupPostgresReplay(): void {
         return Promise.resolve(mockedResult);
       }
   );
+}
+
+/**
+ * Sets up Postgres replay. Triggers require('pg') so the init require hook runs and patches pg.
+ * If the hook already patched (REPLAY), applyPostgresReplay is no-op; otherwise throw if OTel wrapped first.
+ */
+export function setupPostgresReplay(): void {
+  const pg = require('pg');
+  if ((pg.Client.prototype.query as { __wrapped?: boolean }).__wrapped && process.env.SOFTPROBE_MODE !== 'REPLAY') {
+    throw new Error(FATAL_IMPORT_ORDER);
+  }
+  applyPostgresReplay(pg);
 }

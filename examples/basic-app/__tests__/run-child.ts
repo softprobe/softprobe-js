@@ -63,12 +63,12 @@ export function runServer(
   });
 }
 
-/** Poll until GET http://localhost:port/ returns 200 or timeout. */
-export async function waitForServer(port: number, timeoutMs = 15000): Promise<void> {
+/** Poll until GET http://localhost:port{path} returns 200 or timeout. Use path='/ping' for replay so / is not hit without traceparent. */
+export async function waitForServer(port: number, timeoutMs = 15000, path = '/'): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/`);
+      const res = await fetch(`http://127.0.0.1:${port}${path}`);
       if (res.ok) return;
     } catch {
       await new Promise((r) => setTimeout(r, 200));

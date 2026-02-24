@@ -808,3 +808,151 @@ if (mode === 'REPLAY') {
 * **[ ] Sync Bootstrapping:** Ensure `SOFTPROBE_MODE` is checked at the very top of `instrumentation.ts` before `NodeSDK` starts.
 * **[ ] Matcher Scoping:** Verify the `SoftprobeMatcher` uses the active OTel context to select records, preventing cross-test data leakage.
 * **[ ] NDJSON Flush:** Since you are using a global `beforeExit` listener, ensure it handles both `SIGINT` and `SIGTERM` for production safety.
+
+
+---
+
+# Softprobe Consolidated Design (v5.2) — Unified OTel Context & YAML Configuration
+
+## 1. Background and The "Bootstrap" Problem
+
+Previous versions relied on `process.env.SOFTPROBE_MODE` to decide whether to no-op database connections. However, tests often run in "Replay" mode without global environment flags, causing database drivers to attempt real connections during the application's "pre-warm" phase (module evaluation).
+
+By moving all state into the **OpenTelemetry (OTel) Context** and seeding a **Global Default** from a YAML file, we ensure the system is "Mock-Ready" before the first line of application code executes.
+
+---
+
+## 2. Configuration (`.softprobe/config.yml`)
+
+We move away from environment variables to a structured configuration file. The `outputFile` from previous versions is renamed to `cassettePath` to reflect its dual role as the destination for Capture and the source for Replay.
+
+```yaml
+# .softprobe/config.yml
+mode: "REPLAY"                   # Global default: CAPTURE, REPLAY, or PASSTHROUGH
+cassettePath: "./cassettes.ndjson" # Unified path for recording and playback
+
+capture:
+  maxPayloadSize: 1048576        # 1MB circuit breaker
+  
+replay:
+  strict: true                   # Fail if no match found
+  ignoreUrls:
+    - "localhost:431[78]"        # OTel collector
+    - "/v1/traces"
+
+```
+
+---
+
+## 3. The Unified Context Schema
+
+Softprobe state is stored under a unique OTel `ContextKey`. This allows the "Mode" and "Matcher" to propagate automatically across service boundaries via OTel's native propagation logic.
+
+```typescript
+import { createContextKey, Context, context } from "@opentelemetry/api";
+
+export interface SoftprobeContextValue {
+  mode: 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH';
+  cassettePath: string;
+  traceId?: string;
+  matcher?: SoftprobeMatcher;
+  inboundRecord?: SoftprobeCassetteRecord;
+}
+
+export const SOFTPROBE_CONTEXT_KEY = createContextKey('softprobe_context');
+
+```
+
+---
+
+## 4. Context Management & Priority Logic
+
+To solve the bootstrap issue, the system uses a hierarchy: **Active Context** (Specific) > **Global Default** (General).
+
+```typescript
+// Initialized at boot from YAML
+let globalDefault: SoftprobeContextValue;
+
+export function initGlobalContext(config: any) {
+  globalDefault = {
+    mode: config.mode || 'PASSTHROUGH',
+    cassettePath: config.cassettePath
+  };
+}
+
+/**
+ * Priority: 
+ * 1. Values set explicitly in the current OTel Context (e.g., via runWithContext)
+ * 2. Values from the global config.yml
+ */
+export function getSoftprobeContext(ctx: Context = context.active()): SoftprobeContextValue {
+  const activeValue = ctx.getValue(SOFTPROBE_CONTEXT_KEY) as SoftprobeContextValue;
+  return activeValue || globalDefault;
+}
+
+```
+
+---
+
+## 5. Implementation: The "Shim" Layer
+
+Shims for Postgres, Redis, and HTTP now consult the Unified Context. This ensures that even if a database `connect()` is called at the top of a file, it checks the YAML-seeded global default and no-ops the connection if the mode is `REPLAY`.
+
+### 5.1 Postgres Connection No-Op
+
+```typescript
+shimmer.wrap(pg.Client.prototype, "connect", function (originalConnect) {
+  return function wrappedConnect(this: unknown, ...args: unknown[]) {
+    const spCtx = getSoftprobeContext(); // Checks Active Context -> then Global YAML Default
+
+    if (spCtx.mode === 'REPLAY') {
+      return Promise.resolve(); // Prevent network activity during bootstrap
+    }
+    return (originalConnect as Function).apply(this, args);
+  };
+});
+
+```
+
+---
+
+## 6. The Developer API
+
+The `runWithContext` API allows local overrides (like specific trace matching) within a larger application that may have a different global mode.
+
+```typescript
+import { softprobe } from "softprobe";
+
+it("replays even if the DB is disconnected", async () => {
+  // This sets an Active OTel Context that overrides the Global YAML Mode
+  await softprobe.runWithContext(
+    { traceId: "test-123", mode: "REPLAY" }, 
+    async () => {
+      const res = await fetch("http://localhost:3000/data");
+      expect(res.status).toBe(200);
+    }
+  );
+});
+
+```
+
+---
+
+## 7. Holistic Design Overview
+
+| Component | Responsibility | Config Source |
+| --- | --- | --- |
+| **Config Manager** | Synchronously loads YAML at process start. | `.softprobe/config.yml` |
+| **Global Context** | Seeks global `mode` and `cassettePath` to protect bootstrap connections. | `config.yml` |
+| **Active Context** | Manages per-request or per-test logic using OTel `AsyncLocalStorage`. | `runWithContext()` |
+| **Cassette Store** | Writes (Capture) or Reads (Replay) from the unified `cassettePath`. | `config.yml` |
+
+---
+
+## 8. Final Implementation Checklist
+
+* **[ ] Config Migration**: Rename all instances of `outputFile` to `cassettePath` in the YAML parser and internal interfaces.
+* **[ ] Sync Initialization**: Ensure `initGlobalContext` is called in `softprobe/init` before any OTel instrumentation starts.
+* **[ ] Context Priority**: Verify `getSoftprobeContext` correctly falls back to the global YAML settings when OTel context is missing.
+* **[ ] Propagation**: Ensure `softprobe-mode` from the YAML is injected into OTel Baggage for microservice-to-microservice consistency.
+* **[ ] Bootstrap Test**: Create a test case where a DB `connect()` is called at the module level (outside an `it` block) to ensure it no-ops correctly based on YAML.

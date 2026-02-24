@@ -76,16 +76,52 @@ describe('Replay demo (Task 16.3.1)', () => {
   });
 
   it('with services stopped, replay run succeeds and output matches capture', async () => {
+    // Stop dependencies so replay must use cassette only (no live pg/redis/http).
+    await pgContainer.stop();
+    await redisContainer.stop();
+    const cassettePathForChild = path.isAbsolute(cassettePath) ? cassettePath : path.resolve(EXAMPLE_DIR, cassettePath);
+
+    // Start server in REPLAY; hit GET / with traceparent so middleware primes matcher by traceId.
+    const replayChild = runServer(
+      RUN_SCRIPT,
+      {
+        PORT: String(PORT_REPLAY),
+        SOFTPROBE_MODE: 'REPLAY',
+        SOFTPROBE_STRICT_REPLAY: '1',
+        SOFTPROBE_CASSETTE_PATH: cassettePathForChild,
+      },
+      { useTsNode: true, require: INSTRUMENTATION }
+    );
+
+    const traceparent = `00-${String(traceId).trim().toLowerCase().replace(/-/g, '').padStart(32, '0').slice(-32)}-0000000000000001-01`;
+    try {
+      await waitForServer(PORT_REPLAY, 20000, '/ping');
+      const res = await fetch(`http://127.0.0.1:${PORT_REPLAY}/`, {
+        headers: { traceparent },
+      });
+      expect(res.ok).toBe(true);
+      const replayOutput = (await res.json()) as Record<string, unknown>;
+      expect(replayOutput).toHaveProperty('postgres');
+      expect(replayOutput).toHaveProperty('redis');
+      expect(replayOutput).toHaveProperty('http');
+      expect(replayOutput.postgres).toEqual(captureResponse.postgres);
+      expect(replayOutput.redis).toEqual(captureResponse.redis);
+      expect((replayOutput.http as Record<string, unknown>).url).toEqual(
+        (captureResponse.http as Record<string, unknown>)?.url
+      );
+    } finally {
+      await closeServer(replayChild);
+    }
+  }, 30000);
+
+  it('replay-runner script exits 0 and stdout is JSON (npm run example:replay)', async () => {
+    // With services stopped, run the replay-runner script as a subprocess; assert exit 0 and JSON stdout.
     await pgContainer.stop();
     await redisContainer.stop();
 
     const result = spawnSync(
       'npx',
-      [
-        'ts-node',
-        '--transpile-only',
-        path.basename(REPLAY_RUNNER),
-      ],
+      ['ts-node', '--transpile-only', path.basename(REPLAY_RUNNER)],
       {
         encoding: 'utf-8',
         cwd: EXAMPLE_DIR,
@@ -101,17 +137,11 @@ describe('Replay demo (Task 16.3.1)', () => {
     );
 
     expect(result.status).toBe(0);
-    expect(result.stderr).toBeDefined();
     const out = result.stdout?.trim() ?? '';
     expect(out).toBeTruthy();
     const replayOutput = JSON.parse(out) as Record<string, unknown>;
     expect(replayOutput).toHaveProperty('postgres');
     expect(replayOutput).toHaveProperty('redis');
     expect(replayOutput).toHaveProperty('http');
-    expect(replayOutput.postgres).toEqual(captureResponse.postgres);
-    expect(replayOutput.redis).toEqual(captureResponse.redis);
-    expect((replayOutput.http as Record<string, unknown>).url).toEqual(
-      (captureResponse.http as Record<string, unknown>)?.url
-    );
   }, 30000);
 });

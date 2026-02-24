@@ -138,21 +138,39 @@ export function setupRedisReplay(): void {
   // Ensure client module loads after our patch so attachCommands uses our wrapper
   try {
     const redis = require('redis');
-    // No-op connect in replay so demo can run with Redis offline (Task 16.3.1).
-    const stub = (redis.createClient ?? (redis as { default?: { createClient?: () => unknown } }).default?.createClient)?.();
-    if (stub?.constructor?.prototype && typeof (stub as { connect?: unknown }).connect === 'function') {
-      const proto = stub.constructor.prototype as { connect?: (...args: unknown[]) => unknown; _connectReplayNoop?: boolean };
-      if (!proto._connectReplayNoop) {
-        shimmer.wrap(proto, 'connect', (original: (...args: unknown[]) => unknown) =>
-          function (this: unknown, ...args: unknown[]): unknown {
-            if (process.env.SOFTPROBE_MODE === 'REPLAY' && softprobe.getActiveMatcher()) return Promise.resolve();
-            return (original as (...a: unknown[]) => unknown).apply(this, args);
-          }
-        );
-        proto._connectReplayNoop = true;
-      }
-    }
+    applyRedisReplay(redis);
   } catch {
     // redis optional; tests will require it
   }
+}
+
+/**
+ * Patches redis module so connect is no-op in REPLAY. Idempotent.
+ * Exported so init can call it from a require hook (Task 16.3.1).
+ */
+export function applyRedisReplay(redis: Record<string, unknown>): void {
+  const createClient =
+    (redis.createClient as (() => unknown) | undefined) ??
+    (redis.default as { createClient?: () => unknown } | undefined)?.createClient;
+  const stub = createClient?.();
+  if (!stub?.constructor?.prototype || typeof (stub as { connect?: unknown }).connect !== 'function') return;
+  const proto = stub.constructor.prototype as { connect?: (...args: unknown[]) => unknown; _connectReplayNoop?: boolean };
+  if (proto._connectReplayNoop) return;
+  shimmer.wrap(proto, 'connect', (original: (...args: unknown[]) => unknown) =>
+    function (this: unknown, ...args: unknown[]): unknown {
+      if (process.env.SOFTPROBE_MODE === 'REPLAY') return Promise.resolve();
+      return (original as (...a: unknown[]) => unknown).apply(this, args);
+    }
+  );
+  // quit() can trigger connect internally when client was never connected (Task 16.3.1).
+  if (typeof proto.quit === 'function' && !(proto as { _quitReplayNoop?: boolean })._quitReplayNoop) {
+    shimmer.wrap(proto, 'quit', (original: (...args: unknown[]) => unknown) =>
+      function (this: unknown, ...args: unknown[]): unknown {
+        if (process.env.SOFTPROBE_MODE === 'REPLAY') return Promise.resolve('OK');
+        return (original as (...a: unknown[]) => unknown).apply(this, args);
+      }
+    );
+    (proto as { _quitReplayNoop?: boolean })._quitReplayNoop = true;
+  }
+  proto._connectReplayNoop = true;
 }

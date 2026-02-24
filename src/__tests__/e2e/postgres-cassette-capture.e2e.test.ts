@@ -109,22 +109,29 @@ describe('E2E Postgres cassette replay (Task 12.2.2)', () => {
 
     // REPLAY step: run in-process with a dummy URL — no real DB. The replay wrapper returns
     // the recorded payload, so the query never hits the network.
-    const { softprobe } = await import('../../api');
-    const replayed = await softprobe.runWithContext(
-      { cassettePath },
-      async () => {
-        const { Client } = require('pg');
-        const client = new Client({ connectionString: 'postgres://localhost:9999/nodb' }); // intentionally invalid
-        const queryText = 'SELECT 1 AS num, $1::text AS label';
-        const values = ['e2e-cassette'];
-        const result = await client.query(queryText, values);
-        return { rows: result.rows, rowCount: result.rowCount };
-      }
-    );
+    const originalMode = process.env.SOFTPROBE_MODE;
+    try {
+      process.env.SOFTPROBE_MODE = 'REPLAY';
+      const { softprobe } = await import('../../api');
+      const replayed = await softprobe.runWithContext(
+        { cassettePath },
+        async () => {
+          const { Client } = require('pg');
+          const client = new Client({ connectionString: 'postgres://localhost:9999/nodb' }); // intentionally invalid
+          const queryText = 'SELECT 1 AS num, $1::text AS label';
+          const values = ['e2e-cassette'];
+          const result = await client.query(queryText, values);
+          return { rows: result.rows, rowCount: result.rowCount };
+        }
+      );
 
-    expect(replayed).toBeDefined();
-    expect(Array.isArray(replayed!.rows)).toBe(true);
-    expect(replayed!.rowCount).toBeGreaterThanOrEqual(0);
-    expect(replayed!.rows!.length).toBeGreaterThanOrEqual(1);
+      expect(replayed).toBeDefined();
+      expect(Array.isArray(replayed!.rows)).toBe(true);
+      expect(replayed!.rowCount).toBeGreaterThanOrEqual(0);
+      expect(replayed!.rows!.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      if (originalMode !== undefined) process.env.SOFTPROBE_MODE = originalMode;
+      else delete process.env.SOFTPROBE_MODE;
+    }
   });
 });

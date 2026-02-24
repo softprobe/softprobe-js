@@ -32,6 +32,7 @@ async function start(): Promise<void> {
     softprobe.setReplayRecordsCache(records);
     const matcher = new SoftprobeMatcher();
     matcher.use(createDefaultMatcher());
+    matcher._setRecords(records); // Prime so single-trace cassette works; middleware refines per request
     softprobe.setGlobalReplayMatcher(matcher);
   }
 

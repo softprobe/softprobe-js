@@ -400,10 +400,115 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 * [x] Task 15.3.1 Middleware loads specific trace records from eager-loaded global store *(feat: replay/store-accessor.ts)*
 * Test: middleware retrieves only records for the current `traceId` from the store initialized at boot *(feat: replay/store-accessor.ts + replay-store-accessor.test.ts; api delegates to store)*
 
+---
+
+This updated **Task Tracker** incorporates the **Unified OTel Context** and **YAML Configuration** design. To maintain the project's atomic TDD integrity, these tasks replace the previous environment-variable-heavy approach and address the "bootstrap corner case" by prioritizing the configuration-seeded global context.
 
 ---
 
-# 16) User-Facing Example App + Record/Replay Demo — Atomic
+# Updated Softprobe Implementation Tracker — V5.2 Unified Context
+
+---
+
+# 17) Configuration & Context Refactor (Unified OTel) — Atomic
+
+## 17.1 YAML Config Migration
+
+* [x] **Task 17.1.1 Rename `outputFile` to `cassettePath` in ConfigManager** *(feat: fixture + config-manager.test.ts get().cassettePath)*
+* **Test**: `config.test.ts` asserts that `softprobeConfig.get().cassettePath` returns the correct value from the YAML fixture.
+
+
+* [ ] **Task 17.1.2 Support `mode` in YAML config**
+* **Test**: Assert that `softprobeConfig.get().mode` defaults to `PASSTHROUGH` if missing in YAML.
+
+
+## 17.2 Unified OTel Context Implementation
+
+* [ ] **Task 17.2.1 Create `SOFTPROBE_CONTEXT_KEY**`
+* **Test**: `context.test.ts` asserts that the key is created using `@opentelemetry/api`'s `createContextKey`.
+
+
+* [ ] **Task 17.2.2 Implement `setSoftprobeContext(ctx, value)**`
+* **Test**: Assert that passing a context and value returns a new context containing that value.
+
+
+* [ ] **Task 17.2.3 Implement `getSoftprobeContext(ctx?)` with Global Fallback**
+* **Test 1**: If context has a value, return it.
+* **Test 2 (Bootstrap Case)**: If context is empty, return the `globalDefault` seeded from the YAML config.
+
+
+
+## 17.3 API & Middleware Refactor
+
+* [ ] **Task 17.3.1 Refactor `runWithContext` to use OTel Context**
+* **Test**: Inside the `runWithContext` callback, `context.active().getValue(SOFTPROBE_CONTEXT_KEY)` matches the provided traceId/mode.
+
+
+* [ ] **Task 17.3.2 Update Express/Fastify middleware to use `setSoftprobeContext**`
+* **Test**: Middleware sets the context on the active request span, and downstream code can retrieve it via `getSoftprobeContext()`.
+
+
+
+---
+
+# 18) Shim & Wrapper Update (Context-Aware) — Atomic
+
+## 18.1 Postgres Connection Protection
+
+* [ ] **Task 18.1.1 Refactor Postgres `connect()` shim for Context-lookup**
+* **Test**: In a test with no `process.env` set, call `client.connect()`. If `globalDefault` (from YAML) is `REPLAY`, the call must return `Promise.resolve()` immediately.
+
+
+* [ ] **Task 18.1.2 Update Postgres `query()` to use Context-Matcher**
+* **Test**: Assert that the query matcher is pulled from the active OTel context first.
+
+
+
+## 18.2 Redis & HTTP Interceptor Updates
+
+* [ ] **Task 18.2.1 Update Redis shim for Context-lookup**
+* **Test**: `sendCommand` no-ops if `getSoftprobeContext().mode === 'REPLAY'`.
+
+
+* [ ] **Task 18.2.2 Update HTTP Interceptor for Context-lookup**
+* **Test**: MSW interceptor retrieves `mode` from active context to decide between `MOCK` and `PASSTHROUGH`.
+
+---
+
+# 19) Propagation & Bootstrap Verification — Atomic
+
+## 19.1 OTel Baggage Sync
+
+* [ ] **Task 19.1.1 Sync Context Mode to OTel Baggage**
+* **Test**: When a context is created with `mode: 'REPLAY'`, verify the corresponding OTel baggage contains `softprobe-mode=REPLAY`.
+
+## 19.2 E2E Bootstrap Validation
+
+* [ ] **Task 19.2.1 Add E2E test for "Top-Level Connection"**
+* **Scenario**: A node script `require`s a database client and calls `.connect()` at the module level (outside any function).
+* **Test**: With YAML mode set to `REPLAY` and no database running, the script must not crash or time out.
+
+---
+
+# 16) User-Facing Example App (Revised for v5.2)
+
+* [x] Task 16.1.1 Scaffold `examples/basic-app` (Historical)
+* [x] Task 16.1.2 HTTP for demo (Historical)
+* [x] Task 16.1.3 Provide docker-compose (Historical)
+* [x] Task 16.2.1 Add capture runner script (Historical)
+* [ ] **Task 16.3.1 Add replay runner script with YAML Config**
+* **User-facing**: Run `npm run example:replay`.
+* **Behavior**: App uses `.softprobe/config.yml` with `mode: REPLAY`. Database containers are stopped.
+* **Test**: Verify the app succeeds using only the `cassettePath` defined in the YAML.
+
+
+* [ ] **Task 16.4.1 Demonstrate Context-based Custom Matcher**
+* **Test**: `custom-matcher.ts` uses `softprobe.runWithContext` to override the global YAML behavior for a specific transaction.
+
+
+---
+
+# 20) User-Facing Example App + Record/Replay Demo — Atomic
 
 **Goal:** Provide a runnable, **customer-visible demo** showing:
 - A **normal** example app with **real** connections to **Postgres**, **Redis**, and outbound **HTTP** (e.g. httpbin.org). Users run dependencies via **Docker** (docker-compose); the app is the kind of code a customer would write.
@@ -418,8 +523,8 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 > - `npm run example:capture` / `npm run example:replay`
 > - `npm test` (or `npm run example:test`)
 
-## 16.1 Example app skeleton (no Softprobe yet)
-- [x] Task 16.1.1 Scaffold `examples/basic-app` with a single entry script *(feat: examples/basic-app/run.ts + basic-app-example.e2e.test)*
+## 20.1 Example app skeleton (no Softprobe yet)
+- [x] Task 20.1.1 Scaffold `examples/basic-app` with a single entry script *(feat: examples/basic-app/run.ts + basic-app-example.e2e.test)*
   - **User-facing**: normal app with real Postgres + Redis + HTTP. Default env points at local Docker (docker-compose); no mocks in the app itself.
   - App behavior (single request/flow):
     1) Insert/select from Postgres (or select-only if easier)
@@ -428,16 +533,16 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
     4) Return a JSON response containing all three results
   - Test: `node examples/basic-app/run.js` (or ts) exits 0 and prints JSON (E2E can use Testcontainers; demo assumes Docker).
 
-- [x] Task 16.1.2 HTTP for demo: deterministic outbound call *(feat: httpbin.org in run.ts; E2E asserts http.url contains httpbin.org)*
+- [x] Task 20.1.2 HTTP for demo: deterministic outbound call *(feat: httpbin.org in run.ts; E2E asserts http.url contains httpbin.org)*
   - Use httpbin.org (or optional local stub) so the example has a deterministic HTTP dependency.
   - Test: app run includes `http` in output; optional `curl` test for stub if used.
 
-- [x] Task 16.1.3 Provide docker-compose for Postgres + Redis (example-only) *(feat: docker-compose.e2e.test.ts; compose already present, test verifies up → run → JSON)*
+- [x] Task 20.1.3 Provide docker-compose for Postgres + Redis (example-only) *(feat: docker-compose.e2e.test.ts; compose already present, test verifies up → run → JSON)*
   - Standard way to run the demo: `docker compose up -d` in examples/basic-app (or repo root); app connects via default PG_URL / REDIS_URL (e.g. localhost).
   - Test: `docker compose up -d` brings services up; `npm run example:run` (or equivalent) connects and prints JSON
 
-## 16.2 Capture demo (record NDJSON)
-- [x] Task 16.2.1 Add capture runner script: `npm run example:capture` *(feat: capture-runner.ts, softprobe/init in instrumentation, /exit + flushCapture, example:capture script)*
+## 20.2 Capture demo (record NDJSON)
+- [x] Task 20.2.1 Add capture runner script: `npm run example:capture` *(feat: capture-runner.ts, softprobe/init in instrumentation, /exit + flushCapture, example:capture script)*
   - Env:
     - `SOFTPROBE_MODE=CAPTURE`
     - `SOFTPROBE_CASSETTE_PATH=./softprobe-cassettes.ndjson` (when cwd is examples/basic-app)
@@ -450,8 +555,8 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
       - (optional) inbound http record if you wrap the app as an HTTP server
   - Test: after capture run, cassette file exists and has ≥ 3 lines (example: no TDD; manual run with services up)
 
-## 16.3 Replay demo (no live deps)
-- [ ] Task 16.3.1 Add replay runner script: `npm run example:replay`
+## 20.3 Replay demo (no live deps)
+- [ ] Task 20.3.1 Add replay runner script: `npm run example:replay`
   - Env:
     - `SOFTPROBE_MODE=REPLAY`
     - `SOFTPROBE_STRICT_REPLAY=1`
@@ -463,26 +568,26 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
     - Output JSON should match the capture run (or match a golden snapshot)
   - Test: with services stopped, replay run still succeeds and output matches snapshot
 
-- [ ] Task 16.3.2 Add strict-mode negative test (proves isolation)
+- [ ] Task 20.3.2 Add strict-mode negative test (proves isolation)
   - Modify the example flow to perform an extra, unrecorded call (e.g., different SQL or new URL)
   - Test: replay fails with strict error and does NOT attempt live network (assert passthrough not called)
 
-## 16.4 Custom matcher example (customer control)
-- [ ] Task 16.4.1 Add `examples/basic-app/custom-matcher.ts` demonstrating matcher injection
+## 20.4 Custom matcher example (customer control)
+- [ ] Task 20.4.1 Add `examples/basic-app/custom-matcher.ts` demonstrating matcher injection
   - Example behaviors (pick 1–2):
     - Override Redis GET for a specific key to return `null` (force cache miss)
     - Normalize dynamic HTTP query params (e.g., `?ts=`) by matching only path
     - Force a specific SQL to map to a specific recorded response regardless of call sequence
   - Test: unit test custom matcher is invoked before default matcher and wins
 
-- [ ] Task 16.4.2 Add “how to use custom matcher” snippet to README
+- [ ] Task 20.4.2 Add “how to use custom matcher” snippet to README
   - Include a complete code sample using:
     - `softprobe.runWithContext({ traceId, cassettePath }, async () => { ... })`
     - `softprobe.getActiveMatcher().use((span, records) => { ... })`
   - Test: docs lint (if any) or simple presence check
 
-## 16.5 Documentation polish (customer-facing)
-- [ ] Task 16.5.1 Add `examples/basic-app/README.md`
+## 20.5 Documentation polish (customer-facing)
+- [ ] Task 20.5.1 Add `examples/basic-app/README.md`
   - Must include:
     - prerequisites (node, docker)
     - start services
@@ -493,7 +598,7 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
     - custom matcher explanation
   - Test: smoke check: all commands referenced exist in package.json scripts
 
-- [ ] Task 16.5.2 Add top-level docs section “Quickstart: Record & Replay”
+- [ ] Task 20.5.2 Add top-level docs section “Quickstart: Record & Replay”
   - Link to the example
   - Show expected output snippets (short)
   - Test: docs build/lint if applicable
@@ -509,3 +614,12 @@ Keep each task to: **(A) write test → (B) see it fail → (C) minimal code →
 * Optional topology matcher works as a matcher fn.
 * E2E child-process tests validate capture + replay + strict isolation.
 * Server-side frameworks (Express/Fastify) support high-fidelity inbound capture and automatic mock injection.
+
+---
+### Holistic Design Summary
+
+This design replaces the brittle `process.env` dependency with a robust **Hierarchy of Truth**:
+
+1. **Request-Specific**: Set by `runWithContext` or Middleware in the OTel Context.
+2. **Global-Process**: Set by the `config.yml` at boot time to protect early connections.
+

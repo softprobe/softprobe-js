@@ -31,7 +31,22 @@ if (mode === 'REPLAY') {
     const { loadNdjson } = require('./store/load-ndjson');
     loadNdjson(path); // eager load, called exactly once (task 11.1.2)
   }
-  // Apply adapter patches synchronously so drivers are wrapped before use (task 11.1.3)
+  // Patch pg/redis when first required by any module so example app and E2E use the same patched instance (Task 16.3.1).
+  const { applyPostgresReplay } = require('./replay/postgres');
+  const Module = require('module');
+  const origRequire = Module.prototype.require;
+  const { applyRedisReplay } = require('./replay/redis');
+  Module.prototype.require = function (id: string) {
+    const m = origRequire.apply(this, arguments as unknown as [string]);
+    if (id === 'pg' && m && m.Client) {
+      applyPostgresReplay(m);
+    }
+    if (id === 'redis' && m) {
+      applyRedisReplay(m);
+    }
+    return m;
+  };
+  // Apply adapter patches; setupPostgresReplay/setupRedisReplay trigger require so the hook runs (task 11.1.3).
   const { setupPostgresReplay } = require('./replay/postgres');
   const { setupRedisReplay } = require('./replay/redis');
   const { setupUndiciReplay } = require('./replay/undici');

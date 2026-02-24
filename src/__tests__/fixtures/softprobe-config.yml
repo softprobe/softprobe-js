@@ -1,6 +1,6 @@
+cassettePath: "./softprobe-cassettes.ndjson"
 capture:
   maxPayloadSize: 1048576
-  outputFile: "./softprobe-cassettes.ndjson"
 
 replay:
   ignoreUrls:
