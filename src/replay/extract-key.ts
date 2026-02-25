@@ -90,6 +90,6 @@ export function createDefaultMatcher(): MatcherFn {
     if (candidates.length === 0) return { action: 'CONTINUE' };
     const idx = callSeq.getAndIncrement(key, candidates.length);
     const record = candidates[idx];
-    return { action: 'MOCK', payload: record?.responsePayload };
+    return { action: 'MOCK', payload: record?.responsePayload, traceId: record?.traceId };
   };
 }

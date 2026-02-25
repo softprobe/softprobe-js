@@ -7,7 +7,7 @@ import {
   propagation,
   baggageEntryMetadataFromString,
 } from '@opentelemetry/api';
-import { getSoftprobeContext } from '../context';
+import { SoftprobeContext } from '../context';
 
 const SOFTPROBE_MODE_KEY = 'softprobe-mode';
 const REPLAY_VALUE = 'REPLAY';
@@ -15,13 +15,13 @@ const METADATA_STR = 'softprobe';
 
 /**
  * Returns the current OTel context with `softprobe-mode: REPLAY` in baggage when
- * getSoftprobeContext().mode is REPLAY. Otherwise returns the active context unchanged.
+ * SoftprobeContext.getMode() is REPLAY. Otherwise returns the active context unchanged.
  * Middleware (Express/Fastify) should run the request in this context so
  * outbound calls propagate the mode to downstream services.
  */
 export function getContextWithReplayBaggage(): ReturnType<typeof context.active> {
   const activeContext = context.active();
-  if (getSoftprobeContext().mode !== REPLAY_VALUE) {
+  if (SoftprobeContext.getMode() !== REPLAY_VALUE) {
     return activeContext;
   }
   const currentBaggage = propagation.getBaggage(activeContext);

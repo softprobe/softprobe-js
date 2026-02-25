@@ -1,89 +1,213 @@
 /**
- * Unified OTel context for Softprobe (mode, cassettePath, traceId, etc.).
- * Task 17.2.1: key for storing softprobe state in OTel Context.
- * Task 17.2.2: setSoftprobeContext(ctx, value) returns a new context with the value.
- * Task 17.2.3: getSoftprobeContext(ctx?) with global fallback seeded from YAML.
+ * Single immutable context API for Softprobe (SOFTPROBE_CONTEXT_DESIGN.md).
+ * One module: read via SoftprobeContext getters, write via withData/initGlobal/fromHeaders/run.
  */
 
-import { createContextKey, Context, context } from '@opentelemetry/api';
+import { randomBytes } from 'crypto';
+import { createContextKey, context, propagation } from '@opentelemetry/api';
+import type { Context } from '@opentelemetry/api';
+import type { SoftprobeCassetteRecord } from './types/schema';
+import type { SemanticMatcher } from './replay/matcher';
+import { SoftprobeMatcher } from './replay/softprobe-matcher';
+import { createDefaultMatcher } from './replay/extract-key';
+import { loadNdjson } from './store/load-ndjson';
 
-/** Context key under which Softprobe state is stored in OTel Context. */
+/** Context key under which softprobe state is stored in OTel Context. Exported for tests. */
 export const SOFTPROBE_CONTEXT_KEY = createContextKey('softprobe_context');
 
-/** Value stored under SOFTPROBE_CONTEXT_KEY (design §3). Task 18.1.2: optional matcher so query() uses context first. */
-export interface SoftprobeContextValue {
+/** Internal stored shape (not exported). */
+interface Stored {
   mode: 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH';
   cassettePath: string;
   traceId?: string;
-  /** When true, CONTINUE (no match) throws instead of passthrough (replay shims). */
   strictReplay?: boolean;
-  /** When true, compareInbound also compares headers. */
   strictComparison?: boolean;
-  /** Optional matcher; when set, getActiveMatcher() returns it first (Task 18.1.2). */
-  matcher?: unknown;
+  matcher?: SemanticMatcher | SoftprobeMatcher;
+  inboundRecord?: SoftprobeCassetteRecord;
 }
 
-/** Global default seeded from config at boot (design §4). Safe default until initGlobalContext is called. */
-let globalDefault: SoftprobeContextValue = {
+/** Partial context for run() and withData(); all fields optional. */
+interface PartialData {
+  mode?: 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH';
+  cassettePath?: string;
+  traceId?: string;
+  strictReplay?: boolean;
+  strictComparison?: boolean;
+  matcher?: SemanticMatcher | SoftprobeMatcher | unknown;
+  inboundRecord?: SoftprobeCassetteRecord;
+}
+
+let globalDefault: Stored = {
   mode: 'PASSTHROUGH',
   cassettePath: '',
   strictReplay: false,
   strictComparison: false,
 };
 
+let globalReplayMatcher: SoftprobeMatcher | undefined;
+
+function merge(base: Stored, partial: PartialData): Stored {
+  return {
+    ...base,
+    ...(partial.mode !== undefined && { mode: partial.mode }),
+    ...(partial.cassettePath !== undefined && { cassettePath: partial.cassettePath }),
+    ...(partial.traceId !== undefined && { traceId: partial.traceId }),
+    ...(partial.strictReplay !== undefined && { strictReplay: partial.strictReplay }),
+    ...(partial.strictComparison !== undefined && { strictComparison: partial.strictComparison }),
+    ...(partial.matcher !== undefined && { matcher: partial.matcher as Stored['matcher'] }),
+    ...(partial.inboundRecord !== undefined && { inboundRecord: partial.inboundRecord }),
+  };
+}
+
 /**
- * Seeds the global default from YAML config. Call at boot so getSoftprobeContext can fall back when context is empty.
+ * Returns the current softprobe state from the given OTel context, or global default when empty.
+ * When otelContext is omitted, uses context.active().
  */
-export function initGlobalContext(config: {
+function active(otelContext: Context = context.active()): Stored {
+  const value = otelContext.getValue(SOFTPROBE_CONTEXT_KEY) as Stored | undefined;
+  return value ?? globalDefault;
+}
+
+/**
+ * Returns a new OTel context with the given softprobe data. Does not mutate otelContext.
+ */
+function withData(otelContext: Context, data: PartialData): Context {
+  const stored = merge(globalDefault, data);
+  return otelContext.setValue(SOFTPROBE_CONTEXT_KEY, stored);
+}
+
+/**
+ * Seeds the global default from config. Call at boot.
+ */
+function initGlobal(config: {
   mode?: string;
   cassettePath?: string;
   strictReplay?: boolean;
   strictComparison?: boolean;
 }): void {
   globalDefault = {
-    mode: (config.mode as SoftprobeContextValue['mode']) || 'PASSTHROUGH',
+    mode: (config.mode as Stored['mode']) || 'PASSTHROUGH',
     cassettePath: config.cassettePath ?? '',
     strictReplay: config.strictReplay ?? false,
     strictComparison: config.strictComparison ?? false,
   };
 }
 
-/**
- * Returns the Softprobe value from the given context, or globalDefault when context has no value (bootstrap case).
- * When ctx is omitted, uses the active OTel context.
- */
-export function getSoftprobeContext(ctx: Context = context.active()): SoftprobeContextValue {
-  const activeValue = ctx.getValue(SOFTPROBE_CONTEXT_KEY) as SoftprobeContextValue | undefined;
-  return activeValue ?? globalDefault;
-}
-
-/**
- * Sets the Softprobe context value on the given OTel Context. Returns a new context (immutable).
- */
-export function setSoftprobeContext(ctx: Context, value: SoftprobeContextValue): Context {
-  return ctx.setValue(SOFTPROBE_CONTEXT_KEY, value);
-}
-
-/** Coordination header names (design §2.1: CLI injects these for dynamic replay). */
 const HEADER_MODE = 'x-softprobe-mode';
 const HEADER_TRACE_ID = 'x-softprobe-trace-id';
 const HEADER_CASSETTE_PATH = 'x-softprobe-cassette-path';
 
 /**
- * Overrides from coordination headers when present. Design §3.2: middleware prioritizes headers over global YAML.
- * Header keys are case-insensitive; pass raw headers object (Express/Fastify use lowercase keys).
+ * Returns a new softprobe state by applying coordination headers over base. Used by middleware.
  */
-export function softprobeValueFromHeaders(
-  base: SoftprobeContextValue,
+function fromHeaders(
+  base: Stored,
   headers: Record<string, string | string[] | undefined>
-): SoftprobeContextValue {
+): Stored {
   const mode = headers[HEADER_MODE];
   const traceId = headers[HEADER_TRACE_ID];
   const cassettePath = headers[HEADER_CASSETTE_PATH];
   return {
     ...base,
-    ...(typeof mode === 'string' && (mode === 'REPLAY' || mode === 'CAPTURE' || mode === 'PASSTHROUGH') && { mode: mode as SoftprobeContextValue['mode'] }),
+    ...(typeof mode === 'string' && (mode === 'REPLAY' || mode === 'CAPTURE' || mode === 'PASSTHROUGH') && { mode: mode as Stored['mode'] }),
     ...(typeof traceId === 'string' && traceId && { traceId }),
     ...(typeof cassettePath === 'string' && cassettePath && { cassettePath }),
   };
 }
+
+/**
+ * Sets the global matcher used when active context has no matcher (e.g. server REPLAY mode).
+ */
+function setGlobalReplayMatcher(matcher: SoftprobeMatcher | undefined): void {
+  globalReplayMatcher = matcher;
+}
+
+function getTraceId(otelContext?: Context): string | undefined {
+  return active(otelContext).traceId;
+}
+
+function getMode(otelContext?: Context): 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH' {
+  return active(otelContext).mode;
+}
+
+function getCassettePath(otelContext?: Context): string {
+  return active(otelContext).cassettePath;
+}
+
+function getStrictReplay(otelContext?: Context): boolean {
+  return active(otelContext).strictReplay ?? false;
+}
+
+function getStrictComparison(otelContext?: Context): boolean {
+  return active(otelContext).strictComparison ?? false;
+}
+
+/**
+ * Returns the active matcher. Prefers context matcher; then global replay matcher when mode is REPLAY or when set (on-demand replay via headers).
+ */
+function getMatcher(otelContext?: Context): SemanticMatcher | SoftprobeMatcher | undefined {
+  const ctx = otelContext ?? context.active();
+  const stored = active(ctx);
+  if (stored.matcher != null) return stored.matcher;
+  if (stored.mode === 'REPLAY' && globalReplayMatcher) return globalReplayMatcher;
+  const baggageMode = propagation.getActiveBaggage()?.getEntry('softprobe-mode')?.value;
+  if (baggageMode === 'REPLAY' && globalReplayMatcher) return globalReplayMatcher;
+  // On-demand replay: middleware set global matcher for this request; context may not propagate to fetch callback.
+  if (globalReplayMatcher) return globalReplayMatcher;
+  return undefined;
+}
+
+function getInboundRecord(otelContext?: Context): SoftprobeCassetteRecord | undefined {
+  return active(otelContext).inboundRecord;
+}
+
+/**
+ * Runs fn in an OTel context whose softprobe state is the merge of current active/global and partial.
+ * When partial.cassettePath is set, loads NDJSON, builds matcher and inbound record, merges, then runs fn.
+ */
+function ensureTraceId(stored: Stored, fallback: string): Stored {
+  return stored.traceId ? stored : { ...stored, traceId: fallback };
+}
+
+function run<T>(partial: PartialData, fn: () => T | Promise<T>): T | Promise<T> {
+  const base = active(context.active());
+  const mode = partial.mode ?? (partial.cassettePath ? ('REPLAY' as const) : base.mode);
+  const mergedBase = merge(base, { ...partial, mode });
+  const defaultTraceId = (): string => randomBytes(16).toString('hex');
+
+  if (partial.cassettePath) {
+    const cassettePath = partial.cassettePath;
+    const traceId = partial.traceId;
+    return (async () => {
+      const records = await loadNdjson(cassettePath, traceId);
+      const matcher = new SoftprobeMatcher();
+      matcher._setRecords(records);
+      matcher.use(createDefaultMatcher());
+      const inboundRecord = records.find((r) => r.type === 'inbound');
+      const merged = merge(mergedBase, { matcher, inboundRecord });
+      const withTraceId = ensureTraceId(merged, merged.traceId ?? (inboundRecord as { traceId?: string } | undefined)?.traceId ?? defaultTraceId());
+      const ctxWith = withData(context.active(), withTraceId);
+      return context.with(ctxWith, fn) as Promise<T>;
+    })();
+  }
+
+  const withTraceId = ensureTraceId(mergedBase, mergedBase.traceId ?? base.traceId ?? defaultTraceId());
+  const ctxWith = withData(context.active(), withTraceId);
+  return context.with(ctxWith, fn) as T | Promise<T>;
+}
+
+export const SoftprobeContext = {
+  active,
+  getTraceId,
+  getMode,
+  getCassettePath,
+  getStrictReplay,
+  getStrictComparison,
+  getMatcher,
+  getInboundRecord,
+  withData,
+  initGlobal,
+  fromHeaders,
+  setGlobalReplayMatcher,
+  run,
+};

@@ -4,10 +4,14 @@
  * - MOCK returns recorded payload response
  * - CONTINUE + STRICT returns JSON 500 with x-softprobe-error
  * - CONTINUE + DEV leaves request untouched (passthrough)
+ *
+ * Plan: CAPTURE branch — when mode is CAPTURE, perform request with bypass fetch, tap response body, saveRecord, respondWith.
  */
 
+import type { CassetteStore } from '../store/cassette-store';
+import { setCaptureStore } from '../capture/store-accessor';
 import { handleHttpReplayRequest } from '../replay/http';
-import { initGlobalContext } from '../context';
+import { SoftprobeContext } from '../context';
 
 type MockController = { respondWith: jest.Mock<void, [Response]> };
 
@@ -17,10 +21,10 @@ function makeController(): MockController {
 
 describe('HTTP replay interceptor (Task 9.4)', () => {
   beforeAll(() => {
-    initGlobalContext({ mode: 'REPLAY', strictReplay: false });
+    SoftprobeContext.initGlobal({ mode: 'REPLAY', strictReplay: false });
   });
   afterEach(() => {
-    initGlobalContext({ mode: 'REPLAY', strictReplay: false });
+    SoftprobeContext.initGlobal({ mode: 'REPLAY', strictReplay: false });
   });
 
   it('9.4.1 ignores configured URLs and does not call matcher', async () => {
@@ -71,7 +75,7 @@ describe('HTTP replay interceptor (Task 9.4)', () => {
   });
 
   it('9.4.3 CONTINUE + STRICT returns JSON error Response(500)', async () => {
-    initGlobalContext({ mode: 'REPLAY', strictReplay: true });
+    SoftprobeContext.initGlobal({ mode: 'REPLAY', strictReplay: true });
     const controller = makeController();
 
     await handleHttpReplayRequest(
@@ -96,7 +100,7 @@ describe('HTTP replay interceptor (Task 9.4)', () => {
   });
 
   it('9.4.4 CONTINUE + DEV allows passthrough (no response)', async () => {
-    initGlobalContext({ strictReplay: false });
+    SoftprobeContext.initGlobal({ strictReplay: false });
     const controller = makeController();
 
     await handleHttpReplayRequest(
@@ -121,7 +125,7 @@ describe('Task 18.2.2 HTTP interceptor context mode', () => {
   const { context } = require('@opentelemetry/api');
   const { AsyncHooksContextManager } = require('@opentelemetry/context-async-hooks');
   const otelApi = require('@opentelemetry/api');
-  const { setSoftprobeContext } = require('../context');
+  const { SoftprobeContext } = require('../context');
 
   beforeAll(() => {
     const contextManager = new AsyncHooksContextManager();
@@ -134,7 +138,7 @@ describe('Task 18.2.2 HTTP interceptor context mode', () => {
     const match = jest.fn(() => ({ action: 'MOCK' as const, payload: { status: 200, body: { replayed: true } } }));
 
     const activeCtx = context.active();
-    const ctxReplay = setSoftprobeContext(activeCtx, {
+    const ctxReplay = SoftprobeContext.withData(activeCtx, {
       mode: 'REPLAY',
       cassettePath: '',
     });
@@ -161,7 +165,7 @@ describe('Task 18.2.2 HTTP interceptor context mode', () => {
     const match = jest.fn(() => ({ action: 'MOCK' as const, payload: { status: 200, body: 'ignored' } }));
 
     const activeCtx = context.active();
-    const ctxPassthrough = setSoftprobeContext(activeCtx, {
+    const ctxPassthrough = SoftprobeContext.withData(activeCtx, {
       mode: 'PASSTHROUGH',
       cassettePath: '',
     });
@@ -177,5 +181,47 @@ describe('Task 18.2.2 HTTP interceptor context mode', () => {
     });
 
     expect(controller.respondWith).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Plan: CAPTURE branch — when mode is CAPTURE, bypass fetch, tap response with tapReadableStream, saveRecord, respondWith.
+ */
+describe('HTTP interceptor CAPTURE branch', () => {
+  afterEach(() => {
+    setCaptureStore(undefined);
+    SoftprobeContext.initGlobal({ mode: 'REPLAY' });
+  });
+
+  it('when mode is CAPTURE, performs request with bypassFetch, taps body, saves outbound record, responds with response', async () => {
+    const saveRecord = jest.fn<void, [Parameters<CassetteStore['saveRecord']>[0]]>();
+    const mockStore = { saveRecord } as unknown as CassetteStore;
+    setCaptureStore(mockStore);
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE' });
+
+    const controller = makeController();
+    const bypassFetch = jest.fn().mockResolvedValue(new Response('captured-body', { status: 200 }));
+
+    await handleHttpReplayRequest(
+      {
+        request: new Request('https://example.com/', { method: 'GET' }),
+        controller,
+      },
+      { shouldIgnoreUrl: () => false, bypassFetch }
+    );
+
+    expect(controller.respondWith).toHaveBeenCalledTimes(1);
+    const response = controller.respondWith.mock.calls[0][0];
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe('captured-body');
+
+    await new Promise((r) => setTimeout(r, 30));
+    expect(saveRecord).toHaveBeenCalledTimes(1);
+    const record = saveRecord.mock.calls[0][0];
+    expect(record.type).toBe('outbound');
+    expect(record.protocol).toBe('http');
+    expect(record.identifier).toBe('GET https://example.com/');
+    expect((record.responsePayload as { statusCode?: number; body?: string }).statusCode).toBe(200);
+    expect((record.responsePayload as { statusCode?: number; body?: string }).body).toBe('captured-body');
   });
 });

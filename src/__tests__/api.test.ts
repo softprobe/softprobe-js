@@ -38,14 +38,14 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
       }),
     ]);
 
-    expect(result1).toEqual({ traceId: traceId1 });
-    expect(result2).toEqual({ traceId: traceId2 });
+    expect(result1?.traceId).toBe(traceId1);
+    expect(result2?.traceId).toBe(traceId2);
   });
 
   /**
-   * Task 8.1.1: runWithContext sets ALS store { traceId?, cassettePath } visible inside callback.
+   * Task 8.1.1: runWithContext sets OTel context { traceId?, cassettePath } visible inside callback.
    */
-  it('runWithContext sets ALS store visible inside callback (traceId and cassettePath)', async () => {
+  it('runWithContext sets OTel context visible inside callback (traceId and cassettePath)', async () => {
     const traceId = 'prod-trace-345';
     const tmpPath = path.join(os.tmpdir(), `softprobe-als-store-${Date.now()}.ndjson`);
     fs.writeFileSync(

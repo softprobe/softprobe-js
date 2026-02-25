@@ -72,7 +72,8 @@ describe('softprobe/init boot', () => {
 
   /**
    * Task 11.1.3: Applies adapter patches synchronously.
-   * Test: patch fns called during module import.
+   * Test: patch fns called during module import (pg/redis/undici). HTTP interceptor is
+   * assigned to __softprobeApplyHttpReplay for the app to call after sdk.start(), not called at init.
    */
   it('calls replay adapter patch fns during import when SOFTPROBE_MODE=REPLAY', () => {
     const setupPostgresReplay = jest.fn();
@@ -90,7 +91,7 @@ describe('softprobe/init boot', () => {
       expect(setupPostgresReplay).toHaveBeenCalledTimes(1);
       expect(setupRedisReplay).toHaveBeenCalledTimes(1);
       expect(setupUndiciReplay).toHaveBeenCalledTimes(1);
-      expect(setupHttpReplayInterceptor).toHaveBeenCalledTimes(1);
+      expect((globalThis as unknown as { __softprobeApplyHttpReplay?: unknown }).__softprobeApplyHttpReplay).toBe(setupHttpReplayInterceptor);
     });
   });
 });

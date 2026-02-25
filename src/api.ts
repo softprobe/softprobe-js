@@ -1,24 +1,21 @@
-import { AsyncLocalStorage } from 'async_hooks';
-import { context, propagation } from '@opentelemetry/api';
 import type { SoftprobeCassetteRecord } from './types/schema';
 import type { SemanticMatcher } from './replay/matcher';
 import { SoftprobeMatcher } from './replay/softprobe-matcher';
-import { createDefaultMatcher } from './replay/extract-key';
-import { loadNdjson } from './store/load-ndjson';
 import { getCaptureStore } from './capture/store-accessor';
 import { getContextWithReplayBaggage } from './api/baggage';
 import { compareInboundWithRecord, type CompareInboundInput } from './api/compare';
 import {
   getRecordsForTrace as getRecordsForTraceFromStore,
   setReplayRecordsCache as setReplayRecordsCacheInStore,
+  loadReplayRecordsFromPath,
 } from './replay/store-accessor';
-import { getSoftprobeContext, setSoftprobeContext, type SoftprobeContextValue } from './context';
+import { createDefaultMatcher } from './replay/extract-key';
+import { SoftprobeContext } from './context';
 
 /**
- * ALS store shape for replay context. traceId and cassettePath are used by
- * runWithContext; matcher is set when records are loaded (Task 8.2).
- * inboundRecord is set when loading a cassette that contains an inbound record (Task 8.2.2).
- * Task 17.3.1: optional mode is propagated into OTel context.
+ * Input shape for replay context. traceId and cassettePath are used by
+ * runWithContext; matcher and inboundRecord are set when records are loaded (Task 8.2).
+ * Stored in OTel context via SoftprobeContext.
  */
 export interface ReplayContext {
   traceId?: string;
@@ -34,117 +31,42 @@ export interface ReplayContext {
   inboundRecord?: SoftprobeCassetteRecord;
 }
 
-const replayStorage = new AsyncLocalStorage<ReplayContext | undefined>();
-
-/**
- * Builds the OTel Softprobe context value from ReplayContext. Task 17.3.1.
- * Task 18.1.2: includes matcher when present so getActiveMatcher() can prefer context.
- */
-function toSoftprobeContextValue(ctx: ReplayContext): SoftprobeContextValue {
-  const base = getSoftprobeContext();
-  const mode =
-    ctx.mode ?? (ctx.cassettePath ? ('REPLAY' as const) : ('PASSTHROUGH' as const));
-  const value: SoftprobeContextValue = {
-    mode,
-    cassettePath: ctx.cassettePath ?? base.cassettePath,
-    traceId: ctx.traceId,
-    strictReplay: ctx.strictReplay ?? base.strictReplay,
-    strictComparison: ctx.strictComparison ?? base.strictComparison,
-  };
-  if (ctx.matcher !== undefined) value.matcher = ctx.matcher;
-  return value;
-}
-
 /**
  * Test-time API: run a function with the given replay context so that
  * concurrent tests (e.g. different workers) do not share matcher state.
  * When context.cassettePath is set, loads records once from NDJSON and sets
  * them on a SoftprobeMatcher before running the callback (Task 8.2.1).
- * Task 17.3.1: Runs the callback inside OTel context so context.active().getValue(SOFTPROBE_CONTEXT_KEY) matches traceId/mode.
+ * Delegates to SoftprobeContext.run (SOFTPROBE_CONTEXT_DESIGN.md).
  */
 export function runWithContext<T>(
   replayContext: ReplayContext,
   fn: () => T | Promise<T>
 ): T | Promise<T> {
-  const otelValue = toSoftprobeContextValue(replayContext);
-  const activeCtx = context.active();
-  const ctxWithSoftprobe = setSoftprobeContext(activeCtx, otelValue);
-
-  const runInOtelContext = (): T | Promise<T> => {
-    if (replayContext.cassettePath) {
-      const cassettePath = replayContext.cassettePath;
-      return (async () => {
-        const records = await loadNdjson(cassettePath, replayContext.traceId);
-        const matcher = new SoftprobeMatcher();
-        matcher._setRecords(records);
-        matcher.use(createDefaultMatcher());
-        const inboundRecord = records.find((r) => r.type === 'inbound');
-        const ctxWithMatcher = setSoftprobeContext(context.active(), { ...otelValue, matcher });
-        return context.with(
-          ctxWithMatcher,
-          () =>
-            replayStorage.run(
-              { ...replayContext, matcher, inboundRecord },
-              fn
-            ) as Promise<T>
-        );
-      })();
-    }
-    return replayStorage.run(replayContext, fn) as T | Promise<T>;
-  };
-
-  return context.with(ctxWithSoftprobe, runInOtelContext) as T | Promise<T>;
+  return SoftprobeContext.run(replayContext, fn);
 }
 
 /**
- * Returns the current replay context for the active async scope, or undefined if not in a replay context.
+ * Returns the current replay context for the active async scope from OTel context.
+ * Same shape as ReplayContext; when not inside runWithContext, returns global default.
  */
 export function getReplayContext(): ReplayContext | undefined {
-  const store = replayStorage.getStore();
-  return store === undefined ? undefined : store;
+  return SoftprobeContext.active() as ReplayContext | undefined;
 }
 
 /**
- * Sets replay context for the current async context (e.g. in beforeEach).
- * For concurrent isolation, prefer runWithContext() so each flow has its own context.
- */
-export function setReplayContext(context: ReplayContext): void {
-  replayStorage.enterWith(context);
-}
-
-/**
- * Clears replay context for the current async context (e.g. in afterEach).
- */
-export function clearReplayContext(): void {
-  replayStorage.enterWith(undefined);
-}
-
-/**
- * Returns the active matcher (SemanticMatcher or SoftprobeMatcher) for the current
- * replay context, if any. Task 18.1.2: prefers matcher from active OTel context first.
- * In REPLAY mode without ALS context (e.g. server request), returns globalReplayMatcher.
- * Task 15.1.2: When OTel baggage contains softprobe-mode=REPLAY, also returns globalReplayMatcher so
- * downstream services (receiving propagated baggage) use the global matcher for outbound calls.
+ * Returns the active matcher for the current replay context, if any.
+ * In REPLAY mode, returns global matcher when context has no matcher; includes baggage fallback.
  */
 export function getActiveMatcher(): SemanticMatcher | SoftprobeMatcher | undefined {
-  const softCtx = getSoftprobeContext();
-  if (softCtx.matcher != null) return softCtx.matcher as SemanticMatcher | SoftprobeMatcher;
-  const ctx = getReplayContext();
-  if (ctx?.matcher) return ctx.matcher;
-  if (softCtx.mode === 'REPLAY' && globalReplayMatcher) return globalReplayMatcher;
-  const baggageMode = propagation.getActiveBaggage()?.getEntry('softprobe-mode')?.value;
-  if (baggageMode === 'REPLAY' && globalReplayMatcher) return globalReplayMatcher;
-  return undefined;
+  return SoftprobeContext.getMatcher();
 }
 
 /**
  * Returns the recorded inbound response for the current trace, if any.
  * Set by runWithContext when loading a cassette that contains a record with type "inbound".
- * Used by tests to compare live response to recorded (e.g. inbound?.responsePayload?.body).
  */
 export function getRecordedInboundResponse(): SoftprobeCassetteRecord | undefined {
-  const ctx = getReplayContext();
-  return ctx?.inboundRecord;
+  return SoftprobeContext.getInboundRecord();
 }
 
 /**
@@ -172,14 +94,11 @@ export function getRecordsForTrace(traceId: string): SoftprobeCassetteRecord[] {
   return getRecordsForTraceFromStore(traceId);
 }
 
-/** Global matcher used in REPLAY mode when no ALS context (e.g. server request). Set by init. */
-let globalReplayMatcher: SoftprobeMatcher | undefined;
-
 /**
- * Sets the global replay matcher (used by REPLAY init so getActiveMatcher returns it when ALS has no context).
+ * Sets the global replay matcher (used by REPLAY init so getActiveMatcher returns it when context has no matcher).
  */
 export function setGlobalReplayMatcher(matcher: SoftprobeMatcher | undefined): void {
-  globalReplayMatcher = matcher;
+  SoftprobeContext.setGlobalReplayMatcher(matcher);
 }
 
 /**
@@ -190,6 +109,21 @@ export function activateReplayForContext(traceId: string): void {
   const matcher = getActiveMatcher();
   if (matcher && '_setRecords' in matcher) {
     (matcher as SoftprobeMatcher)._setRecords(getRecordsForTrace(traceId));
+  }
+}
+
+/**
+ * Loads the cassette from cassettePath (with cache) and sets the replay store and global matcher.
+ * Called by middleware when request has x-softprobe-mode=REPLAY and x-softprobe-cassette-path
+ * so replay works for that request without requiring the server to be started with SOFTPROBE_MODE=REPLAY.
+ */
+export async function ensureReplayLoadedForRequest(cassettePath: string): Promise<void> {
+  const records = await loadReplayRecordsFromPath(cassettePath);
+  setReplayRecordsCache(records);
+  if (!getActiveMatcher()) {
+    const matcher = new SoftprobeMatcher();
+    matcher.use(createDefaultMatcher());
+    setGlobalReplayMatcher(matcher);
   }
 }
 
@@ -206,8 +140,6 @@ export { getContextWithReplayBaggage } from './api/baggage';
 export const softprobe = {
   runWithContext,
   getReplayContext,
-  setReplayContext,
-  clearReplayContext,
   getActiveMatcher,
   getRecordedInboundResponse,
   compareInbound,
@@ -215,6 +147,7 @@ export const softprobe = {
   setReplayRecordsCache,
   setGlobalReplayMatcher,
   activateReplayForContext,
+  ensureReplayLoadedForRequest,
   flushCapture,
   getContextWithReplayBaggage,
 };

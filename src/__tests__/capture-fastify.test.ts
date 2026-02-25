@@ -1,7 +1,7 @@
 /**
  * Task 14.2.1: Fastify plugin capture path.
  * Task 14.2.2: Fastify preHandler for replay initialization.
- * Task 17.3.2: Middleware sets OTel context; downstream code can retrieve via getSoftprobeContext().
+ * Task 17.3.2: Middleware sets OTel context; downstream code can retrieve via SoftprobeContext.active().
  */
 
 import Fastify from 'fastify';
@@ -14,7 +14,7 @@ import { setCaptureStore } from '../capture/store-accessor';
 import { CaptureEngine } from '../capture/express';
 import { softprobeFastifyPlugin } from '../capture/fastify';
 import { softprobe } from '../api';
-import { getSoftprobeContext, initGlobalContext } from '../context';
+import { SoftprobeContext } from '../context';
 
 describe('softprobeFastifyPlugin capture path (Task 14.2.1)', () => {
   afterEach(async () => {
@@ -23,7 +23,7 @@ describe('softprobeFastifyPlugin capture path (Task 14.2.1)', () => {
   });
 
   it('onSend captures full payload and writes inbound record to side-channel', async () => {
-    initGlobalContext({ mode: 'CAPTURE' });
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE' });
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId: 'trace-fastify-1', spanId: 'span-fastify-1' }),
     } as ReturnType<typeof trace.getActiveSpan>);
@@ -70,7 +70,7 @@ describe('softprobeFastifyPlugin replay preHandler (Task 14.2.2)', () => {
   });
 
   it('preHandler primes SoftprobeMatcher with records matching the active OTel traceId', async () => {
-    initGlobalContext({ mode: 'REPLAY' });
+    SoftprobeContext.initGlobal({ mode: 'REPLAY' });
     const traceId = 'trace-fastify-replay-1';
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId, spanId: 'span-fastify-replay-1' }),
@@ -89,7 +89,7 @@ describe('softprobeFastifyPlugin replay preHandler (Task 14.2.2)', () => {
   });
 });
 
-describe('Task 17.3.2: Fastify plugin sets OTel context for downstream getSoftprobeContext()', () => {
+describe('Task 17.3.2: Fastify plugin sets OTel context for downstream SoftprobeContext.active()', () => {
   beforeAll(() => {
     const contextManager = new AsyncHooksContextManager();
     contextManager.enable();
@@ -100,8 +100,8 @@ describe('Task 17.3.2: Fastify plugin sets OTel context for downstream getSoftpr
     jest.restoreAllMocks();
   });
 
-  it('route handler sees softprobe context set by plugin via getSoftprobeContext()', async () => {
-    initGlobalContext({ mode: 'REPLAY', cassettePath: '/fastify-cassettes.ndjson' });
+  it('route handler sees softprobe context set by plugin via SoftprobeContext.active()', async () => {
+    SoftprobeContext.initGlobal({ mode: 'REPLAY', cassettePath: '/fastify-cassettes.ndjson' });
     const traceId = 'trace-fastify-ctx-1';
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId, spanId: 'span-f-1' }),
@@ -109,7 +109,7 @@ describe('Task 17.3.2: Fastify plugin sets OTel context for downstream getSoftpr
 
     const app = Fastify();
     await app.register(fp(softprobeFastifyPlugin));
-    app.get('/ctx', async () => getSoftprobeContext());
+    app.get('/ctx', async () => SoftprobeContext.active());
 
     const res = await app.inject({ method: 'GET', url: '/ctx' });
 
@@ -121,7 +121,7 @@ describe('Task 17.3.2: Fastify plugin sets OTel context for downstream getSoftpr
   });
 });
 
-describe('Task 21.1.1: Header extraction in Fastify — getSoftprobeContext() returns header values over YAML defaults', () => {
+describe('Task 21.1.1: Header extraction in Fastify — SoftprobeContext.active() returns header values over YAML defaults', () => {
   beforeAll(() => {
     const contextManager = new AsyncHooksContextManager();
     contextManager.enable();
@@ -132,15 +132,15 @@ describe('Task 21.1.1: Header extraction in Fastify — getSoftprobeContext() re
     jest.restoreAllMocks();
   });
 
-  it('request with coordination headers: getSoftprobeContext() returns header values, not YAML defaults', async () => {
-    initGlobalContext({ mode: 'PASSTHROUGH', cassettePath: '/yaml-default.ndjson' });
+  it('request with coordination headers: SoftprobeContext.active() returns header values, not YAML defaults', async () => {
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', cassettePath: '/yaml-default.ndjson' });
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId: 'otel-span-trace', spanId: 'span-1' }),
     } as ReturnType<typeof trace.getActiveSpan>);
 
     const app = Fastify();
     await app.register(fp(softprobeFastifyPlugin));
-    app.get('/ctx', async () => getSoftprobeContext());
+    app.get('/ctx', async () => SoftprobeContext.active());
 
     const res = await app.inject({
       method: 'GET',

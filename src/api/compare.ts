@@ -2,7 +2,7 @@
  * Task 15.2.1: Inbound comparison utility.
  * Retrieves the recorded inbound record and performs deep equality check on status and body.
  */
-import { getSoftprobeContext } from '../context';
+import { SoftprobeContext } from '../context';
 import type { SoftprobeCassetteRecord } from '../types/schema';
 
 export type CompareInboundInput = {
@@ -10,7 +10,7 @@ export type CompareInboundInput = {
   status: number;
   /** Parsed response body (e.g. from res.json() or res.text()). */
   body: unknown;
-  /** Optional response headers. Compared when getSoftprobeContext().strictComparison is set (Task 15.2.2). */
+  /** Optional response headers. Compared when SoftprobeContext.getStrictComparison() is set (Task 15.2.2). */
   headers?: Record<string, string>;
 };
 
@@ -33,7 +33,7 @@ function getRecordedHeaders(record: { responsePayload?: unknown }): Record<strin
 }
 
 function isStrictComparison(): boolean {
-  return getSoftprobeContext().strictComparison === true;
+  return SoftprobeContext.getStrictComparison() === true;
 }
 
 /** Normalize header keys to lowercase for comparison. */

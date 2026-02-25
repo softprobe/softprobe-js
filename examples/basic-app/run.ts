@@ -1,12 +1,19 @@
 /**
- * User-facing demo: Express app with real Postgres, Redis, and outbound HTTP.
- * Uses OpenTelemetry (started in instrumentation.ts, loaded first). Softprobe init
- * runs when instrumentation is preloaded (CAPTURE/REPLAY modes).
+ * Basic-app example: Postgres, Redis, and upstream HTTP — capture and replay.
  *
- * Structure aligned with express-inbound-worker: async start(), load cassette and set
- * matcher before creating the app, and use require('express') so framework mutator
- * injects softprobe middleware. Run: npm run example:run (preloads instrumentation).
- * Env: PG_URL, REDIS_URL (defaults match docker-compose), PORT (default 3000), HTTPBIN_URL
+ * How to run (design §4.1: softprobe/init must run first):
+ *   node -r ./instrumentation.ts run.ts
+ * instrumentation.ts imports softprobe/init before OpenTelemetry, so capture/replay
+ * and the Express middleware are active. From repo root: npm run example:run
+ *
+ * This app demonstrates:
+ * - Capture: request with x-softprobe-mode: CAPTURE + x-softprobe-cassette-path
+ *   records inbound GET / and outbound Postgres, Redis, and HTTP to an NDJSON cassette.
+ * - Replay: run with SOFTPROBE_MODE=REPLAY and SOFTPROBE_CASSETTE_PATH; GET / is
+ *   served from the cassette (Postgres, Redis, and httpbin.org are mocked, no live deps).
+ *
+ * Use require('express') so the framework mutator injects Softprobe middleware.
+ * Env: PG_URL, REDIS_URL (defaults match docker-compose), PORT (default 3000), HTTPBIN_URL.
  */
 
 import { Client } from 'pg';
@@ -65,6 +72,12 @@ async function start(): Promise<void> {
       redis: { key, value: redisValue },
       http: httpBody,
     });
+  });
+
+  /** Flush capture store to disk (e.g. after a request with x-softprobe-mode: CAPTURE). Used by E2E and manual testing. */
+  app.get('/flush', (_req, res) => {
+    softprobe.flushCapture();
+    res.send('ok');
   });
 
   /** In CAPTURE mode, flush cassette and exit so NDJSON is written. Used by example:capture. */

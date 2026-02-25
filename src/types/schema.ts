@@ -17,7 +17,7 @@ export type MatcherResult =
  * Design §7.1: first non-CONTINUE wins; matchers do not execute passthrough.
  */
 export type MatcherAction =
-  | { action: 'MOCK'; payload: unknown }
+  | { action: 'MOCK'; payload: unknown; traceId?: string }
   | { action: 'PASSTHROUGH' }
   | { action: 'CONTINUE' };
 

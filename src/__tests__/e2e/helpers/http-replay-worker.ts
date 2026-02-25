@@ -40,15 +40,17 @@ async function main(): Promise<void> {
     throw new Error('No outbound HTTP records found in cassette');
   }
 
-  softprobe.setReplayContext({
-    traceId: 'http-e2e-replay',
-    matcher: new SemanticMatcher(spans as ReadableSpan[]),
-  });
-
-  const response = await fetch(replayUrl);
-  const body = await response.text();
-
-  process.stdout.write(JSON.stringify({ status: response.status, body }));
+  await softprobe.runWithContext(
+    {
+      traceId: 'http-e2e-replay',
+      matcher: new SemanticMatcher(spans as unknown as ReadableSpan[]),
+    },
+    async () => {
+      const response = await fetch(replayUrl);
+      const body = await response.text();
+      process.stdout.write(JSON.stringify({ status: response.status, body }));
+    }
+  );
   process.exit(0);
 }
 

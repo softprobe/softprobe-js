@@ -36,7 +36,7 @@ async function main(): Promise<void> {
     )
     .map((r) => toSpan(r.identifier, r.responsePayload));
 
-  const matcher = new SemanticMatcher(spans as ReadableSpan[]);
+  const matcher = new SemanticMatcher(spans as unknown as ReadableSpan[]);
   await softprobe.runWithContext(
     { traceId: 'strict-e2e-replay', matcher },
     async () => {

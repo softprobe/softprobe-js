@@ -19,8 +19,12 @@
     "example:replay": "cd examples/basic-app && npx ts-node --transpile-only replay-runner.ts",
     "example:up": "docker compose -f examples/basic-app/docker-compose.yml up -d",
     "example:down": "docker compose -f examples/basic-app/docker-compose.yml down",
-    "example:test": "jest --config examples/basic-app/jest.config.js",
-    "diff": "node dist/cli.js diff"
+    "example:test": "bash examples/basic-app/test-with-capture-replay.sh",
+    "example:replay-then-diff": "bash examples/basic-app/replay-and-diff.sh",
+    "example:kill": "(lsof -ti :3000; lsof -ti :3010) 2>/dev/null | xargs kill -9 2>/dev/null; echo Done",
+    "example:kill-e2e": "pkill -f 'express-inbound-worker|fastify-inbound-worker|diff-headers-server' 2>/dev/null; echo Done",
+    "diff": "node dist/cli.js diff",
+    "diff:dev": "npx ts-node --transpile-only src/cli.ts diff"
   },
   "dependencies": {
     "@mswjs/interceptors": "^0.39.8",

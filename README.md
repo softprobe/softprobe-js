@@ -69,16 +69,21 @@ curl -H "x-softprobe-mode: CAPTURE" \
 
 Repeat for other routes or use the same path to append more records to the same cassette.
 
-### How to run
+### How to run the CLI
 
-- **Global (after install):**  
-  `npx softprobe diff ./softprobe-cassettes.ndjson http://localhost:3000`
+**If you installed the package** (`npm install softprobe`):
 
-- **From this repo (after `npm run build`):**  
-  `npm run diff -- ./softprobe-cassettes.ndjson http://localhost:3000`
+```bash
+npx softprobe diff <cassette.ndjson> <targetUrl>
+```
 
-- **Direct:**  
-  `node dist/cli.js diff ./softprobe-cassettes.ndjson http://localhost:3000`
+**If you're in the repo** (no install, no build needed):
+
+```bash
+./bin/softprobe diff <cassette.ndjson> <targetUrl>
+```
+
+The `bin/softprobe` script uses the built CLI when present, otherwise runs from source.
 
 ### What the CLI does
 
@@ -87,7 +92,7 @@ Repeat for other routes or use the same path to append more records to the same 
    - `x-softprobe-mode: REPLAY`
    - `x-softprobe-trace-id: <traceId from record>`
    - `x-softprobe-cassette-path: <path to the cassette file>`
-3. Prints the response body to stdout. Exit code is 0 on success, 1 on missing args, request failure, or missing inbound record.
+3. Compares the live response to the recording (the **diff reporter**). Writes **PASS** or **FAIL** to stderr; on failure, prints a colored diff of what differed. Writes the response body to stdout. Exit code 0 = pass, 1 = fail or error.
 
 Your service must use Softprobe middleware (Express or Fastify) so it reads these headers and runs that request in replay context. See [design.md](design.md) for the full coordination flow.
 
@@ -96,6 +101,7 @@ Your service must use Softprobe middleware (Express or Fastify) so it reads thes
 ```bash
 # Start your app (with Softprobe middleware) on port 3000, then:
 npx softprobe diff ./softprobe-cassettes.ndjson http://localhost:3000
+# Or from repo: ./bin/softprobe diff ./softprobe-cassettes.ndjson http://localhost:3000
 ```
 
 ## More

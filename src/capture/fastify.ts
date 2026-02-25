@@ -1,18 +1,18 @@
 /**
  * Fastify plugin for Softprobe: CAPTURE uses onSend; REPLAY uses preHandler to prime matcher.
  * Design §16.2: CAPTURE → onSend; REPLAY → preHandler primes SoftprobeMatcher by traceId.
- * Task 17.3.2: Set OTel softprobe context in onRequest so downstream getSoftprobeContext() works.
+ * Task 17.3.2: Set OTel softprobe context in onRequest so downstream SoftprobeContext works.
  */
 
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { context, trace } from '@opentelemetry/api';
 import { CaptureEngine } from './express';
 import { softprobeFastifyReplayPreHandler } from '../replay/fastify';
-import { getSoftprobeContext, setSoftprobeContext, softprobeValueFromHeaders } from '../context';
+import { SoftprobeContext } from '../context';
 
 /**
  * onRequest hook: run the rest of the request pipeline in an OTel context that has
- * softprobe traceId/mode/cassettePath so getSoftprobeContext() works in route handlers.
+ * softprobe traceId/mode/cassettePath so SoftprobeContext works in route handlers.
  */
 function softprobeFastifyOnRequest(
   request: FastifyRequest,
@@ -21,11 +21,11 @@ function softprobeFastifyOnRequest(
 ): void {
   const span = trace.getActiveSpan();
   const traceId = span?.spanContext().traceId;
-  const base = getSoftprobeContext();
+  const base = SoftprobeContext.active();
   const withTrace = { ...base, traceId };
-  const softprobeValue = softprobeValueFromHeaders(withTrace, request.headers as Record<string, string | string[] | undefined>);
+  const softprobeValue = SoftprobeContext.fromHeaders(withTrace, request.headers as Record<string, string | string[] | undefined>);
   const activeCtx = context.active();
-  const ctxWithSoftprobe = setSoftprobeContext(activeCtx, softprobeValue);
+  const ctxWithSoftprobe = SoftprobeContext.withData(activeCtx, softprobeValue);
   context.with(ctxWithSoftprobe, next);
 }
 
@@ -36,10 +36,10 @@ function softprobeFastifyOnRequest(
  */
 export async function softprobeFastifyPlugin(fastify: FastifyInstance): Promise<void> {
   fastify.addHook('onRequest', softprobeFastifyOnRequest);
-  if (getSoftprobeContext().mode === 'REPLAY') {
+  if (SoftprobeContext.getMode() === 'REPLAY') {
     fastify.addHook('preHandler', softprobeFastifyReplayPreHandler);
   }
-  if (getSoftprobeContext().mode === 'CAPTURE') {
+  if (SoftprobeContext.getMode() === 'CAPTURE') {
     fastify.addHook('onSend', async (request, reply, payload) => {
       const span = trace.getActiveSpan();
       const traceId = span?.spanContext().traceId ?? '';

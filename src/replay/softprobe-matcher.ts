@@ -24,6 +24,35 @@ export class SoftprobeMatcher {
     this.records = records;
   }
 
+  /** Returns the trace id for the current request (from first record). Used when context/span do not propagate to fetch. */
+  _getTraceId(): string | undefined {
+    return this.records[0]?.traceId;
+  }
+
+  /**
+   * Returns the inbound record's responsePayload.body parsed and .http section, if present.
+   * Used by undici replay so the mock response body matches the recorded inbound (diff passes).
+   */
+  _getInboundHttpBody(): unknown {
+    const inbound = this.records.find((r) => r.type === 'inbound');
+    const payload = inbound?.responsePayload as { body?: unknown } | undefined;
+    const body = payload?.body;
+    if (body == null) return undefined;
+    const parsed =
+      typeof body === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(body);
+            } catch {
+              return undefined;
+            }
+          })()
+        : body;
+    return parsed && typeof parsed === 'object' && 'http' in parsed
+      ? (parsed as { http: unknown }).http
+      : undefined;
+  }
+
   /**
    * Runs matcher fns in order; returns first non-CONTINUE or CONTINUE if all continue.
    * When spanOverride is provided (e.g. when there is no active OTel span), it is passed

@@ -8,20 +8,8 @@ This document merges **v2/v3/v3.5** into **v4** to form a complete design.
 
 ## 1) Background
 
-### Why record & replay (and why simple mocks fail)
-Simple mocks (“request → response”) break when runtime diverges from the recorded run (cache hit vs miss, conditional branches, loops, retries). v2 introduced trace/topology-aware matching to survive these divergences.
-
-### Why v3.5 changed capture architecture
-Writing full payloads into OpenTelemetry span attributes caused span bloat and event-loop pressure. v3.5 moved payload capture to a production-safe **NDJSON side channel** written by a single-threaded queue.
-
-### What v4 fixed
-v4 simplified integration and matching:
-- Wrappers are minimal (shimmer/MSW).
-- Matchers are a list of functions (first non-`CONTINUE` wins).
-- Matchers do **not** execute passthrough.
-- Typed bindings hide attribute keys and avoid stringly-typed user code.
-
-v4.1 = **v4 simplicity** + **v3.5 production capture correctness** + **v2/v3 topology matching as an optional matcher**.
+Softprobe is an extension to Otel trace that captures messages bodies. And inject the upstream messages 
+back as dependencies for regression and canary testing. It's record and replay for backend.
 
 ---
 
@@ -29,41 +17,45 @@ v4.1 = **v4 simplicity** + **v3.5 production capture correctness** + **v2/v3 top
 
 ### Goals
 - **Near-zero config integration**: `import "softprobe/init"` as the first line.
-- **Production-safe capture**: do not put big payloads in span attrs; write NDJSON via a single-threaded queue.
+- **Production-safe capture**: capture real traffic in production.
 - **Deterministic replay** in CI (strict mode) + optional passthrough locally.
-- **Matching extensibility**: keep v4 matcher model; add topology-aware matcher as just another matcher fn.
-- **Parallel tests**: AsyncLocalStorage-based isolation for replay context (traceId + loaded records).
+- **Matching extensibility**: Default topology-aware dependency matcher and customer matcher fn.
+- **Parallel tests**: Use native Otel context, trace and context propagation.
 - **HTTP coverage**: support `fetch` and legacy clients via `@mswjs/interceptors`.
+- **Configure**: `.softprobe/config.yml`, no environment variables.
 
 ### Non-goals
 - A heavy “framework” abstraction beyond wrappers + matchers + typed bindings.
-- Default-on topology scoring; topology matcher is optional.
+- 100% perfect use cases. Capturing message bodies size of 500MB or supporting 100,000 QPS.
 
 ---
 
-## 3) High-level architecture (v4.1)
+## 3) High-level architecture
 
-Softprobe has three core concerns (v4):
+Softprobe has three core concerns:
 1) **Capture**
 2) **Replay**
 3) **Matching**
+4) **Config**
 
-v3.5 adds: a production-safe capture pipeline + config + bypass/ignore.
+### 3.1 Capture flow (production-safe)
+- The service receives a request via frameworks such as express/fastify.
+- The capture are activated by `mode='CAPTURE'` in current context.
+- Softprobe intercept request and add the request body into Softproe context.
+- Upstream calls to all dependencies are intercepted, adding to the same Softprobe context.
+- Upon the response to the request, the response message include body are captured.
+- The full capture data are written to NDJSON via a **single-threaded write queue**.
 
-### 3.1 Replay runtime flow
-1. A library call happens (pg/redis/http).
-2. OTel instrumentation creates an active span.
-3. A Softprobe wrapper tags the span via **typed binding**.
-4. Wrapper calls `matcher.match()` (no args).
-5. Wrapper executes:
+### 3.2 Replay runtime flow
+- Softprobe CLI reads a recording from the NDJSON
+- CLI send the API's request to the service under test, with `x-softprobe-mode='REPLAY'` and otel traceId
+- Service under test add `mode='REPLAY'` to the current context.
+- Softprobe load the NDJSON records that matches the traceId.
+- The context propagate to library calls (pg/redis/http).
+- Library wrapper calls `matcher.match()` to find a match record. excutes:
    - `MOCK`: return mocked result
    - `PASSTHROUGH`: call original
    - `CONTINUE`: wrapper policy (passthrough in dev, throw / hard-fail in strict CI)
-
-### 3.2 Capture flow (production-safe)
-- OTel hooks tap request/response streams and driver results.
-- Payloads are written to NDJSON via a **single-threaded write queue**.
-- Spans only get small identifiers/metadata (or nothing beyond what OTel already sets).
 
 ---
 
@@ -80,7 +72,8 @@ import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentation
 
 **Why:** driver shims must run before OTel wraps modules. If OTel wraps first, wrappers can become “nesting dolls” and break matching.
 
-### 4.2 Test-time API (AsyncLocalStorage-safe)
+### 4.2 Test-time API
+
 ```ts
 import { softprobe } from "softprobe";
 
@@ -157,8 +150,6 @@ export const softprobeConfig = new ConfigManager();
 
 ## 6) Cassette format (NDJSON)
 
-v4 baseline is retained; v3.5 adds critical topology and direction fields.
-
 ### 6.1 Schema
 ```ts
 export type Protocol = "http" | "postgres" | "redis" | "amqp" | "grpc";
@@ -191,7 +182,7 @@ export type SoftprobeCassetteRecord = {
 };
 ```
 
-### 6.2 Golden key rule
+### 6.2 Golden key rule (default matcher)
 `identifier` must be built **identically** in capture and replay.
 
 Recommended identifier builders:
@@ -209,9 +200,9 @@ export function pgIdentifier(sql: string) {
 
 ---
 
-## 7) Matching model (v4) + Topology matcher (v2/v3) as an optional matcher
+## 7) Matching model + Topology matcher as an optional matcher
 
-### 7.1 MatcherAction + list (v4)
+### 7.1 MatcherAction + list
 ```ts
 export type MatcherAction =
   | { action: "MOCK"; payload: any }
@@ -241,8 +232,6 @@ export class SoftprobeMatcher {
   }
 }
 ```
-
-**Policy note:** strict vs dev behavior is handled by wrappers, not matchers.
 
 ### 7.2 Typed bindings (v4) — extended to Redis/AMQP
 
@@ -294,36 +283,7 @@ export class RedisSpan {
 }
 ```
 
-#### AMQPSpan (minimal placeholder)
-```ts
-const AMQP = {
-  protocol: "softprobe.amqp.protocol",
-  identifier: "softprobe.amqp.identifier",
-  op: "softprobe.amqp.op",
-  exchange: "softprobe.amqp.exchange",
-  routingKey: "softprobe.amqp.routingKey",
-} as const;
-
-export type AmqpSpanData = {
-  protocol: "amqp";
-  identifier: string;
-  op: "publish" | "consume";
-  exchange?: string;
-  routingKey?: string;
-};
-
-export class AmqpSpan {
-  static tagPublish(exchange: string, routingKey: string, span?: any) {
-    // implement same pattern as RedisSpan
-  }
-  static fromSpan(span: any): AmqpSpanData | null {
-    // implement same pattern as RedisSpan
-    return null;
-  }
-}
-```
-
-### 7.3 Default matcher (v4)
+### 7.3 Default matcher
 Flat key match:
 - derive (protocol, identifier) via typed bindings
 - pick recorded outbound record(s)
@@ -388,7 +348,7 @@ export function createTopologyMatcher(): MatcherFn {
 
 ---
 
-## 8) Replay context, record loading, and inbound response retrieval (v3.5)
+## 8) Replay context, record loading, and inbound response retrieval
 
 ### 8.1 `runWithContext()` loads records once
 ```ts
@@ -606,6 +566,13 @@ Examples of “gotchas”:
 
 All written as NDJSON `SoftprobeCassetteRecord` lines.
 
+### 10.5 Outbound HTTP body capture (dual-layer, v4.1)
+Outbound HTTP response bodies are not available in the OTel undici `responseHook` (it runs at “headers received”). To capture the body without consuming the application’s stream:
+
+1. **OTel undici hook**: Used for trace propagation and golden key (protocol, identifier). When the HTTP interceptor is used for capture, the undici hook does **not** write the outbound record (`captureUsesInterceptor()`); the interceptor is the single writer and includes the body.
+2. **Same @mswjs/interceptors stack for CAPTURE and REPLAY**: Apply the same HTTP interceptor in both modes. In **CAPTURE**, the handler performs the request with a **bypass** fetch (saved before `interceptor.apply()`), taps the response body via `tapReadableStream` (from `capture/stream-tap.ts`), converts Web `ReadableStream` ↔ Node `Readable` with `Readable.fromWeb` / `Readable.toWeb` (Node 17+), builds the outbound record (including `responsePayload.body`), and `controller.respondWith(tapped response)`. In **REPLAY**, the handler runs the matcher and MOCK/passthrough/strict as before.
+3. **Apply after SDK start**: In both CAPTURE and REPLAY, set `globalThis.__softprobeApplyHttpReplay = setupHttpReplayInterceptor`. The application’s instrumentation must call `__softprobeApplyHttpReplay()` after `NodeSDK.start()` so the interceptor runs on top of OTel’s fetch and the bypass fetch reference is correct.
+
 ---
 
 ## 11) E2E testing constraints (Jest module loader)
@@ -706,7 +673,7 @@ By combining `process.env` with OTel's native context, we achieve a "Virtual Env
 
 1. **Boot (Global):** The app starts with `SOFTPROBE_MODE=REPLAY`. All database/HTTP drivers are now "stub-ready".
 2. **Request Entry (Local):** An incoming request arrives. Softprobe's server middleware (Express/Fastify) uses the native OTel context to find the `traceId`.
-3. **Context Priming:** The middleware calls `softprobe.activateReplayForContext(traceId)`. This links the current `AsyncLocalStorage` to the specific records loaded from the `SOFTPROBE_CASSETTE_PATH`.
+3. **Context Priming:** The middleware calls `softprobe.activateReplayForContext(traceId)`. This primes the current OTel context with the specific records loaded from the `SOFTPROBE_CASSETTE_PATH`.
 4. **Automatic Injection:** When the App code calls `db.query()`, the Postgres shim sees the global `REPLAY` mode and the local `traceId`, finds the matching SQL in the cassette, and injects the result back into the App.
 
 ### 15.2 Downstream Propagation
@@ -944,7 +911,7 @@ it("replays even if the DB is disconnected", async () => {
 | --- | --- | --- |
 | **Config Manager** | Synchronously loads YAML at process start. | `.softprobe/config.yml` |
 | **Global Context** | Seeks global `mode` and `cassettePath` to protect bootstrap connections. | `config.yml` |
-| **Active Context** | Manages per-request or per-test logic using OTel `AsyncLocalStorage`. | `runWithContext()` |
+| **Active Context** | Manages per-request or per-test logic using OTel context. | `runWithContext()` |
 | **Cassette Store** | Writes (Capture) or Reads (Replay) from the unified `cassettePath`. | `config.yml` |
 
 ---

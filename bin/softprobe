@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Run the Softprobe CLI. Works from the repo without building (uses dist if present, else ts-node).
+# Usage: softprobe diff <cassette.ndjson> <targetUrl>
+# From repo: ./bin/softprobe diff ./cassette.ndjson http://localhost:3000
+# After npm install: npx softprobe diff ./cassette.ndjson http://localhost:3000
+
+set -e
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+if [ -f dist/cli.js ]; then
+  exec node dist/cli.js "$@"
+else
+  exec npx ts-node --transpile-only src/cli.ts "$@"
+fi

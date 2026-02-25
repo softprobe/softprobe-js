@@ -13,7 +13,7 @@ import shimmer from 'shimmer';
 import { RedisSpan } from '../bindings/redis-span';
 import type { MatcherAction } from '../types/schema';
 import { softprobe } from '../api';
-import { getSoftprobeContext } from '../context';
+import { SoftprobeContext } from '../context';
 
 /**
  * Builds the same identifier string as the Redis capture hook (capture/redis.ts):
@@ -52,7 +52,7 @@ export function setupRedisReplay(): void {
             _name: string
           ): unknown {
             const matcher = softprobe.getActiveMatcher();
-            if (getSoftprobeContext().mode === 'REPLAY' && !matcher) {
+            if (SoftprobeContext.getMode() === 'REPLAY' && !matcher) {
               return Promise.reject(new Error('Softprobe replay: no match for redis command'));
             }
             if (!matcher) {
@@ -81,7 +81,7 @@ export function setupRedisReplay(): void {
                   args,
                   _name
                 );
-              } else if (getSoftprobeContext().strictReplay) {
+              } else if (SoftprobeContext.getStrictReplay()) {
                 return Promise.reject(new Error('Softprobe replay: no match for redis command'));
               } else {
                 // CONTINUE + DEV: passthrough (design §9.3)
@@ -106,7 +106,7 @@ export function setupRedisReplay(): void {
                   requestBody: redisArgs,
                 });
               } catch (err) {
-                if (getSoftprobeContext().strictReplay) {
+                if (SoftprobeContext.getStrictReplay()) {
                   return Promise.reject(new Error('Softprobe replay: no match for redis command'));
                 }
                 // CONTINUE + DEV: passthrough (design §9.3)
@@ -120,7 +120,7 @@ export function setupRedisReplay(): void {
             }
 
             if (typeof payload === 'undefined') {
-              if (getSoftprobeContext().strictReplay) {
+              if (SoftprobeContext.getStrictReplay()) {
                 return Promise.reject(new Error('Softprobe replay: no match for redis command'));
               }
               // CONTINUE + DEV: passthrough (design §9.3)
@@ -167,7 +167,7 @@ export function applyRedisReplay(redis: Record<string, unknown>): void {
   if (proto._connectReplayNoop) return;
   shimmer.wrap(proto, 'connect', (original: (...args: unknown[]) => unknown) =>
     function (this: unknown, ...args: unknown[]): unknown {
-      if (getSoftprobeContext().mode === 'REPLAY') return Promise.resolve();
+      if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve();
       return (original as (...a: unknown[]) => unknown).apply(this, args);
     }
   );
@@ -175,7 +175,7 @@ export function applyRedisReplay(redis: Record<string, unknown>): void {
   if (typeof proto.quit === 'function' && !proto._quitReplayNoop) {
     shimmer.wrap(proto, 'quit', (original: (...args: unknown[]) => unknown) =>
       function (this: unknown, ...args: unknown[]): unknown {
-        if (getSoftprobeContext().mode === 'REPLAY') return Promise.resolve('OK');
+        if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve('OK');
         return (original as (...a: unknown[]) => unknown).apply(this, args);
       }
     );

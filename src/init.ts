@@ -6,7 +6,7 @@
  */
 
 const { ConfigManager } = require('./config/config-manager');
-const { initGlobalContext } = require('./context');
+const { SoftprobeContext } = require('./context');
 
 let mode: string = 'PASSTHROUGH';
 let cassettePath: string = '';
@@ -19,7 +19,7 @@ try {
     cassettePath?: string;
     replay?: { strictReplay?: boolean; strictComparison?: boolean };
   };
-  initGlobalContext({
+  SoftprobeContext.initGlobal({
     mode: g.mode,
     cassettePath: g.cassettePath,
     strictReplay: g.replay?.strictReplay,
@@ -31,7 +31,7 @@ try {
   // No config file (e.g. E2E child or examples): fall back to env so callers can pass mode/cassettePath.
   const envMode = process.env.SOFTPROBE_MODE ?? 'PASSTHROUGH';
   const envPath = process.env.SOFTPROBE_CASSETTE_PATH ?? '';
-  initGlobalContext({
+  SoftprobeContext.initGlobal({
     mode: envMode,
     cassettePath: envPath,
     strictReplay: process.env.SOFTPROBE_STRICT_REPLAY === '1',
@@ -47,6 +47,7 @@ if (mode === 'CAPTURE') {
   const { CassetteStore } = require('./store/cassette-store');
   const { applyAutoInstrumentationMutator } = require('./capture/mutator');
   const { applyFrameworkMutators } = require('./capture/framework-mutator');
+  const { setupHttpReplayInterceptor } = require('./replay/http');
 
   initCapture();
 
@@ -57,6 +58,35 @@ if (mode === 'CAPTURE') {
 
   applyAutoInstrumentationMutator();
   applyFrameworkMutators();
+  // Plan: same HTTP interceptor as REPLAY; app must call __softprobeApplyHttpReplay() after sdk.start() so CAPTURE branch (bypass fetch + tap) runs.
+  (globalThis as unknown as { __softprobeApplyHttpReplay?: () => void }).__softprobeApplyHttpReplay = setupHttpReplayInterceptor;
+}
+
+// Task 16.2.1: When PASSTHROUGH, enable capture via headers (x-softprobe-mode: CAPTURE + x-softprobe-cassette-path).
+// Also apply replay patches (undici, pg, redis) so replay works via headers (x-softprobe-mode: REPLAY + x-softprobe-cassette-path);
+// middleware loads cassette on demand; no SOFTPROBE_MODE=REPLAY required at boot.
+if (mode === 'PASSTHROUGH') {
+  const { initCapture } = require('./capture/init');
+  const { setCaptureStore } = require('./capture/store-accessor');
+  const { contextRoutingCaptureStore } = require('./store/context-routing-capture-store');
+  const { applyAutoInstrumentationMutator } = require('./capture/mutator');
+  const { applyFrameworkMutators } = require('./capture/framework-mutator');
+  const { setupHttpReplayInterceptor } = require('./replay/http');
+  const { setupPostgresReplay } = require('./replay/postgres');
+  const { setupRedisReplay } = require('./replay/redis');
+  const { setupUndiciReplay } = require('./replay/undici');
+
+  initCapture();
+  setCaptureStore(contextRoutingCaptureStore);
+  process.on('beforeExit', () => contextRoutingCaptureStore.flushOnExit());
+
+  applyAutoInstrumentationMutator();
+  applyFrameworkMutators();
+  // Replay patches so requests with REPLAY headers get mocked (middleware loads cassette on demand).
+  setupPostgresReplay();
+  setupRedisReplay();
+  setupUndiciReplay();
+  (globalThis as unknown as { __softprobeApplyHttpReplay?: () => void }).__softprobeApplyHttpReplay = setupHttpReplayInterceptor;
 }
 
 if (mode === 'REPLAY') {
@@ -88,6 +118,7 @@ if (mode === 'REPLAY') {
   setupPostgresReplay();
   setupRedisReplay();
   setupUndiciReplay();
-  setupHttpReplayInterceptor();
   applyFrameworkMutators();
+  // Instrumentation must call __softprobeApplyHttpReplay() after sdk.start() so our fetch patch runs after OTel and stays on top.
+  (globalThis as unknown as { __softprobeApplyHttpReplay?: () => void }).__softprobeApplyHttpReplay = setupHttpReplayInterceptor;
 }

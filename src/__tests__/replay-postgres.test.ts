@@ -4,10 +4,12 @@
  * from the SemanticMatcher, and throws if the query is unmocked (AC4).
  */
 
+import * as otelApi from '@opentelemetry/api';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
+import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import { SemanticMatcher } from '../replay/matcher';
 import { softprobe } from '../api';
-import { initGlobalContext } from '../context';
+import { SoftprobeContext } from '../context';
 import { setupPostgresReplay } from '../replay/postgres';
 import { PostgresSpan } from '../bindings/postgres-span';
 
@@ -22,11 +24,10 @@ function mockSpan(identifier: string, responseBody: string): ReadableSpan {
 }
 
 beforeAll(() => {
+  const contextManager = new AsyncHooksContextManager();
+  contextManager.enable();
+  otelApi.context.setGlobalContextManager(contextManager);
   setupPostgresReplay();
-});
-
-afterEach(() => {
-  softprobe.clearReplayContext();
 });
 
 describe('Postgres Replay (Task 5.1)', () => {
@@ -36,30 +37,28 @@ describe('Postgres Replay (Task 5.1)', () => {
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: recordedRows, rowCount: 1 })),
     ]);
-    softprobe.setReplayContext({ traceId: 't1', matcher });
-
-    const { Client } = require('pg');
-    const client = new Client();
-    const result = await client.query('SELECT 1');
-
-    expect(result.rows).toEqual(recordedRows);
-    expect(result.rowCount).toBe(1);
+    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+      const { Client } = require('pg');
+      const client = new Client();
+      const result = await client.query('SELECT 1');
+      expect(result.rows).toEqual(recordedRows);
+      expect(result.rowCount).toBe(1);
+    });
   });
 
   it('throws when query is unmocked (no recorded span for identifier)', async () => {
-    initGlobalContext({ strictReplay: true });
+    SoftprobeContext.initGlobal({ strictReplay: true });
 
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: [], rowCount: 0 })),
     ]);
-    softprobe.setReplayContext({ traceId: 't1', matcher });
+    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+      const { Client } = require('pg');
+      const client = new Client();
+      await expect(client.query('SELECT other')).rejects.toThrow(/no match for pg\.query/);
+    });
 
-    const { Client } = require('pg');
-    const client = new Client();
-
-    await expect(client.query('SELECT other')).rejects.toThrow(/no match for pg\.query/);
-
-    initGlobalContext({ strictReplay: false });
+    SoftprobeContext.initGlobal({ strictReplay: false });
   });
 });
 
@@ -74,13 +73,12 @@ describe('Postgres Replay (Task 9.2)', () => {
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: [{ one: 1 }], rowCount: 1 })),
     ]);
-    softprobe.setReplayContext({ traceId: 't1', matcher });
-
-    const { Client } = require('pg');
-    const client = new Client();
-    await client.query('SELECT 1');
-
-    expect(tagQuerySpy).toHaveBeenCalledWith('SELECT 1', undefined, undefined);
+    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+      const { Client } = require('pg');
+      const client = new Client();
+      await client.query('SELECT 1');
+      expect(tagQuerySpy).toHaveBeenCalledWith('SELECT 1', undefined, undefined);
+    });
     tagQuerySpy.mockRestore();
   });
 
@@ -89,20 +87,19 @@ describe('Postgres Replay (Task 9.2)', () => {
     const matcher = new SemanticMatcher([
       mockSpan('SELECT * FROM users', JSON.stringify({ rows: recordedRows, rowCount: 1, command: 'SELECT' })),
     ]);
-    softprobe.setReplayContext({ traceId: 't1', matcher });
-
-    const { Client } = require('pg');
-    const client = new Client();
-    const result = await client.query('SELECT * FROM users');
-
-    expect(result).toMatchObject({
-      rows: recordedRows,
-      rowCount: 1,
-      command: 'SELECT',
+    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+      const { Client } = require('pg');
+      const client = new Client();
+      const result = await client.query('SELECT * FROM users');
+      expect(result).toMatchObject({
+        rows: recordedRows,
+        rowCount: 1,
+        command: 'SELECT',
+      });
+      expect(result).toHaveProperty('rows');
+      expect(result).toHaveProperty('rowCount');
+      expect(result).toHaveProperty('command');
     });
-    expect(result).toHaveProperty('rows');
-    expect(result).toHaveProperty('rowCount');
-    expect(result).toHaveProperty('command');
   });
 
   it('9.2.3 MOCK path (callback style) query(text, cb): callback receives mocked result async (nextTick)', async () => {
@@ -110,22 +107,22 @@ describe('Postgres Replay (Task 9.2)', () => {
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: recordedRows, rowCount: 1 })),
     ]);
-    softprobe.setReplayContext({ traceId: 't1', matcher });
+    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+      const { Client } = require('pg');
+      const client = new Client();
 
-    const { Client } = require('pg');
-    const client = new Client();
-
-    const result = await new Promise<{ rows: unknown[]; rowCount: number; command: string }>((resolve, reject) => {
-      let sync = true;
-      client.query('SELECT 1', (err: Error | null, res?: { rows: unknown[]; rowCount: number; command: string }) => {
-        expect(sync).toBe(false);
-        if (err) return reject(err);
-        resolve(res!);
+      const result = await new Promise<{ rows: unknown[]; rowCount: number; command: string }>((resolve, reject) => {
+        let sync = true;
+        client.query('SELECT 1', (err: Error | null, res?: { rows: unknown[]; rowCount: number; command: string }) => {
+          expect(sync).toBe(false);
+          if (err) return reject(err);
+          resolve(res!);
+        });
+        sync = false;
       });
-      sync = false;
-    });
 
-    expect(result).toMatchObject({ rows: recordedRows, rowCount: 1, command: 'SELECT' });
+      expect(result).toMatchObject({ rows: recordedRows, rowCount: 1, command: 'SELECT' });
+    });
   });
 
   it('9.2.3 MOCK path (callback style) query(text, values, cb): callback receives mocked result', async () => {
@@ -133,35 +130,34 @@ describe('Postgres Replay (Task 9.2)', () => {
     const matcher = new SemanticMatcher([
       mockSpan('SELECT * FROM t WHERE id = $1', JSON.stringify({ rows: recordedRows, rowCount: 1 })),
     ]);
-    softprobe.setReplayContext({ traceId: 't1', matcher });
+    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+      const { Client } = require('pg');
+      const client = new Client();
 
-    const { Client } = require('pg');
-    const client = new Client();
-
-    const result = await new Promise<{ rows: unknown[]; rowCount: number; command: string }>((resolve, reject) => {
-      client.query('SELECT * FROM t WHERE id = $1', [10], (err: Error | null, res?: { rows: unknown[]; rowCount: number; command: string }) => {
-        if (err) return reject(err);
-        resolve(res!);
+      const result = await new Promise<{ rows: unknown[]; rowCount: number; command: string }>((resolve, reject) => {
+        client.query('SELECT * FROM t WHERE id = $1', [10], (err: Error | null, res?: { rows: unknown[]; rowCount: number; command: string }) => {
+          if (err) return reject(err);
+          resolve(res!);
+        });
       });
-    });
 
-    expect(result).toMatchObject({ rows: recordedRows, rowCount: 1, command: 'SELECT' });
+      expect(result).toMatchObject({ rows: recordedRows, rowCount: 1, command: 'SELECT' });
+    });
   });
 
   it('9.2.4 CONTINUE + STRICT throws when strictReplay and no match', async () => {
-    initGlobalContext({ strictReplay: true });
+    SoftprobeContext.initGlobal({ strictReplay: true });
 
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: [], rowCount: 0 })),
     ]);
-    softprobe.setReplayContext({ traceId: 't1', matcher });
+    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+      const { Client } = require('pg');
+      const client = new Client();
+      await expect(client.query('SELECT other')).rejects.toThrow(/no match for pg\.query/);
+    });
 
-    const { Client } = require('pg');
-    const client = new Client();
-
-    await expect(client.query('SELECT other')).rejects.toThrow(/no match for pg\.query/);
-
-    initGlobalContext({ strictReplay: false });
+    SoftprobeContext.initGlobal({ strictReplay: false });
   });
 
 });
@@ -172,14 +168,14 @@ describe('Postgres Replay (Task 9.2)', () => {
  */
 describe('Task 18.1.1 Postgres connect() context-lookup', () => {
   it('when globalDefault is REPLAY, client.connect() returns Promise.resolve() immediately', async () => {
-    initGlobalContext({ mode: 'REPLAY', cassettePath: '' });
+    SoftprobeContext.initGlobal({ mode: 'REPLAY', cassettePath: '' });
 
     const { Client } = require('pg');
     const client = new Client();
 
     await expect(client.connect()).resolves.toBeUndefined();
 
-    initGlobalContext({ mode: 'PASSTHROUGH', cassettePath: '' });
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', cassettePath: '' });
   });
 });
 
@@ -190,7 +186,7 @@ describe('Task 18.1.2 Postgres query() context-matcher', () => {
   const { context } = require('@opentelemetry/api');
   const { AsyncHooksContextManager } = require('@opentelemetry/context-async-hooks');
   const otelApi = require('@opentelemetry/api');
-  const { setSoftprobeContext } = require('../context');
+  const { SoftprobeContext } = require('../context');
   const { SoftprobeMatcher } = require('../replay/softprobe-matcher');
 
   beforeAll(() => {
@@ -210,7 +206,7 @@ describe('Task 18.1.2 Postgres query() context-matcher', () => {
     });
 
     const activeCtx = context.active();
-    const ctxWithMatcher = setSoftprobeContext(activeCtx, {
+    const ctxWithMatcher = SoftprobeContext.withData(activeCtx, {
       mode: 'REPLAY',
       cassettePath: '',
       matcher: contextMatcher,

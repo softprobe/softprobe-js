@@ -44,6 +44,7 @@ async function main(): Promise<number> {
       {}
     );
     if (!match) return 1;
+    process.stderr.write('softprobe diff: PASS (response matches recording)\n');
     if (liveBody) process.stdout.write(liveBody + (liveBody.endsWith('\n') ? '' : '\n'));
     return 0;
   } catch (err) {

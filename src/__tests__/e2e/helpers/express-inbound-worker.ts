@@ -22,11 +22,23 @@ sdk.start();
 
 const isReplay = process.env.SOFTPROBE_MODE === 'REPLAY';
 
+// #region agent log
+function _dbg(location: string, message: string, data: Record<string, unknown>): void {
+  fetch('http://127.0.0.1:7242/ingest/abae8b62-1eb2-436b-99c9-e8e6a9718ab9', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location, message, data, timestamp: Date.now() }) }).catch(() => {});
+}
+// #endregion
+
 async function startServer(): Promise<void> {
+  // #region agent log
+  _dbg('express-inbound-worker.ts:startServer', 'startServer entered', { port: process.env.PORT, isReplay });
+  // #endregion
   if (isReplay) {
     const cassettePath = process.env.SOFTPROBE_CASSETTE_PATH;
     if (!cassettePath) throw new Error('SOFTPROBE_CASSETTE_PATH is required for REPLAY');
     const records = await loadNdjson(cassettePath);
+    // #region agent log
+    _dbg('express-inbound-worker.ts:startServer', 'loadNdjson done', { recordCount: records.length });
+    // #endregion
     softprobe.setReplayRecordsCache(records);
     const matcher = new SoftprobeMatcher();
     matcher.use(createDefaultMatcher());
@@ -51,7 +63,13 @@ async function startServer(): Promise<void> {
   });
 
   const port = parseInt(process.env.PORT || '0', 10) || 39301;
+  // #region agent log
+  _dbg('express-inbound-worker.ts:startServer', 'listen called', { port });
+  // #endregion
   app.listen(port, () => {
+    // #region agent log
+    _dbg('express-inbound-worker.ts:startServer', 'listen callback', { port });
+    // #endregion
     process.stdout.write(JSON.stringify({ port }) + '\n');
   });
 }

@@ -2,10 +2,16 @@
  * Capture hook for HTTP/Undici. Pairs with replay/undici.ts (same protocol & identifier).
  * Design §3.1, §5.3: responseHook contract must match @opentelemetry/instrumentation-undici.
  * Design §10.3: when capture store is set, writes outbound record (identifier = METHOD url).
+ *
+ * Response body: @opentelemetry/instrumentation-undici calls responseHook from onResponseHeaders
+ * (when response headers are received). Its UndiciResponse type has only headers, statusCode,
+ * statusText — no body. The comment in the instrumentation says "body may not be accessible yet".
+ * So we never receive the response body here; responsePayload.body will be undefined. To capture
+ * the body we need another path (e.g. a fetch wrapper in CAPTURE that reads the body).
  */
 
 import type { SoftprobeCassetteRecord } from '../types/schema';
-import { getCaptureStore } from './store-accessor';
+import { getCaptureStore, captureUsesInterceptor } from './store-accessor';
 
 /** Request-like shape from undici instrumentation (method, url or origin+path). Contract: align with real package. */
 export interface UndiciRequestLike {
@@ -16,10 +22,14 @@ export interface UndiciRequestLike {
   body?: unknown;
 }
 
-/** Result shape passed to undici responseHook(span, result). Contract: align with real package. */
+/**
+ * Result shape passed to undici responseHook(span, result).
+ * The real UndiciResponse (see instrumentation-undici types) has only headers, statusCode, statusText — no body.
+ * We allow response.body in the type so we can use it if a future version or fork provides it.
+ */
 export interface UndiciResultLike {
   request?: UndiciRequestLike;
-  response?: { statusCode?: number; body?: unknown };
+  response?: { statusCode?: number; statusText?: string; body?: unknown };
 }
 
 export const UNDICI_INSTRUMENTATION_NAME = '@opentelemetry/instrumentation-undici';
@@ -66,6 +76,8 @@ export function buildUndiciResponseHook(): (span: unknown, result: unknown) => v
       }
       s.setAttribute?.('softprobe.response.body', JSON.stringify(payload));
     }
+
+    if (captureUsesInterceptor()) return;
 
     const store = getCaptureStore();
     if (!store) return;
