@@ -14,6 +14,30 @@ import {
 } from '../replay/extract-key';
 
 describe('extractKeyFromSpan', () => {
+  it('maps postgres/redis/http span bindings to deterministic { protocol, identifier } keys', () => {
+    const pgSpan = testSpan();
+    PostgresSpan.tagQuery('SELECT 42', undefined, pgSpan);
+
+    const redisSpan = testSpan();
+    RedisSpan.tagCommand('get', ['cache:user:42'], redisSpan);
+
+    const httpSpan = testSpan();
+    HttpSpan.tagRequest('POST', 'https://api.example.com/users', '{"name":"sam"}', httpSpan);
+
+    expect(extractKeyFromSpan(pgSpan)).toEqual({
+      protocol: 'postgres',
+      identifier: 'SELECT 42',
+    });
+    expect(extractKeyFromSpan(redisSpan)).toEqual({
+      protocol: 'redis',
+      identifier: 'GET cache:user:42',
+    });
+    expect(extractKeyFromSpan(httpSpan)).toEqual({
+      protocol: 'http',
+      identifier: 'POST https://api.example.com/users',
+    });
+  });
+
   it('yields { protocol, identifier } for postgres-tagged span', () => {
     const span = testSpan();
     PostgresSpan.tagQuery('SELECT 1', undefined, span);
@@ -93,20 +117,15 @@ describe('CallSeq', () => {
     expect(candidates[idx1].responsePayload).toEqual({ second: true });
   });
 
-  it('wrap-around: 1 candidate always returns 0; 2 candidates called 3 times returns 0, 1, 0', () => {
+  it('increments deterministically without wrap-around', () => {
     const key = { protocol: 'postgres' as const, identifier: 'SELECT 1' };
-    const oneCandidate = [{ version: '4.1', traceId: 't', spanId: 's1', timestamp: '', type: 'outbound', protocol: 'postgres', identifier: 'SELECT 1' }];
-    const twoCandidates = [
-      { version: '4.1', traceId: 't', spanId: 's1', timestamp: '', type: 'outbound', protocol: 'postgres', identifier: 'SELECT 1' },
-      { version: '4.1', traceId: 't', spanId: 's2', timestamp: '', type: 'outbound', protocol: 'postgres', identifier: 'SELECT 1' },
-    ];
     const seq1 = new CallSeq();
-    expect(seq1.getAndIncrement(key, oneCandidate.length)).toBe(0);
-    expect(seq1.getAndIncrement(key, oneCandidate.length)).toBe(0);
-    expect(seq1.getAndIncrement(key, oneCandidate.length)).toBe(0);
+    expect(seq1.getAndIncrement(key)).toBe(0);
+    expect(seq1.getAndIncrement(key)).toBe(1);
+    expect(seq1.getAndIncrement(key)).toBe(2);
     const seq2 = new CallSeq();
-    expect(seq2.getAndIncrement(key, twoCandidates.length)).toBe(0);
-    expect(seq2.getAndIncrement(key, twoCandidates.length)).toBe(1);
-    expect(seq2.getAndIncrement(key, twoCandidates.length)).toBe(0);
+    expect(seq2.getAndIncrement(key)).toBe(0);
+    expect(seq2.getAndIncrement(key)).toBe(1);
+    expect(seq2.getAndIncrement(key)).toBe(2);
   });
 });

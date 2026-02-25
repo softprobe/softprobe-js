@@ -232,4 +232,78 @@ describe('createTopologyMatcher', () => {
     expect(r2.action).toBe('MOCK');
     expect((r2 as { payload: unknown }).payload).toEqual({ rows: [2], rowCount: 1 });
   });
+
+  it('prefers topology disambiguation over flat candidate order when parent span name matches', () => {
+    const parentA = baseRecord({
+      spanId: 'pA',
+      spanName: 'users-handler',
+      identifier: 'GET /users',
+      protocol: 'http',
+    });
+    const parentB = baseRecord({
+      spanId: 'pB',
+      spanName: 'orders-handler',
+      identifier: 'GET /orders',
+      protocol: 'http',
+    });
+    const childForA = baseRecord({
+      spanId: 'cA',
+      parentSpanId: 'pA',
+      identifier: 'SELECT * FROM common WHERE id = $1',
+      responsePayload: { source: 'A' },
+    });
+    const childForB = baseRecord({
+      spanId: 'cB',
+      parentSpanId: 'pB',
+      identifier: 'SELECT * FROM common WHERE id = $1',
+      responsePayload: { source: 'B' },
+    });
+    // Adversarial order: flat matcher would pick childForB first.
+    const records = [parentA, parentB, childForB, childForA];
+    const match = createTopologyMatcher();
+
+    const liveSpan = testSpan();
+    PostgresSpan.tagQuery('SELECT * FROM common WHERE id = $1', undefined, liveSpan);
+    (liveSpan as any)._parentSpanName = 'users-handler';
+
+    const result = match(liveSpan as any, records);
+
+    expect(result.action).toBe('MOCK');
+    expect((result as { payload: unknown }).payload).toEqual({ source: 'A' });
+  });
+
+  it('returns CONTINUE when topology candidate pool is exhausted (no strict policy in matcher)', () => {
+    const parent = baseRecord({
+      spanId: 'p1',
+      spanName: 'users-handler',
+      identifier: 'GET /users',
+      protocol: 'http',
+    });
+    const childA = baseRecord({
+      spanId: 'c1',
+      parentSpanId: 'p1',
+      identifier: 'SELECT * FROM t WHERE id = $1',
+      responsePayload: { seq: 1 },
+    });
+    const childB = baseRecord({
+      spanId: 'c2',
+      parentSpanId: 'p1',
+      identifier: 'SELECT * FROM t WHERE id = $1',
+      responsePayload: { seq: 2 },
+    });
+    const records = [parent, childA, childB];
+    const match = createTopologyMatcher();
+
+    const span = testSpan();
+    PostgresSpan.tagQuery('SELECT * FROM t WHERE id = $1', undefined, span);
+    (span as any)._parentSpanName = 'users-handler';
+
+    const first = match(span as any, records);
+    const second = match(span as any, records);
+    const third = match(span as any, records);
+
+    expect(first).toEqual({ action: 'MOCK', payload: { seq: 1 } });
+    expect(second).toEqual({ action: 'MOCK', payload: { seq: 2 } });
+    expect(third).toEqual({ action: 'CONTINUE' });
+  });
 });

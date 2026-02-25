@@ -60,20 +60,18 @@ function seqKey(key: SpanKey): string {
 /**
  * Per-key call sequence for default matcher: tracks the next candidate index
  * per (protocol, identifier). getAndIncrement returns the current index and advances.
- * When candidateCount is provided, returned index wraps: index % candidateCount.
  */
 export class CallSeq {
   private next = new Map<string, number>();
 
   /**
    * Returns the current index for this key and increments for the next call.
-   * If candidateCount is provided, returns index % candidateCount (wrap-around).
    */
-  getAndIncrement(key: SpanKey, candidateCount?: number): number {
+  getAndIncrement(key: SpanKey): number {
     const k = seqKey(key);
     const idx = this.next.get(k) ?? 0;
     this.next.set(k, idx + 1);
-    return candidateCount !== undefined ? idx % candidateCount : idx;
+    return idx;
   }
 }
 
@@ -88,7 +86,8 @@ export function createDefaultMatcher(): MatcherFn {
     if (!key) return { action: 'CONTINUE' };
     const candidates = filterOutboundCandidates(records, key);
     if (candidates.length === 0) return { action: 'CONTINUE' };
-    const idx = callSeq.getAndIncrement(key, candidates.length);
+    const idx = callSeq.getAndIncrement(key);
+    if (idx >= candidates.length) return { action: 'CONTINUE' };
     const record = candidates[idx];
     return { action: 'MOCK', payload: record?.responsePayload, traceId: record?.traceId };
   };

@@ -94,19 +94,19 @@ Implementation rule per task:
 
 ## 4) Matcher Runtime (`design-matcher.md`) — Atomic
 
-- [ ] **Task 4.1 Verify `SoftprobeMatcher` chain contract**
+- [x] **Task 4.1 Verify `SoftprobeMatcher` chain contract** — `test(matcher): verify first non-CONTINUE short-circuits matcher chain`
   - **Test**: first non-`CONTINUE` action wins; all-continue returns `CONTINUE`.
 
-- [ ] **Task 4.2 Implement/confirm default matcher key extraction from span bindings**
+- [x] **Task 4.2 Implement/confirm default matcher key extraction from span bindings** — `test(matcher): confirm deterministic key extraction for postgres/redis/http span bindings`
   - **Test**: postgres/redis/http spans map to deterministic `(protocol, identifier)` keys.
 
-- [ ] **Task 4.3 Implement/confirm default matcher candidate filter + sequence policy**
+- [x] **Task 4.3 Implement/confirm default matcher candidate filter + sequence policy** — `feat(matcher): consume per-key outbound candidates in deterministic order without wrap-around`
   - **Test**: repeated identical outbound calls consume deterministic sequence order.
 
-- [ ] **Task 4.4 Implement optional topology matcher**
+- [x] **Task 4.4 Implement optional topology matcher** — `test(matcher): verify topology matcher beats flat ordering when parent span disambiguates`
   - **Test**: when parent span name disambiguates candidates, topology choice is preferred over flat pool.
 
-- [ ] **Task 4.5 Keep strict-mode policy out of matcher layer**
+- [x] **Task 4.5 Keep strict-mode policy out of matcher layer** — `fix(matcher): return CONTINUE when topology pool is exhausted to keep strict policy in wrappers`
   - **Test**: no-match from matcher returns `CONTINUE`; wrapper decides strict/dev behavior.
 
 ---

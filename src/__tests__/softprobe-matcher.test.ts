@@ -92,5 +92,23 @@ describe('SoftprobeMatcher', () => {
 
       expect(result.action).toBe('CONTINUE');
     });
+
+    it('stops at first non-CONTINUE and does not call later matchers', () => {
+      const m = new SoftprobeMatcher();
+      const first = jest.fn(() => ({ action: 'CONTINUE' as const }));
+      const second = jest.fn(() => ({ action: 'PASSTHROUGH' as const }));
+      const third = jest.fn(() => ({ action: 'MOCK' as const, payload: 'late' }));
+      m.use(first);
+      m.use(second);
+      m.use(third);
+      m._setRecords([]);
+
+      const result = m.match();
+
+      expect(result.action).toBe('PASSTHROUGH');
+      expect(first).toHaveBeenCalledTimes(1);
+      expect(second).toHaveBeenCalledTimes(1);
+      expect(third).not.toHaveBeenCalled();
+    });
   });
 });

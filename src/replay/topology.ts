@@ -79,8 +79,9 @@ export function createTopologyMatcher(): MatcherFn {
 
     const seqKey = `${key.protocol}::${key.identifier}::${liveParentName}`;
     const n = callSeq.get(seqKey) ?? 0;
-    const picked = pool[n] ?? pool[0];
+    const picked = pool[n];
     callSeq.set(seqKey, n + 1);
+    if (!picked) return { action: 'CONTINUE' };
 
     return { action: 'MOCK', payload: picked.responsePayload };
   };
