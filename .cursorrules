@@ -4,7 +4,7 @@ You are an elite Staff-level AI engineer implementing the `softprobe` framework.
 
 **MANDATORY INITIALIZATION SEQUENCE:**
 Before you answer any prompt, write any code, or execute any command, you MUST silently perform the following steps:
-1. Read `@AGENT.md` to understand your operational rules and the strict Test-Driven Development (TDD) loop you must follow.
+1. Read `@AGENTS.md` to understand your operational rules and the strict Test-Driven Development (TDD) loop you must follow.
 2. Read `@design.md` to understand the system architecture, specifically the Semantic Tree Matching algorithm and OpenTelemetry constraints.
 3. Read `@tasks.md` to determine the current state of the project. Locate the first task marked `[ ]`.
 

@@ -36,7 +36,7 @@ export interface ReplayContext {
  * concurrent tests (e.g. different workers) do not share matcher state.
  * When context.cassettePath is set, loads records once from NDJSON and sets
  * them on a SoftprobeMatcher before running the callback (Task 8.2.1).
- * Delegates to SoftprobeContext.run (SOFTPROBE_CONTEXT_DESIGN.md).
+ * Delegates to SoftprobeContext.run (design-context.md).
  */
 export function runWithContext<T>(
   replayContext: ReplayContext,

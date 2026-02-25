@@ -1,5 +1,5 @@
 /**
- * Single immutable context API for Softprobe (SOFTPROBE_CONTEXT_DESIGN.md).
+ * Single immutable context API for Softprobe (design-context.md).
  * One module: read via SoftprobeContext getters, write via withData/initGlobal/fromHeaders/run.
  */
 

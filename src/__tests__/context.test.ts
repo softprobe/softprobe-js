@@ -1,5 +1,5 @@
 /**
- * Tests for context.ts: SoftprobeContext API (SOFTPROBE_CONTEXT_DESIGN.md).
+ * Tests for context.ts: SoftprobeContext API (design-context.md).
  * Getters, withData, initGlobal, fromHeaders, setGlobalReplayMatcher, run.
  */
 

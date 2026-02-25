@@ -44,4 +44,30 @@ You are an elite, senior Staff-level AI engineer implementing the `softprobe` fr
    It is normal to have design problem. If you see any during implementation, pause and discuss the
    necessary change.
 
+9. **Architecture & File Layout Convention (OpenTelemetry-style):**
+  All future tasks MUST follow a package-oriented layout that separates shared foundation APIs from instrumentation packages.
+
+  * **Foundation/Core (shared library):**
+    - Place reusable framework-agnostic APIs in a shared foundation area (for example `src/core/`).
+    - This layer owns context contracts, cassette interfaces, matcher contracts, and cross-cutting runtime utilities.
+    - Foundation code MUST NOT depend on package-specific instrumentation implementations.
+
+  * **Instrumentation packages (per supported dependency):**
+    - Organize instrumentation by target package under dedicated package folders (for example `src/instrumentations/<package>/`).
+    - Each package folder should contain package-specific patch/wrapper/hook logic only.
+    - Package instrumentation MUST depend only on foundation/public APIs, not on other instrumentation packages.
+
+  * **Protocol/common helpers:**
+    - Shared protocol helpers (HTTP/DB/Redis/common parsing/tagging helpers) belong in a common instrumentation helper area (for example `src/instrumentations/common/<domain>/`).
+    - Do not duplicate protocol helper code across package folders.
+
+  * **Dependency direction (strict):**
+    - Allowed direction: `foundation -> (no package deps)`, `instrumentation package -> foundation + instrumentation/common`.
+    - Disallowed direction: `foundation -> instrumentation package`, `instrumentation package A -> instrumentation package B`.
+
+  * **Task execution rule for layout changes:**
+    - For any new feature or refactor task, place new files in the new structure above.
+    - Do not add new files to legacy mixed folders when an equivalent location exists in the new structure.
+    - If a task touches legacy code, prefer minimal migration of touched code into the new structure within the same task scope.
+
 **If you understand these rules, reply with "I acknowledge the Softprobe Constitution" and read tasks.md to begin.**
