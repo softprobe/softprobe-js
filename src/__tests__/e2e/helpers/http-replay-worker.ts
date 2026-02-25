@@ -10,6 +10,7 @@ import { softprobe } from '../../../api';
 import { SemanticMatcher } from '../../../replay/matcher';
 import type { SoftprobeCassetteRecord } from '../../../types/schema';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
+import { runSoftprobeScope } from '../../helpers/run-softprobe-scope';
 
 /** Builds a minimal span-like for SemanticMatcher (E2E uses flat match by identifier). */
 function toSpan(identifier: string, payload: unknown): Record<string, unknown> {
@@ -40,7 +41,7 @@ async function main(): Promise<void> {
     throw new Error('No outbound HTTP records found in cassette');
   }
 
-  await softprobe.runWithContext(
+  await runSoftprobeScope(
     {
       traceId: 'http-e2e-replay',
       matcher: new SemanticMatcher(spans as unknown as ReadableSpan[]),

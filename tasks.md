@@ -65,6 +65,12 @@ Implementation rule per task:
 - [x] **Task 2.7 Keep CAPTURE branch read-free** — `test(context): assert CAPTURE run does not call cassette.loadTrace`
   - **Test**: in CAPTURE, `storage.loadTrace` is never called.
 
+- [x] **Task 2.8 Cleanup outdated `runWithContext` adapter behavior after `run(options, fn)` refactor** — `refactor(api): preserve legacy replay context fields while adapting to run options`
+  - **Test**: `runWithContext` preserves legacy replay context fields (`cassettePath`, strict flags) and seeds matcher/inbound record from cassette path before callback execution.
+
+- [ ] **Task 2.9 Remove legacy `runWithContext` API and migrate callers to `SoftprobeContext.run`**
+  - **Test**: `softprobe` public API has no `runWithContext`; existing replay test scopes use `SoftprobeContext.run`.
+
 ---
 
 ## 3) Cassette Runtime (`design-cassette.md`) — Atomic

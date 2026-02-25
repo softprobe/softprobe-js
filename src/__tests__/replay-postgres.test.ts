@@ -12,6 +12,7 @@ import { softprobe } from '../api';
 import { SoftprobeContext } from '../context';
 import { setupPostgresReplay } from '../replay/postgres';
 import { PostgresSpan } from '../bindings/postgres-span';
+import { runSoftprobeScope } from './helpers/run-softprobe-scope';
 
 function mockSpan(identifier: string, responseBody: string): ReadableSpan {
   return {
@@ -37,7 +38,7 @@ describe('Postgres Replay (Task 5.1)', () => {
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: recordedRows, rowCount: 1 })),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { Client } = require('pg');
       const client = new Client();
       const result = await client.query('SELECT 1');
@@ -52,7 +53,7 @@ describe('Postgres Replay (Task 5.1)', () => {
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: [], rowCount: 0 })),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { Client } = require('pg');
       const client = new Client();
       await expect(client.query('SELECT other')).rejects.toThrow(/no match for pg\.query/);
@@ -73,7 +74,7 @@ describe('Postgres Replay (Task 9.2)', () => {
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: [{ one: 1 }], rowCount: 1 })),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { Client } = require('pg');
       const client = new Client();
       await client.query('SELECT 1');
@@ -87,7 +88,7 @@ describe('Postgres Replay (Task 9.2)', () => {
     const matcher = new SemanticMatcher([
       mockSpan('SELECT * FROM users', JSON.stringify({ rows: recordedRows, rowCount: 1, command: 'SELECT' })),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { Client } = require('pg');
       const client = new Client();
       const result = await client.query('SELECT * FROM users');
@@ -107,7 +108,7 @@ describe('Postgres Replay (Task 9.2)', () => {
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: recordedRows, rowCount: 1 })),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { Client } = require('pg');
       const client = new Client();
 
@@ -130,7 +131,7 @@ describe('Postgres Replay (Task 9.2)', () => {
     const matcher = new SemanticMatcher([
       mockSpan('SELECT * FROM t WHERE id = $1', JSON.stringify({ rows: recordedRows, rowCount: 1 })),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { Client } = require('pg');
       const client = new Client();
 
@@ -151,7 +152,7 @@ describe('Postgres Replay (Task 9.2)', () => {
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: [], rowCount: 0 })),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { Client } = require('pg');
       const client = new Client();
       await expect(client.query('SELECT other')).rejects.toThrow(/no match for pg\.query/);

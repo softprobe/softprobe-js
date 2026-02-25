@@ -8,8 +8,8 @@ import * as otelApi from '@opentelemetry/api';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import { SemanticMatcher } from '../replay/matcher';
-import { softprobe } from '../api';
 import { setupUndiciReplay } from '../replay/undici';
+import { runSoftprobeScope } from './helpers/run-softprobe-scope';
 
 function mockHttpSpan(identifier: string, responseBody: { statusCode?: number; body?: unknown }): ReadableSpan {
   return {
@@ -33,7 +33,7 @@ describe('HTTP Undici Replay (Task 5.2)', () => {
     const matcher = new SemanticMatcher([
       mockHttpSpan('GET https://example.com/', { statusCode: 200, body: 'hello' }),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const res = await fetch('https://example.com/');
       expect(res.status).toBe(200);
       expect(await res.text()).toBe('hello');
@@ -44,7 +44,7 @@ describe('HTTP Undici Replay (Task 5.2)', () => {
     const matcher = new SemanticMatcher([
       mockHttpSpan('GET https://example.com/', { statusCode: 200, body: 'ok' }),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       await expect(fetch('https://other.example.com/')).rejects.toThrow(
         /\[Softprobe\] No recorded traces found for http: GET https:\/\/other\.example\.com\//
       );

@@ -1,7 +1,7 @@
 /**
  * Task 12.3.2: Child worker for Redis replay E2E.
  * Loads softprobe/init (REPLAY) first, then runs Redis GET under
- * softprobe.runWithContext({ cassettePath }).
+ * runSoftprobeScope({ cassettePath }).
  *
  * Env: SOFTPROBE_MODE=REPLAY, SOFTPROBE_CASSETTE_PATH, REDIS_KEY
  * Stdout: JSON { value }
@@ -9,6 +9,7 @@
 
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+import { runSoftprobeScope } from '../../helpers/run-softprobe-scope';
 
 require('../../../init');
 
@@ -27,7 +28,7 @@ async function main() {
   // Intentionally do not connect to a live Redis server.
   const client = createClient({ url: 'redis://127.0.0.1:6399' });
 
-  const value = await softprobe.runWithContext({ cassettePath }, async () => {
+  const value = await runSoftprobeScope({ cassettePath }, async () => {
     const matcher = softprobe.getActiveMatcher();
     if (matcher && typeof matcher.use === 'function') {
       matcher.use((_span: unknown, records: Array<{

@@ -8,6 +8,7 @@
  */
 
 import path from 'path';
+import { runSoftprobeScope } from '../../helpers/run-softprobe-scope';
 
 const initPath = path.join(__dirname, '..', '..', '..', 'init.ts');
 require(initPath);
@@ -25,7 +26,7 @@ async function main() {
     process.exit(1);
   }
 
-  await softprobe.runWithContext({ cassettePath }, async () => {
+  await runSoftprobeScope({ cassettePath }, async () => {
     const { Client } = require('pg');
     const client = new Client({ connectionString: process.env.PG_URL || 'postgres://localhost:9999/nodb' });
     const queryText = 'SELECT 1 AS num, $1::text AS label';

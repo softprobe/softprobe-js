@@ -7,9 +7,9 @@ import * as otelApi from '@opentelemetry/api';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import { SemanticMatcher } from '../replay/matcher';
-import { softprobe } from '../api';
 import { SoftprobeContext } from '../context';
 import { setupPostgresReplay } from '../replay/postgres';
+import { runSoftprobeScope } from './helpers/run-softprobe-scope';
 
 const mockQueryImpl = jest.fn().mockRejectedValue(new Error('pg not connected'));
 
@@ -47,7 +47,7 @@ describe('Postgres Replay (Task 9.2.5)', () => {
     const matcher = new SemanticMatcher([
       mockSpan('SELECT 1', JSON.stringify({ rows: [], rowCount: 0 })),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { Client } = require('pg');
       const client = new Client();
       await client.query('SELECT other').catch(() => {});

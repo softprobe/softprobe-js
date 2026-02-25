@@ -11,6 +11,7 @@ import { softprobe } from '../../../api';
 import { SemanticMatcher } from '../../../replay/matcher';
 import type { SoftprobeCassetteRecord } from '../../../types/schema';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
+import { runSoftprobeScope } from '../../helpers/run-softprobe-scope';
 
 function toSpan(identifier: string, payload: unknown): Record<string, unknown> {
   return {
@@ -37,7 +38,7 @@ async function main(): Promise<void> {
     .map((r) => toSpan(r.identifier, r.responsePayload));
 
   const matcher = new SemanticMatcher(spans as unknown as ReadableSpan[]);
-  await softprobe.runWithContext(
+  await runSoftprobeScope(
     { traceId: 'strict-e2e-replay', matcher },
     async () => {
       const response = await fetch(unrecordedUrl);

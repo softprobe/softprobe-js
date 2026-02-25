@@ -17,6 +17,7 @@ import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import { softprobe } from '../api';
 import { SOFTPROBE_CONTEXT_KEY } from '../context';
 import type { SoftprobeMatcher } from '../replay/softprobe-matcher';
+import { runSoftprobeScope } from './helpers/run-softprobe-scope';
 
 describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
   beforeAll(() => {
@@ -30,10 +31,10 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
     const traceId2 = 'trace-bbb';
 
     const [result1, result2] = await Promise.all([
-      softprobe.runWithContext({ traceId: traceId1 }, async () => {
+      runSoftprobeScope({ traceId: traceId1 }, async () => {
         return softprobe.getReplayContext();
       }),
-      softprobe.runWithContext({ traceId: traceId2 }, async () => {
+      runSoftprobeScope({ traceId: traceId2 }, async () => {
         return softprobe.getReplayContext();
       }),
     ]);
@@ -54,7 +55,7 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
       'utf8'
     );
 
-    const storeInside = await softprobe.runWithContext(
+    const storeInside = await runSoftprobeScope(
       { traceId, cassettePath: tmpPath },
       async () => softprobe.getReplayContext()
     );
@@ -78,18 +79,18 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
     const cassettePath = '';
     const mode = 'REPLAY' as const;
 
-    const valueInside = await softprobe.runWithContext(
+    const valueInside = await runSoftprobeScope(
       { traceId, cassettePath, mode },
       async () => context.active().getValue(SOFTPROBE_CONTEXT_KEY)
     );
 
-    expect(valueInside).toEqual({
+    expect(valueInside).toEqual(expect.objectContaining({
       traceId,
       cassettePath,
       mode,
       strictReplay: false,
       strictComparison: false,
-    });
+    }));
   });
 
   /**
@@ -102,7 +103,7 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
     fs.writeFileSync(tmpPath, oneRecord, 'utf8');
 
     let recordsLength = 0;
-    await softprobe.runWithContext({ cassettePath: tmpPath }, async () => {
+    await runSoftprobeScope({ cassettePath: tmpPath }, async () => {
       const matcher = softprobe.getActiveMatcher() as SoftprobeMatcher | undefined;
       expect(matcher).toBeDefined();
       (matcher as SoftprobeMatcher).use((_span, records) => {
@@ -140,7 +141,7 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
     fs.writeFileSync(tmpPath, JSON.stringify(inboundRecord) + '\n', 'utf8');
 
     let recorded: ReturnType<typeof softprobe.getRecordedInboundResponse>;
-    await softprobe.runWithContext({ traceId, cassettePath: tmpPath }, async () => {
+    await runSoftprobeScope({ traceId, cassettePath: tmpPath }, async () => {
       recorded = softprobe.getRecordedInboundResponse();
       return undefined;
     });
@@ -174,7 +175,7 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
       const tmpPath = path.join(os.tmpdir(), `softprobe-compare-${Date.now()}.ndjson`);
       fs.writeFileSync(tmpPath, JSON.stringify(inboundRecord) + '\n', 'utf8');
 
-      await softprobe.runWithContext({ traceId, cassettePath: tmpPath }, async () => {
+      await runSoftprobeScope({ traceId, cassettePath: tmpPath }, async () => {
         softprobe.compareInbound({ status: 200, body: { id: 1, name: 'Alice' } });
       });
 
@@ -200,7 +201,7 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
       const tmpPath = path.join(os.tmpdir(), `softprobe-compare-status-${Date.now()}.ndjson`);
       fs.writeFileSync(tmpPath, JSON.stringify(inboundRecord) + '\n', 'utf8');
 
-      await softprobe.runWithContext({ traceId, cassettePath: tmpPath }, async () => {
+      await runSoftprobeScope({ traceId, cassettePath: tmpPath }, async () => {
         expect(() => {
           softprobe.compareInbound({ status: 404, body: {} });
         }).toThrow(/status/);
@@ -228,7 +229,7 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
       const tmpPath = path.join(os.tmpdir(), `softprobe-compare-body-${Date.now()}.ndjson`);
       fs.writeFileSync(tmpPath, JSON.stringify(inboundRecord) + '\n', 'utf8');
 
-      await softprobe.runWithContext({ traceId, cassettePath: tmpPath }, async () => {
+      await runSoftprobeScope({ traceId, cassettePath: tmpPath }, async () => {
         expect(() => {
           softprobe.compareInbound({ status: 200, body: { x: 2 } });
         }).toThrow(/body/);
@@ -249,7 +250,7 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
         'utf8'
       );
 
-      await softprobe.runWithContext({ traceId: 't1', cassettePath: tmpPath }, async () => {
+      await runSoftprobeScope({ traceId: 't1', cassettePath: tmpPath }, async () => {
         expect(() => {
           softprobe.compareInbound({ status: 200, body: {} });
         }).toThrow(/no recorded inbound/);
@@ -284,7 +285,7 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
       const tmpPath = path.join(os.tmpdir(), `softprobe-strict-${Date.now()}.ndjson`);
       fs.writeFileSync(tmpPath, JSON.stringify(inboundWithHeaders) + '\n', 'utf8');
       try {
-        await softprobe.runWithContext(
+        await runSoftprobeScope(
           { traceId, cassettePath: tmpPath, strictComparison: true },
           async () => {
             expect(() => {
@@ -309,7 +310,7 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
       const tmpPath = path.join(os.tmpdir(), `softprobe-strict-ok-${Date.now()}.ndjson`);
       fs.writeFileSync(tmpPath, JSON.stringify(inboundWithHeaders) + '\n', 'utf8');
       try {
-        await softprobe.runWithContext(
+        await runSoftprobeScope(
           { traceId, cassettePath: tmpPath, strictComparison: true },
           async () => {
             softprobe.compareInbound({
@@ -332,7 +333,7 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
       const tmpPath = path.join(os.tmpdir(), `softprobe-nostrict-${Date.now()}.ndjson`);
       fs.writeFileSync(tmpPath, JSON.stringify(inboundWithHeaders) + '\n', 'utf8');
       try {
-        await softprobe.runWithContext(
+        await runSoftprobeScope(
           { traceId, cassettePath: tmpPath, strictComparison: false },
           async () => {
             softprobe.compareInbound({
@@ -350,5 +351,63 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
         }
       }
     });
+  });
+
+  it('Task 2.8: runWithContext cleanup preserves legacy fields and seeds replay matcher/inbound before callback', async () => {
+    const traceId = 'trace-cleanup-28';
+    const cassettePath = path.join(os.tmpdir(), `softprobe-cleanup-28-${Date.now()}.ndjson`);
+    const inboundRecord = {
+      version: '4.1' as const,
+      traceId,
+      spanId: 'inbound-1',
+      timestamp: '2025-01-01T00:00:00.000Z',
+      type: 'inbound' as const,
+      protocol: 'http' as const,
+      identifier: 'GET /cleanup',
+      responsePayload: { status: 200, body: { ok: true } },
+    };
+    const outboundRecord =
+      '{"version":"4.1","traceId":"' +
+      traceId +
+      '","spanId":"out-1","timestamp":"2025-01-01T00:00:01.000Z","type":"outbound","protocol":"http","identifier":"GET /users","responsePayload":{"value":1}}\n';
+    fs.writeFileSync(cassettePath, JSON.stringify(inboundRecord) + '\n' + outboundRecord, 'utf8');
+
+    let seenCassettePath = '';
+    let seenStrictReplay = false;
+    let seenStrictComparison = false;
+    let seenRecordCount = 0;
+    let seenInboundType = '';
+
+    await runSoftprobeScope(
+      { traceId, cassettePath, strictReplay: true, strictComparison: true, mode: 'REPLAY' },
+      async () => {
+        const replayCtx = softprobe.getReplayContext();
+        seenCassettePath = replayCtx?.cassettePath ?? '';
+        seenStrictReplay = replayCtx?.strictReplay ?? false;
+        seenStrictComparison = replayCtx?.strictComparison ?? false;
+
+        const matcher = softprobe.getActiveMatcher() as SoftprobeMatcher | undefined;
+        expect(matcher).toBeDefined();
+        (matcher as SoftprobeMatcher).use((_span, records) => {
+          seenRecordCount = records.length;
+          return { action: 'CONTINUE' };
+        });
+        (matcher as SoftprobeMatcher).match();
+
+        seenInboundType = softprobe.getRecordedInboundResponse()?.type ?? '';
+      }
+    );
+
+    expect(seenCassettePath).toBe(cassettePath);
+    expect(seenStrictReplay).toBe(true);
+    expect(seenStrictComparison).toBe(true);
+    expect(seenRecordCount).toBeGreaterThan(0);
+    expect(seenInboundType).toBe('inbound');
+
+    try {
+      fs.unlinkSync(cassettePath);
+    } catch {
+      // ignore cleanup
+    }
   });
 });

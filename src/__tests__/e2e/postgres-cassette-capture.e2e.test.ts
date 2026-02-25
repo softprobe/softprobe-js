@@ -12,6 +12,7 @@ import { runChild } from './run-child';
 import { loadNdjson } from '../../store/load-ndjson';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
 import { setupPostgresReplay } from '../../replay/postgres';
+import { runSoftprobeScope } from '../helpers/run-softprobe-scope';
 
 const WORKER_SCRIPT = path.join(__dirname, 'helpers', 'pg-cassette-capture-worker.ts');
 
@@ -113,7 +114,7 @@ describe('E2E Postgres cassette replay (Task 12.2.2)', () => {
     try {
       process.env.SOFTPROBE_MODE = 'REPLAY';
       const { softprobe } = await import('../../api');
-      const replayed = await softprobe.runWithContext(
+      const replayed = await runSoftprobeScope(
         { cassettePath },
         async () => {
           const { Client } = require('pg');

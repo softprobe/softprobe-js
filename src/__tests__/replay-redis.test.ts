@@ -8,10 +8,10 @@ import * as otelApi from '@opentelemetry/api';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import { SemanticMatcher } from '../replay/matcher';
-import { softprobe } from '../api';
 import { SoftprobeContext } from '../context';
 import { setupRedisReplay } from '../replay/redis';
 import { RedisSpan } from '../bindings/redis-span';
+import { runSoftprobeScope } from './helpers/run-softprobe-scope';
 
 function mockRedisSpan(identifier: string, responseBody: unknown): ReadableSpan {
   return {
@@ -35,7 +35,7 @@ describe('Redis Replay (Task 5.3)', () => {
     const matcher = new SemanticMatcher([
       mockRedisSpan('GET mykey', 'myvalue'),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { createClient } = require('redis');
       const client = createClient();
       const result = await client.get('mykey');
@@ -49,7 +49,7 @@ describe('Redis Replay (Task 5.3)', () => {
     const matcher = new SemanticMatcher([
       mockRedisSpan('GET mykey', 'ok'),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { createClient } = require('redis');
       const client = createClient();
       await expect(client.get('otherkey')).rejects.toThrow(
@@ -79,7 +79,7 @@ describe('Redis Replay (Task 9.3)', () => {
     const matcher = new SemanticMatcher([
       mockRedisSpan('GET mykey', 'myvalue'),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { createClient } = require('redis');
       const client = createClient();
       await client.get('mykey');
@@ -97,7 +97,7 @@ describe('Redis Replay (Task 9.3)', () => {
     const matcher = new SemanticMatcher([
       mockRedisSpan('GET user:1', mockedValue),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { createClient } = require('redis');
       const client = createClient();
       const result = await client.get('user:1');
@@ -111,7 +111,7 @@ describe('Redis Replay (Task 9.3)', () => {
     const matcher = new SemanticMatcher([
       mockRedisSpan('GET mykey', 'ok'),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { createClient } = require('redis');
       const client = createClient();
       await expect(client.get('otherkey')).rejects.toThrow(/no match for redis command/);
@@ -126,7 +126,7 @@ describe('Redis Replay (Task 9.3)', () => {
     const matcher = new SemanticMatcher([
       mockRedisSpan('GET mykey', 'ok'),
     ]);
-    await softprobe.runWithContext({ traceId: 't1', matcher }, async () => {
+    await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const { createClient } = require('redis');
       const client = createClient();
       // Passthrough: original executor is invoked, so we must not get replay errors
