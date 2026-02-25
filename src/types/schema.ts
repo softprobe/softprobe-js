@@ -53,6 +53,13 @@ export interface Cassette {
   flush?(): Promise<void>;
 }
 
+export interface SoftprobeRunOptions {
+  mode: SoftprobeMode;
+  storage: Cassette;
+  traceId: string;
+  matcher?: MatcherFn;
+}
+
 /** V4.1 protocol discriminator (cassette + bindings). */
 export type Protocol = 'http' | 'postgres' | 'redis' | 'amqp' | 'grpc';
 

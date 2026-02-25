@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { SoftprobeContext, SOFTPROBE_CONTEXT_KEY } from '../context';
 import type { SoftprobeMatcher } from '../replay/softprobe-matcher';
+import type { Cassette } from '../types/schema';
 
 describe('context (SoftprobeContext)', () => {
   beforeAll(() => {
@@ -44,6 +45,20 @@ describe('context (SoftprobeContext)', () => {
       SoftprobeContext.initGlobal({ mode: 'REPLAY', cassettePath: '/global.ndjson' });
       expect(SoftprobeContext.getMode(ROOT_CONTEXT)).toBe('REPLAY');
       expect(SoftprobeContext.getCassettePath(ROOT_CONTEXT)).toBe('/global.ndjson');
+    });
+
+    it('exposes storage when provided in context', () => {
+      const cassette: Cassette = {
+        loadTrace: async () => [],
+        saveRecord: async () => {},
+      };
+      const ctx = SoftprobeContext.withData(ROOT_CONTEXT, {
+        mode: 'CAPTURE',
+        traceId: 'trace-storage',
+        storage: cassette,
+      });
+      const active = SoftprobeContext.active(ctx);
+      expect(active.storage).toBe(cassette);
     });
   });
 

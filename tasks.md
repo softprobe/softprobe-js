@@ -34,10 +34,10 @@ Implementation rule per task:
     - `saveRecord(traceId, record): Promise<void>`
     - optional `flush(): Promise<void>`
 
-- [ ] **Task 1.3 Add `SoftprobeRunOptions` type**
+- [x] **Task 1.3 Add `SoftprobeRunOptions` type** — `feat(types): add SoftprobeRunOptions contract and test`
   - **Test**: compile-time checks require `mode`, `storage`, `traceId`; optional `matcher`.
 
-- [ ] **Task 1.4 Align `SoftprobeCassetteRecord` schema to NDJSON design contract**
+- [x] **Task 1.4 Align `SoftprobeCassetteRecord` schema to NDJSON design contract** — `feat(types): confirm cassette record identity keys are required`
   - **Test**: type test for required identity fields (`version`, `traceId`, `spanId`, `timestamp`, `type`, `protocol`, `identifier`).
 
 ---
