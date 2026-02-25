@@ -50,7 +50,7 @@ Implementation rule per task:
 - [x] **Task 2.2 Add `getCassette(otelContext?)` getter** — `feat(context): expose active cassette getter for withData/run scopes`
   - **Test**: returns the same cassette instance passed via `withData`/`run`.
 
-- [ ] **Task 2.3 Make `getTraceId()` strict during scoped runs**
+- [x] **Task 2.3 Make `getTraceId()` strict during scoped runs** — `feat(context): make getTraceId return string and enforce non-empty in run scope`
   - **Test**: inside `SoftprobeContext.run(...)`, `getTraceId()` is always non-empty.
 
 - [ ] **Task 2.4 Refactor `run` signature to `run(options, fn)`**

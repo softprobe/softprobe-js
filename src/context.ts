@@ -125,8 +125,8 @@ function setGlobalReplayMatcher(matcher: SoftprobeMatcher | undefined): void {
   globalReplayMatcher = matcher;
 }
 
-function getTraceId(otelContext?: Context): string | undefined {
-  return active(otelContext).traceId;
+function getTraceId(otelContext?: Context): string {
+  return active(otelContext).traceId ?? '';
 }
 
 function getMode(otelContext?: Context): 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH' {
