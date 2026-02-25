@@ -75,19 +75,19 @@ Implementation rule per task:
 
 ## 3) Cassette Runtime (`design-cassette.md`) — Atomic
 
-- [ ] **Task 3.1 Implement `NdjsonCassette.loadTrace` adapter**
+- [x] **Task 3.1 Implement `NdjsonCassette.loadTrace` adapter** — `feat(cassette): add NdjsonCassette loadTrace adapter with traceId fixture test`
   - **Test**: fixture NDJSON returns only matching trace records.
 
-- [ ] **Task 3.2 Implement `NdjsonCassette.saveRecord` adapter**
+- [x] **Task 3.2 Implement `NdjsonCassette.saveRecord` adapter** — `feat(cassette): add NdjsonCassette saveRecord append-line adapter with unit test`
   - **Test**: one record append results in one NDJSON line.
 
-- [ ] **Task 3.3 Implement optional `NdjsonCassette.flush` passthrough**
+- [x] **Task 3.3 Implement optional `NdjsonCassette.flush` passthrough** — `feat(cassette): add NdjsonCassette flush passthrough to optional writer hook`
   - **Test**: delegates to underlying queue/store flush when available.
 
-- [ ] **Task 3.4 Add context-aware capture write helper**
+- [x] **Task 3.4 Add context-aware capture write helper** — `feat(cassette): add context capture write helper using active trace and cassette`
   - **Test**: in CAPTURE mode, helper calls `getCassette().saveRecord(getTraceId(), record)`.
 
-- [ ] **Task 3.5 Add context-aware flush helper**
+- [x] **Task 3.5 Add context-aware flush helper** — `feat(cassette): add context-aware flush helper with optional cassette flush passthrough`
   - **Test**: helper calls `cassette.flush?.()` and safely no-ops when undefined.
 
 ---

@@ -1,0 +1,3 @@
+{"version":"4.1","traceId":"trace-a","spanId":"span-1","timestamp":"2025-01-01T00:00:00.000Z","type":"outbound","protocol":"http","identifier":"GET /users"}
+{"version":"4.1","traceId":"trace-b","spanId":"span-2","timestamp":"2025-01-01T00:00:01.000Z","type":"outbound","protocol":"postgres","identifier":"SELECT 1"}
+{"version":"4.1","traceId":"trace-a","spanId":"span-3","timestamp":"2025-01-01T00:00:02.000Z","type":"inbound","protocol":"http","identifier":"GET /orders"}
