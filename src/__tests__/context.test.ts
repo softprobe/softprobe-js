@@ -6,8 +6,6 @@
 import * as otelApi from '@opentelemetry/api';
 import { ROOT_CONTEXT, context } from '@opentelemetry/api';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
-import * as path from 'path';
-import * as os from 'os';
 import { SoftprobeContext, SOFTPROBE_CONTEXT_KEY } from '../context';
 import type { SoftprobeMatcher } from '../replay/softprobe-matcher';
 import type { Cassette } from '../types/schema';
@@ -184,25 +182,31 @@ describe('context (SoftprobeContext)', () => {
   });
 
   describe('run', () => {
-    it('runs fn in OTel context with merged partial over active/global', async () => {
-      SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', cassettePath: '/global.ndjson' });
+    it('runs fn in OTel context with options and exposes mode, traceId, storage', async () => {
+      const cassette: Cassette = {
+        loadTrace: async () => [],
+        saveRecord: async () => {},
+      };
       let seenTraceId: string | undefined;
       let seenMode: string | undefined;
+      let seenStorage: Cassette | undefined;
       await SoftprobeContext.run(
-        { traceId: 'run-trace', mode: 'REPLAY' },
+        { traceId: 'run-trace', mode: 'REPLAY', storage: cassette },
         () => {
           seenTraceId = SoftprobeContext.getTraceId();
           seenMode = SoftprobeContext.getMode();
+          seenStorage = SoftprobeContext.getCassette();
         }
       );
       expect(seenTraceId).toBe('run-trace');
       expect(seenMode).toBe('REPLAY');
+      expect(seenStorage).toBe(cassette);
     });
 
     it('getTraceId is always a non-empty string inside run scope', async () => {
       let seenTraceId = '';
       await SoftprobeContext.run(
-        { mode: 'CAPTURE', storage: { loadTrace: async () => [], saveRecord: async () => {} } },
+        { mode: 'CAPTURE', traceId: '', storage: { loadTrace: async () => [], saveRecord: async () => {} } },
         () => {
           const traceId: string = SoftprobeContext.getTraceId();
           seenTraceId = traceId;
@@ -211,28 +215,7 @@ describe('context (SoftprobeContext)', () => {
       expect(seenTraceId.length).toBeGreaterThan(0);
     });
 
-    it('when partial.cassettePath is set, loads NDJSON and sets matcher + inboundRecord', async () => {
-      const tmpPath = path.join(os.tmpdir(), `softprobe-context-run-${Date.now()}.ndjson`);
-      const fs = await import('fs/promises');
-      await fs.writeFile(
-        tmpPath,
-        [
-          JSON.stringify({ version: '4.1', traceId: 't1', spanId: 's1', type: 'inbound', timestamp: '1', spanName: 'in', protocol: 'http', identifier: 'GET /', responsePayload: { statusCode: 200 } }),
-          JSON.stringify({ version: '4.1', traceId: 't1', spanId: 's2', type: 'outbound', timestamp: '2', spanName: 'pg', protocol: 'postgres', identifier: 'SELECT 1' }),
-        ].join('\n')
-      );
-      let matcher: unknown;
-      let inbound: unknown;
-      await SoftprobeContext.run({ traceId: 't1', cassettePath: tmpPath }, () => {
-        matcher = SoftprobeContext.getMatcher();
-        inbound = SoftprobeContext.getInboundRecord();
-      });
-      expect(matcher).toBeDefined();
-      expect(inbound).toEqual(expect.objectContaining({ type: 'inbound', spanName: 'in' }));
-      await fs.unlink(tmpPath).catch(() => {});
-    });
-
-    it('getCassette returns same cassette passed via run partial', async () => {
+    it('getCassette returns same cassette passed via run options', async () => {
       const cassette: Cassette = {
         loadTrace: async () => [],
         saveRecord: async () => {},
@@ -245,6 +228,72 @@ describe('context (SoftprobeContext)', () => {
         }
       );
       expect(seen).toBe(cassette);
+    });
+
+    it('in REPLAY mode, run calls storage.loadTrace(traceId) once per run', async () => {
+      const loadTrace = jest.fn(async () => []);
+      const cassette: Cassette = {
+        loadTrace,
+        saveRecord: async () => {},
+      };
+
+      await SoftprobeContext.run(
+        { mode: 'REPLAY', traceId: 'trace-replay-load', storage: cassette },
+        async () => {}
+      );
+
+      expect(loadTrace).toHaveBeenCalledTimes(1);
+      expect(loadTrace).toHaveBeenCalledWith('trace-replay-load');
+    });
+
+    it('in REPLAY mode, active matcher is seeded with loaded records before callback', async () => {
+      const cassetteRecords: import('../types/schema').SoftprobeCassetteRecord[] = [
+        {
+          version: '4.1',
+          traceId: 'trace-seed',
+          spanId: 'span-1',
+          timestamp: '1',
+          type: 'outbound',
+          protocol: 'http',
+          identifier: 'GET /users',
+          responsePayload: { ok: true },
+        },
+      ];
+      const cassette: Cassette = {
+        loadTrace: async () => cassetteRecords,
+        saveRecord: async () => {},
+      };
+
+      let seenRecords = 0;
+      await SoftprobeContext.run(
+        { mode: 'REPLAY', traceId: 'trace-seed', storage: cassette },
+        async () => {
+          const matcher = SoftprobeContext.getMatcher() as SoftprobeMatcher | undefined;
+          expect(matcher).toBeDefined();
+          (matcher as SoftprobeMatcher).use((_span, records) => {
+            seenRecords = records.length;
+            return { action: 'CONTINUE' };
+          });
+          (matcher as SoftprobeMatcher).match();
+        }
+      );
+
+      expect(seenRecords).toBe(cassetteRecords.length);
+    });
+
+    it('in CAPTURE mode, run never calls storage.loadTrace', async () => {
+      const loadTrace = jest.fn(async () => []);
+      const cassette: Cassette = {
+        loadTrace,
+        saveRecord: async () => {},
+      };
+
+      await SoftprobeContext.run(
+        { mode: 'CAPTURE', traceId: 'trace-capture-no-read', storage: cassette },
+        async () => {}
+      );
+
+      expect(loadTrace).not.toHaveBeenCalled();
     });
   });
 });

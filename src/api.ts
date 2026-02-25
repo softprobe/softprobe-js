@@ -1,4 +1,4 @@
-import type { SoftprobeCassetteRecord } from './types/schema';
+import type { Cassette, SoftprobeCassetteRecord, SoftprobeRunOptions } from './types/schema';
 import type { SemanticMatcher } from './replay/matcher';
 import { SoftprobeMatcher } from './replay/softprobe-matcher';
 import { getCaptureStore } from './capture/store-accessor';
@@ -31,6 +31,11 @@ export interface ReplayContext {
   inboundRecord?: SoftprobeCassetteRecord;
 }
 
+const noOpCassette: Cassette = {
+  loadTrace: async () => [],
+  saveRecord: async () => {},
+};
+
 /**
  * Test-time API: run a function with the given replay context so that
  * concurrent tests (e.g. different workers) do not share matcher state.
@@ -42,7 +47,12 @@ export function runWithContext<T>(
   replayContext: ReplayContext,
   fn: () => T | Promise<T>
 ): T | Promise<T> {
-  return SoftprobeContext.run(replayContext, fn);
+  const options: SoftprobeRunOptions = {
+    mode: replayContext.mode ?? 'PASSTHROUGH',
+    storage: noOpCassette,
+    traceId: replayContext.traceId ?? '',
+  };
+  return SoftprobeContext.run(options, fn);
 }
 
 /**

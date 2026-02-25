@@ -53,16 +53,16 @@ Implementation rule per task:
 - [x] **Task 2.3 Make `getTraceId()` strict during scoped runs** — `feat(context): make getTraceId return string and enforce non-empty in run scope`
   - **Test**: inside `SoftprobeContext.run(...)`, `getTraceId()` is always non-empty.
 
-- [ ] **Task 2.4 Refactor `run` signature to `run(options, fn)`**
+- [x] **Task 2.4 Refactor `run` signature to `run(options, fn)`** — `refactor(context): require SoftprobeRunOptions in run and assert options-based context scope`
   - **Test**: callback sees active context values: `mode`, `traceId`, `storage`.
 
-- [ ] **Task 2.5 Implement REPLAY initialization in `run` using cassette load**
+- [x] **Task 2.5 Implement REPLAY initialization in `run` using cassette load** — `feat(context): call cassette.loadTrace once per REPLAY run before callback scope`
   - **Test**: in REPLAY, `storage.loadTrace(traceId)` called once per run.
 
-- [ ] **Task 2.6 Seed matcher records in REPLAY branch**
+- [x] **Task 2.6 Seed matcher records in REPLAY branch** — `feat(context): seed replay matcher with loaded records before callback scope`
   - **Test**: active matcher receives loaded records before callback logic executes.
 
-- [ ] **Task 2.7 Keep CAPTURE branch read-free**
+- [x] **Task 2.7 Keep CAPTURE branch read-free** — `test(context): assert CAPTURE run does not call cassette.loadTrace`
   - **Test**: in CAPTURE, `storage.loadTrace` is never called.
 
 ---

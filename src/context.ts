@@ -6,11 +6,10 @@
 import { randomBytes } from 'crypto';
 import { createContextKey, context, propagation } from '@opentelemetry/api';
 import type { Context } from '@opentelemetry/api';
-import type { Cassette, SoftprobeCassetteRecord } from './types/schema';
+import type { Cassette, SoftprobeCassetteRecord, SoftprobeRunOptions } from './types/schema';
 import type { SemanticMatcher } from './replay/matcher';
 import { SoftprobeMatcher } from './replay/softprobe-matcher';
 import { createDefaultMatcher } from './replay/extract-key';
-import { loadNdjson } from './store/load-ndjson';
 
 /** Context key under which softprobe state is stored in OTel Context. Exported for tests. */
 export const SOFTPROBE_CONTEXT_KEY = createContextKey('softprobe_context');
@@ -168,37 +167,31 @@ function getInboundRecord(otelContext?: Context): SoftprobeCassetteRecord | unde
   return active(otelContext).inboundRecord;
 }
 
-/**
- * Runs fn in an OTel context whose softprobe state is the merge of current active/global and partial.
- * When partial.cassettePath is set, loads NDJSON, builds matcher and inbound record, merges, then runs fn.
- */
+/** Runs fn inside an OTel scope seeded from required Softprobe run options. */
 function ensureTraceId(stored: Stored, fallback: string): Stored {
   return stored.traceId ? stored : { ...stored, traceId: fallback };
 }
 
-function run<T>(partial: PartialData, fn: () => T | Promise<T>): T | Promise<T> {
+function run<T>(options: SoftprobeRunOptions, fn: () => T | Promise<T>): T | Promise<T> {
   const base = active(context.active());
-  const mode = partial.mode ?? (partial.cassettePath ? ('REPLAY' as const) : base.mode);
-  const mergedBase = merge(base, { ...partial, mode });
+  const mergedBase = merge(base, options);
   const defaultTraceId = (): string => randomBytes(16).toString('hex');
 
-  if (partial.cassettePath) {
-    const cassettePath = partial.cassettePath;
-    const traceId = partial.traceId;
+  if (options.mode === 'REPLAY') {
+    const traceId = options.traceId || mergedBase.traceId || base.traceId || defaultTraceId();
     return (async () => {
-      const records = await loadNdjson(cassettePath, traceId);
+      const records = await options.storage.loadTrace(traceId);
       const matcher = new SoftprobeMatcher();
       matcher._setRecords(records);
-      matcher.use(createDefaultMatcher());
-      const inboundRecord = records.find((r) => r.type === 'inbound');
-      const merged = merge(mergedBase, { matcher, inboundRecord });
-      const withTraceId = ensureTraceId(merged, merged.traceId ?? (inboundRecord as { traceId?: string } | undefined)?.traceId ?? defaultTraceId());
+      matcher.use(options.matcher ?? createDefaultMatcher());
+      const withReplayData = merge(mergedBase, { matcher });
+      const withTraceId = ensureTraceId(withReplayData, traceId);
       const ctxWith = withData(context.active(), withTraceId);
       return context.with(ctxWith, fn) as Promise<T>;
     })();
   }
 
-  const withTraceId = ensureTraceId(mergedBase, mergedBase.traceId ?? base.traceId ?? defaultTraceId());
+  const withTraceId = ensureTraceId(mergedBase, mergedBase.traceId || base.traceId || defaultTraceId());
   const ctxWith = withData(context.active(), withTraceId);
   return context.with(ctxWith, fn) as T | Promise<T>;
 }
