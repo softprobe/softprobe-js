@@ -106,6 +106,18 @@ describe('context (SoftprobeContext)', () => {
       });
       expect(SoftprobeContext.getInboundRecord(ctx)).toEqual(record);
     });
+
+    it('getCassette returns cassette from context when set via withData', () => {
+      const cassette: Cassette = {
+        loadTrace: async () => [],
+        saveRecord: async () => {},
+      };
+      const ctx = SoftprobeContext.withData(ROOT_CONTEXT, {
+        mode: 'CAPTURE',
+        storage: cassette,
+      });
+      expect(SoftprobeContext.getCassette(ctx)).toBe(cassette);
+    });
   });
 
   describe('withData', () => {
@@ -187,6 +199,18 @@ describe('context (SoftprobeContext)', () => {
       expect(seenMode).toBe('REPLAY');
     });
 
+    it('getTraceId is always a non-empty string inside run scope', async () => {
+      let seenTraceId = '';
+      await SoftprobeContext.run(
+        { mode: 'CAPTURE', storage: { loadTrace: async () => [], saveRecord: async () => {} } },
+        () => {
+          const traceId: string = SoftprobeContext.getTraceId();
+          seenTraceId = traceId;
+        }
+      );
+      expect(seenTraceId.length).toBeGreaterThan(0);
+    });
+
     it('when partial.cassettePath is set, loads NDJSON and sets matcher + inboundRecord', async () => {
       const tmpPath = path.join(os.tmpdir(), `softprobe-context-run-${Date.now()}.ndjson`);
       const fs = await import('fs/promises');
@@ -206,6 +230,21 @@ describe('context (SoftprobeContext)', () => {
       expect(matcher).toBeDefined();
       expect(inbound).toEqual(expect.objectContaining({ type: 'inbound', spanName: 'in' }));
       await fs.unlink(tmpPath).catch(() => {});
+    });
+
+    it('getCassette returns same cassette passed via run partial', async () => {
+      const cassette: Cassette = {
+        loadTrace: async () => [],
+        saveRecord: async () => {},
+      };
+      let seen: Cassette | undefined;
+      await SoftprobeContext.run(
+        { mode: 'CAPTURE', traceId: 'run-cassette', storage: cassette },
+        () => {
+          seen = SoftprobeContext.getCassette();
+        }
+      );
+      expect(seen).toBe(cassette);
     });
   });
 });

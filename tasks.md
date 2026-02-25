@@ -44,10 +44,10 @@ Implementation rule per task:
 
 ## 2) Context Refactor (`design-context.md`) — Atomic
 
-- [ ] **Task 2.1 Migrate stored context shape from `cassettePath` to `storage: Cassette`**
+- [x] **Task 2.1 Migrate stored context shape from `cassettePath` to `storage: Cassette`** — `feat(context): store Cassette instance instead of cassettePath`
   - **Test**: `SoftprobeContext.active()` exposes `storage` when set in context.
 
-- [ ] **Task 2.2 Add `getCassette(otelContext?)` getter**
+- [x] **Task 2.2 Add `getCassette(otelContext?)` getter** — `feat(context): expose active cassette getter for withData/run scopes`
   - **Test**: returns the same cassette instance passed via `withData`/`run`.
 
 - [ ] **Task 2.3 Make `getTraceId()` strict during scoped runs**

@@ -6,7 +6,7 @@
 import { randomBytes } from 'crypto';
 import { createContextKey, context, propagation } from '@opentelemetry/api';
 import type { Context } from '@opentelemetry/api';
-import type { SoftprobeCassetteRecord } from './types/schema';
+import type { Cassette, SoftprobeCassetteRecord } from './types/schema';
 import type { SemanticMatcher } from './replay/matcher';
 import { SoftprobeMatcher } from './replay/softprobe-matcher';
 import { createDefaultMatcher } from './replay/extract-key';
@@ -19,6 +19,7 @@ export const SOFTPROBE_CONTEXT_KEY = createContextKey('softprobe_context');
 interface Stored {
   mode: 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH';
   cassettePath: string;
+  storage?: Cassette;
   traceId?: string;
   strictReplay?: boolean;
   strictComparison?: boolean;
@@ -30,6 +31,7 @@ interface Stored {
 interface PartialData {
   mode?: 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH';
   cassettePath?: string;
+  storage?: Cassette;
   traceId?: string;
   strictReplay?: boolean;
   strictComparison?: boolean;
@@ -51,6 +53,7 @@ function merge(base: Stored, partial: PartialData): Stored {
     ...base,
     ...(partial.mode !== undefined && { mode: partial.mode }),
     ...(partial.cassettePath !== undefined && { cassettePath: partial.cassettePath }),
+    ...(partial.storage !== undefined && { storage: partial.storage }),
     ...(partial.traceId !== undefined && { traceId: partial.traceId }),
     ...(partial.strictReplay !== undefined && { strictReplay: partial.strictReplay }),
     ...(partial.strictComparison !== undefined && { strictComparison: partial.strictComparison }),
@@ -134,6 +137,10 @@ function getCassettePath(otelContext?: Context): string {
   return active(otelContext).cassettePath;
 }
 
+function getCassette(otelContext?: Context): Cassette | undefined {
+  return active(otelContext).storage;
+}
+
 function getStrictReplay(otelContext?: Context): boolean {
   return active(otelContext).strictReplay ?? false;
 }
@@ -201,6 +208,7 @@ export const SoftprobeContext = {
   getTraceId,
   getMode,
   getCassettePath,
+  getCassette,
   getStrictReplay,
   getStrictComparison,
   getMatcher,
