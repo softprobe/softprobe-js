@@ -28,7 +28,7 @@ Implementation rule per task:
 - [x] **Task 1.1 Add `SoftprobeMode` type** — `feat(types): add SoftprobeMode union and compile-time type test`
   - **Test**: compile-time assertions allow only `CAPTURE | REPLAY | PASSTHROUGH`.
 
-- [ ] **Task 1.2 Add `Cassette` interface**
+- [x] **Task 1.2 Add `Cassette` interface** — `feat(types): add Cassette contract for trace storage`
   - **Test**: compile-time assertions for:
     - `loadTrace(traceId): Promise<SoftprobeCassetteRecord[]>`
     - `saveRecord(traceId, record): Promise<void>`

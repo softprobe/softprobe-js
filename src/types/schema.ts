@@ -46,6 +46,13 @@ export interface SoftprobeAttributes {
 /** Runtime execution mode for Softprobe context. */
 export type SoftprobeMode = 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH';
 
+/** Generic cassette storage interface for trace records. */
+export interface Cassette {
+  loadTrace(traceId: string): Promise<SoftprobeCassetteRecord[]>;
+  saveRecord(traceId: string, record: SoftprobeCassetteRecord): Promise<void>;
+  flush?(): Promise<void>;
+}
+
 /** V4.1 protocol discriminator (cassette + bindings). */
 export type Protocol = 'http' | 'postgres' | 'redis' | 'amqp' | 'grpc';
 

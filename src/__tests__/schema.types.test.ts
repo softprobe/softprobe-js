@@ -1,7 +1,12 @@
 /**
  * V4.1 schema types tests (Protocol, RecordType, SoftprobeCassetteRecord, isCassetteRecord).
  */
-import type { Protocol, RecordType, SoftprobeCassetteRecord } from '../types/schema';
+import type {
+  Protocol,
+  RecordType,
+  SoftprobeCassetteRecord,
+  Cassette,
+} from '../types/schema';
 import { isCassetteRecord } from '../types/schema';
 
 describe('schema.types (V4.1)', () => {
@@ -80,6 +85,47 @@ describe('schema.types (V4.1)', () => {
     it('returns false when version is missing', () => {
       expect(isCassetteRecord({ traceId: 't1', spanId: 's1' })).toBe(false);
       expect(isCassetteRecord({})).toBe(false);
+    });
+  });
+
+  describe('Cassette interface', () => {
+    it('requires loadTrace/saveRecord and accepts optional flush', async () => {
+      const traceId = 'trace-1';
+      const recorded: SoftprobeCassetteRecord = {
+        version: '4.1',
+        traceId,
+        spanId: 'span-1',
+        timestamp: '2025-01-01T00:00:00.000Z',
+        type: 'outbound',
+        protocol: 'http',
+        identifier: 'GET /',
+      };
+
+      let savedRecord: SoftprobeCassetteRecord | undefined;
+
+      const baseCassette: Cassette = {
+        loadTrace: async (incomingTraceId: string) => {
+          expect(incomingTraceId).toBe(traceId);
+          return savedRecord ? [savedRecord] : [];
+        },
+        saveRecord: async (incomingTraceId: string, record: SoftprobeCassetteRecord) => {
+          expect(incomingTraceId).toBe(traceId);
+          savedRecord = record;
+        },
+      };
+
+      const extendedCassette: Cassette = {
+        ...baseCassette,
+        flush: async () => {
+          savedRecord = undefined;
+        },
+      };
+
+      await extendedCassette.saveRecord(traceId, recorded);
+      const loaded = await extendedCassette.loadTrace(traceId);
+      expect(loaded).toEqual([recorded]);
+      await extendedCassette.flush?.();
+      expect(savedRecord).toBeUndefined();
     });
   });
 });
