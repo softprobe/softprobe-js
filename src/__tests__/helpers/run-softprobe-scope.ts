@@ -45,7 +45,7 @@ export function runSoftprobeScope<T>(
 
   return SoftprobeContext.run(
     {
-      mode: scope.mode ?? (scope.cassettePath ? 'REPLAY' : 'PASSTHROUGH'),
+      mode: scope.mode ?? (scope.cassettePath || scope.matcher ? 'REPLAY' : 'PASSTHROUGH'),
       storage: replayStorage ?? noOpCassette,
       traceId: scope.traceId ?? '',
     },

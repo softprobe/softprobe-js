@@ -7,6 +7,7 @@ import { compareInboundWithRecord, type CompareInboundInput } from './api/compar
 import {
   getRecordsForTrace as getRecordsForTraceFromStore,
   setReplayRecordsCache as setReplayRecordsCacheInStore,
+  loadReplayRecordsFromPath,
 } from './replay/store-accessor';
 import { createDefaultMatcher } from './replay/extract-key';
 import { SoftprobeContext } from './context';

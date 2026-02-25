@@ -68,7 +68,7 @@ Implementation rule per task:
 - [x] **Task 2.8 Cleanup outdated `runWithContext` adapter behavior after `run(options, fn)` refactor** — `refactor(api): preserve legacy replay context fields while adapting to run options`
   - **Test**: `runWithContext` preserves legacy replay context fields (`cassettePath`, strict flags) and seeds matcher/inbound record from cassette path before callback execution.
 
-- [ ] **Task 2.9 Remove legacy `runWithContext` API and migrate callers to `SoftprobeContext.run`**
+- [x] **Task 2.9 Remove legacy `runWithContext` API and migrate callers to `SoftprobeContext.run`** — `refactor(api): remove runWithContext and migrate replay scopes to SoftprobeContext.run helper`
   - **Test**: `softprobe` public API has no `runWithContext`; existing replay test scopes use `SoftprobeContext.run`.
 
 ---

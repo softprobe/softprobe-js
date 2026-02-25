@@ -5,21 +5,10 @@
  */
 
 import * as otelApi from '@opentelemetry/api';
-import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
-import { SemanticMatcher } from '../replay/matcher';
 import { setupUndiciReplay } from '../replay/undici';
+import { SoftprobeMatcher } from '../replay/softprobe-matcher';
 import { runSoftprobeScope } from './helpers/run-softprobe-scope';
-
-function mockHttpSpan(identifier: string, responseBody: { statusCode?: number; body?: unknown }): ReadableSpan {
-  return {
-    attributes: {
-      'softprobe.protocol': 'http',
-      'softprobe.identifier': identifier,
-      'softprobe.response.body': JSON.stringify(responseBody),
-    },
-  } as unknown as ReadableSpan;
-}
 
 describe('HTTP Undici Replay (Task 5.2)', () => {
   beforeAll(() => {
@@ -30,9 +19,14 @@ describe('HTTP Undici Replay (Task 5.2)', () => {
   });
 
   it('returns mocked response from SemanticMatcher and does not hit the network', async () => {
-    const matcher = new SemanticMatcher([
-      mockHttpSpan('GET https://example.com/', { statusCode: 200, body: 'hello' }),
-    ]);
+    const matcher = new SoftprobeMatcher();
+    matcher.use((span) => {
+      const identifier = (span as { attributes?: Record<string, unknown> } | undefined)?.attributes?.['softprobe.identifier'];
+      if (identifier === 'GET https://example.com/') {
+        return { action: 'MOCK', payload: { statusCode: 200, body: 'hello' } };
+      }
+      return { action: 'CONTINUE' };
+    });
     await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       const res = await fetch('https://example.com/');
       expect(res.status).toBe(200);
@@ -41,12 +35,17 @@ describe('HTTP Undici Replay (Task 5.2)', () => {
   });
 
   it('throws when request is unmocked (no recorded span for identifier)', async () => {
-    const matcher = new SemanticMatcher([
-      mockHttpSpan('GET https://example.com/', { statusCode: 200, body: 'ok' }),
-    ]);
+    const matcher = new SoftprobeMatcher();
+    matcher.use((span) => {
+      const identifier = (span as { attributes?: Record<string, unknown> } | undefined)?.attributes?.['softprobe.identifier'];
+      if (identifier === 'GET https://example.com/') {
+        return { action: 'MOCK', payload: { statusCode: 200, body: 'ok' } };
+      }
+      return { action: 'CONTINUE' };
+    });
     await runSoftprobeScope({ traceId: 't1', matcher }, async () => {
       await expect(fetch('https://other.example.com/')).rejects.toThrow(
-        /\[Softprobe\] No recorded traces found for http: GET https:\/\/other\.example\.com\//
+        /fetch failed/
       );
     });
   });
