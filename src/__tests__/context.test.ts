@@ -168,16 +168,16 @@ describe('context (SoftprobeContext)', () => {
     });
   });
 
-  describe('setGlobalReplayMatcher / getMatcher fallback', () => {
-    it('getMatcher returns global matcher when mode is REPLAY and context has no matcher', () => {
+  describe('Task 7.3: remove global replay matcher fallback path', () => {
+    it('getMatcher does not return global matcher when context has no matcher', () => {
       const globalMatcher = {} as SoftprobeMatcher;
       SoftprobeContext.setGlobalReplayMatcher(globalMatcher);
       SoftprobeContext.initGlobal({ mode: 'REPLAY', cassettePath: '' });
       const ctx = SoftprobeContext.withData(ROOT_CONTEXT, { mode: 'REPLAY' });
-      expect(SoftprobeContext.getMatcher(ctx)).toBe(globalMatcher);
+      expect(SoftprobeContext.getMatcher(ctx)).toBeUndefined();
     });
 
-    it('getMatcher prefers context matcher over global', () => {
+    it('getMatcher returns context matcher when present', () => {
       const globalMatcher = {} as SoftprobeMatcher;
       const contextMatcher = {} as SoftprobeMatcher;
       SoftprobeContext.setGlobalReplayMatcher(globalMatcher);

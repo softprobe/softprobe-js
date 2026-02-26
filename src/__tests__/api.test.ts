@@ -15,7 +15,7 @@ import { context } from '@opentelemetry/api';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 
 import { softprobe } from '../api';
-import { SOFTPROBE_CONTEXT_KEY } from '../context';
+import { SOFTPROBE_CONTEXT_KEY, SoftprobeContext } from '../context';
 import type { SoftprobeMatcher } from '../replay/softprobe-matcher';
 import { runSoftprobeScope } from './helpers/run-softprobe-scope';
 
@@ -26,16 +26,56 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
     otelApi.context.setGlobalContextManager(contextManager);
   });
 
+  it('Task 7.2: getContext uses new SoftprobeContext getters and does not leak legacy cassettePath field', () => {
+    const legacyShape = {
+      mode: 'REPLAY',
+      traceId: 'trace-72',
+      cassettePath: '/legacy.ndjson',
+    };
+    const activeSpy = jest.spyOn(SoftprobeContext, 'active').mockReturnValue(legacyShape as never);
+    const modeSpy = jest.spyOn(SoftprobeContext, 'getMode').mockReturnValue('REPLAY');
+    const traceSpy = jest.spyOn(SoftprobeContext, 'getTraceId').mockReturnValue('trace-72');
+    const storageSpy = jest.spyOn(SoftprobeContext, 'getCassette').mockReturnValue(undefined);
+    const strictReplaySpy = jest.spyOn(SoftprobeContext, 'getStrictReplay').mockReturnValue(false);
+    const strictComparisonSpy = jest.spyOn(SoftprobeContext, 'getStrictComparison').mockReturnValue(false);
+    const matcherSpy = jest.spyOn(SoftprobeContext, 'getMatcher').mockReturnValue(undefined);
+    const inboundSpy = jest.spyOn(SoftprobeContext, 'getInboundRecord').mockReturnValue(undefined);
+
+    try {
+      const value = softprobe.getContext() as unknown as Record<string, unknown>;
+      expect(value.mode).toBe('REPLAY');
+      expect(value.traceId).toBe('trace-72');
+      expect(value.cassettePath).toBeUndefined();
+      expect(modeSpy).toHaveBeenCalled();
+      expect(traceSpy).toHaveBeenCalled();
+      expect(storageSpy).toHaveBeenCalled();
+      expect(strictReplaySpy).toHaveBeenCalled();
+      expect(strictComparisonSpy).toHaveBeenCalled();
+      expect(matcherSpy).toHaveBeenCalled();
+      expect(inboundSpy).toHaveBeenCalled();
+      expect(activeSpy).not.toHaveBeenCalled();
+    } finally {
+      activeSpy.mockRestore();
+      modeSpy.mockRestore();
+      traceSpy.mockRestore();
+      storageSpy.mockRestore();
+      strictReplaySpy.mockRestore();
+      strictComparisonSpy.mockRestore();
+      matcherSpy.mockRestore();
+      inboundSpy.mockRestore();
+    }
+  });
+
   it('runs two async functions concurrently with different traceId contexts and each retrieves only its context', async () => {
     const traceId1 = 'trace-aaa';
     const traceId2 = 'trace-bbb';
 
     const [result1, result2] = await Promise.all([
       runSoftprobeScope({ traceId: traceId1 }, async () => {
-        return softprobe.getReplayContext();
+        return softprobe.getContext();
       }),
       runSoftprobeScope({ traceId: traceId2 }, async () => {
-        return softprobe.getReplayContext();
+        return softprobe.getContext();
       }),
     ]);
 
@@ -44,9 +84,9 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
   });
 
   /**
-   * Task 8.1.1: runWithContext sets OTel context { traceId?, cassettePath } visible inside callback.
+   * Task 8.1.1: run scope sets OTel context visible inside callback (traceId and storage).
    */
-  it('runWithContext sets OTel context visible inside callback (traceId and cassettePath)', async () => {
+  it('run scope sets OTel context visible inside callback (traceId and storage)', async () => {
     const traceId = 'prod-trace-345';
     const tmpPath = path.join(os.tmpdir(), `softprobe-als-store-${Date.now()}.ndjson`);
     fs.writeFileSync(
@@ -57,12 +97,13 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
 
     const storeInside = await runSoftprobeScope(
       { traceId, cassettePath: tmpPath },
-      async () => softprobe.getReplayContext()
+      async () => softprobe.getContext()
     );
 
     expect(storeInside).toBeDefined();
     expect(storeInside?.traceId).toBe(traceId);
-    expect(storeInside?.cassettePath).toBe(tmpPath);
+    expect(storeInside?.storage).toBeDefined();
+    expect((storeInside as unknown as Record<string, unknown>).cassettePath).toBeUndefined();
 
     try {
       fs.unlinkSync(tmpPath);
@@ -86,7 +127,6 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
 
     expect(valueInside).toEqual(expect.objectContaining({
       traceId,
-      cassettePath,
       mode,
       strictReplay: false,
       strictComparison: false,
@@ -372,7 +412,7 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
       '","spanId":"out-1","timestamp":"2025-01-01T00:00:01.000Z","type":"outbound","protocol":"http","identifier":"GET /users","responsePayload":{"value":1}}\n';
     fs.writeFileSync(cassettePath, JSON.stringify(inboundRecord) + '\n' + outboundRecord, 'utf8');
 
-    let seenCassettePath = '';
+    let seenStorageDefined = false;
     let seenStrictReplay = false;
     let seenStrictComparison = false;
     let seenRecordCount = 0;
@@ -381,8 +421,8 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
     await runSoftprobeScope(
       { traceId, cassettePath, strictReplay: true, strictComparison: true, mode: 'REPLAY' },
       async () => {
-        const replayCtx = softprobe.getReplayContext();
-        seenCassettePath = replayCtx?.cassettePath ?? '';
+        const replayCtx = softprobe.getContext();
+        seenStorageDefined = Boolean(replayCtx?.storage);
         seenStrictReplay = replayCtx?.strictReplay ?? false;
         seenStrictComparison = replayCtx?.strictComparison ?? false;
 
@@ -398,7 +438,7 @@ describe('softprobe API (AsyncLocalStorage trace isolation)', () => {
       }
     );
 
-    expect(seenCassettePath).toBe(cassettePath);
+    expect(seenStorageDefined).toBe(true);
     expect(seenStrictReplay).toBe(true);
     expect(seenStrictComparison).toBe(true);
     expect(seenRecordCount).toBeGreaterThan(0);

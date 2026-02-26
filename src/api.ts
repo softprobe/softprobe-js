@@ -1,4 +1,4 @@
-import type { SoftprobeCassetteRecord } from './types/schema';
+import type { SoftprobeCassetteRecord, SoftprobeRunOptions } from './types/schema';
 import type { SemanticMatcher } from './replay/matcher';
 import { SoftprobeMatcher } from './replay/softprobe-matcher';
 import { getCaptureStore } from './capture/store-accessor';
@@ -16,10 +16,18 @@ import { SoftprobeContext } from './context';
  * Returns the current replay context for the active async scope from OTel context.
  * Stored in OTel context by SoftprobeContext.withData/run.
  */
-export function getReplayContext():
+export function getContext():
   | ReturnType<typeof SoftprobeContext.active>
   | undefined {
-  return SoftprobeContext.active();
+  return {
+    mode: SoftprobeContext.getMode(),
+    storage: SoftprobeContext.getCassette(),
+    traceId: SoftprobeContext.getTraceId(),
+    strictReplay: SoftprobeContext.getStrictReplay(),
+    strictComparison: SoftprobeContext.getStrictComparison(),
+    matcher: SoftprobeContext.getMatcher(),
+    inboundRecord: SoftprobeContext.getInboundRecord(),
+  };
 }
 
 /**
@@ -104,10 +112,15 @@ export function flushCapture(): void {
   getCaptureStore()?.flushOnExit();
 }
 
+/** Runs callback inside a scoped Softprobe context using SoftprobeRunOptions. */
+export function run<T>(options: SoftprobeRunOptions, fn: () => T | Promise<T>): T | Promise<T> {
+  return SoftprobeContext.run(options, fn);
+}
+
 export { getContextWithReplayBaggage } from './api/baggage';
 
 export const softprobe = {
-  getReplayContext,
+  getContext,
   getActiveMatcher,
   getRecordedInboundResponse,
   compareInbound,
@@ -117,5 +130,6 @@ export const softprobe = {
   activateReplayForContext,
   ensureReplayLoadedForRequest,
   flushCapture,
+  run,
   getContextWithReplayBaggage,
 };

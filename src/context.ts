@@ -4,7 +4,7 @@
  */
 
 import { randomBytes } from 'crypto';
-import { createContextKey, context, propagation } from '@opentelemetry/api';
+import { createContextKey, context } from '@opentelemetry/api';
 import type { Context } from '@opentelemetry/api';
 import type { Cassette, SoftprobeCassetteRecord, SoftprobeRunOptions } from './types/schema';
 import type { SemanticMatcher } from './replay/matcher';
@@ -153,19 +153,11 @@ function getStrictComparison(otelContext?: Context): boolean {
   return active(otelContext).strictComparison ?? false;
 }
 
-/**
- * Returns the active matcher. Prefers context matcher; then global replay matcher when mode is REPLAY or when set (on-demand replay via headers).
- */
+/** Returns the matcher from active context only. */
 function getMatcher(otelContext?: Context): SemanticMatcher | SoftprobeMatcher | undefined {
   const ctx = otelContext ?? context.active();
   const stored = active(ctx);
-  if (stored.matcher != null) return stored.matcher;
-  if (stored.mode === 'REPLAY' && globalReplayMatcher) return globalReplayMatcher;
-  const baggageMode = propagation.getActiveBaggage()?.getEntry('softprobe-mode')?.value;
-  if (baggageMode === 'REPLAY' && globalReplayMatcher) return globalReplayMatcher;
-  // On-demand replay: middleware set global matcher for this request; context may not propagate to fetch callback.
-  if (globalReplayMatcher) return globalReplayMatcher;
-  return undefined;
+  return stored.matcher;
 }
 
 function getInboundRecord(otelContext?: Context): SoftprobeCassetteRecord | undefined {

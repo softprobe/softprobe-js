@@ -148,13 +148,13 @@ Implementation rule per task:
 
 ## 7) API Surface Migration — Atomic
 
-- [ ] **Task 7.1 Remove/replace legacy `ReplayContext` and `cassettePath`-based run API**
+- [x] **Task 7.1 Remove/replace legacy `ReplayContext` and `cassettePath`-based run API** — `refactor(api): replace getReplayContext with getContext and expose softprobe.run with SoftprobeRunOptions`
   - **Test**: public API compiles with `SoftprobeRunOptions` (`storage`, not `cassettePath`).
 
-- [ ] **Task 7.2 Remove legacy context shape assumptions in getters**
+- [x] **Task 7.2 Remove legacy context shape assumptions in getters** — `refactor(api): compose getContext from SoftprobeContext getters and drop legacy cassettePath shape assumptions`
   - **Test**: API getters delegate to `SoftprobeContext` new fields only.
 
-- [ ] **Task 7.3 Remove global replay matcher fallback path**
+- [x] **Task 7.3 Remove global replay matcher fallback path** — `refactor(context): remove getMatcher global/baggage fallback and keep matcher sourcing context-only`
   - **Test**: replay behavior remains green with matcher sourced from active context.
 
 ---
