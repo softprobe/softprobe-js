@@ -252,3 +252,39 @@ describe('Task 5.4: Header coordination overrides defaults via run options in Fa
     expect(body.traceId).toBe('header-trace-fastify-5-4');
   });
 });
+
+describe('Task 8.2: boot-wired cassette instance is passed into Fastify request scope', () => {
+  beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('uses the same configured cassette object when no cassette-path header is provided', async () => {
+    const configuredCassette: Cassette = {
+      loadTrace: async () => [],
+      saveRecord: async () => {},
+    };
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE', storage: configuredCassette });
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
+      spanContext: () => ({ traceId: 'trace-task-8-2-fastify', spanId: 'span-task-8-2-fastify' }),
+    } as ReturnType<typeof trace.getActiveSpan>);
+
+    let seenStorage: ReturnType<typeof SoftprobeContext.getCassette> | undefined;
+    const app = Fastify();
+    await app.register(fp(softprobeFastifyPlugin));
+    app.get('/task-8-2-fastify', async () => {
+      seenStorage = SoftprobeContext.getCassette();
+      return { ok: true };
+    });
+
+    const res = await app.inject({ method: 'GET', url: '/task-8-2-fastify', headers: {} });
+
+    expect(res.statusCode).toBe(200);
+    expect(seenStorage).toBe(configuredCassette);
+  });
+});

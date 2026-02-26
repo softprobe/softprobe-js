@@ -161,13 +161,13 @@ Implementation rule per task:
 
 ## 8) Init/Boot Wiring — Atomic
 
-- [ ] **Task 8.1 Construct `NdjsonCassette` in boot path**
+- [x] **Task 8.1 Construct `NdjsonCassette` in boot path** — `test(init): verify boot constructs NdjsonCassette from configured cassette path and passes it as storage`
   - **Test**: init creates cassette from configured NDJSON path.
 
-- [ ] **Task 8.2 Pass cassette instance into middleware/context run entry points**
+- [x] **Task 8.2 Pass cassette instance into middleware/context run entry points** — `test(middleware): assert Express/Fastify request scopes receive the same boot-configured cassette instance`
   - **Test**: request path receives same cassette object from boot wiring.
 
-- [ ] **Task 8.3 Keep import-order safety before OTel wrapper activation**
+- [x] **Task 8.3 Keep import-order safety before OTel wrapper activation** — `test(init): enforce boot-time import-order guard for pre-wrapped pg in replay mode and tag softprobe wrappers for safe idempotency`
   - **Test**: guard still throws when dependency module was wrapped before softprobe init.
 
 ---

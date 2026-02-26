@@ -355,3 +355,31 @@ describe('Task 6.5 inbound capture path writes through context cassette helper',
     );
   });
 });
+
+describe('Task 8.2: boot-wired cassette instance is passed into Express request scope', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('uses the same configured cassette object when no cassette-path header is provided', () => {
+    const configuredCassette: Cassette = {
+      loadTrace: async () => [],
+      saveRecord: async () => {},
+    };
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE', storage: configuredCassette });
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
+      spanContext: () => ({ traceId: 'trace-task-8-2-express', spanId: 'span-task-8-2-express' }),
+    } as ReturnType<typeof trace.getActiveSpan>);
+
+    const req = { method: 'GET', path: '/task-8-2-express', headers: {} };
+    const res = { statusCode: 200, send: jest.fn() };
+    let seenStorage: ReturnType<typeof SoftprobeContext.getCassette> | undefined;
+    const next = () => {
+      seenStorage = SoftprobeContext.getCassette();
+    };
+
+    softprobeExpressMiddleware(req as any, res as any, next);
+
+    expect(seenStorage).toBe(configuredCassette);
+  });
+});

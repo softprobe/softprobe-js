@@ -13,6 +13,7 @@ import { PostgresSpan } from '../bindings/postgres-span';
 
 const FATAL_IMPORT_ORDER =
   "[Softprobe FATAL] OTel already wrapped pg. Import 'softprobe/init' BEFORE OTel initialization.";
+const SOFTPROBE_WRAPPED_MARKER = '__softprobeWrapped';
 
 /**
  * Patches a pg module so connect is no-op and query uses matcher. Idempotent.
@@ -138,6 +139,7 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
         return Promise.resolve(mockedResult);
       }
   );
+  (pg.Client.prototype.query as { [SOFTPROBE_WRAPPED_MARKER]?: boolean })[SOFTPROBE_WRAPPED_MARKER] = true;
 }
 
 /**
@@ -146,7 +148,11 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
  */
 export function setupPostgresReplay(): void {
   const pg = require('pg');
-  if ((pg.Client.prototype.query as { __wrapped?: boolean }).__wrapped && SoftprobeContext.getMode() !== 'REPLAY') {
+  const existingQuery = pg.Client.prototype.query as {
+    __wrapped?: boolean;
+    [SOFTPROBE_WRAPPED_MARKER]?: boolean;
+  };
+  if (existingQuery.__wrapped && !existingQuery[SOFTPROBE_WRAPPED_MARKER]) {
     throw new Error(FATAL_IMPORT_ORDER);
   }
   applyPostgresReplay(pg);

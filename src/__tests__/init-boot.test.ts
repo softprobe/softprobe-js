@@ -94,4 +94,42 @@ describe('softprobe/init boot', () => {
       expect((globalThis as unknown as { __softprobeApplyHttpReplay?: unknown }).__softprobeApplyHttpReplay).toBe(setupHttpReplayInterceptor);
     });
   });
+
+  it('Task 8.1: constructs NdjsonCassette from configured NDJSON path at boot', () => {
+    const initGlobal = jest.fn();
+    const cassetteInstance = { loadTrace: jest.fn(), saveRecord: jest.fn() };
+    const NdjsonCassette = jest.fn(() => cassetteInstance);
+    const loadNdjson = jest.fn().mockResolvedValue([]);
+
+    jest.isolateModules(() => {
+      jest.doMock('../config/config-manager', () => ({
+        ConfigManager: class {
+          get() {
+            return {
+              mode: 'REPLAY',
+              cassettePath: '/tmp/configured-cassette.ndjson',
+            };
+          }
+        },
+      }));
+      jest.doMock('../context', () => ({
+        SoftprobeContext: { initGlobal },
+      }));
+      jest.doMock('../core/cassette/ndjson-cassette', () => ({ NdjsonCassette }));
+      jest.doMock('../store/load-ndjson', () => ({ loadNdjson }));
+      jest.doMock('../replay/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
+      jest.doMock('../replay/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
+      jest.doMock('../replay/undici', () => ({ setupUndiciReplay: jest.fn() }));
+      jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
+      jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
+
+      require('../init');
+      expect(NdjsonCassette).toHaveBeenCalledWith('/tmp/configured-cassette.ndjson');
+      expect(initGlobal).toHaveBeenCalledWith(expect.objectContaining({
+        mode: 'REPLAY',
+        cassettePath: '/tmp/configured-cassette.ndjson',
+        storage: cassetteInstance,
+      }));
+    });
+  });
 });
