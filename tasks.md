@@ -122,26 +122,26 @@ Implementation rule per task:
 - [x] **Task 5.3 Remove `cassettePath` from `SoftprobeContext` stored/runtime interface and public getter API** — `refactor(context): remove cassettePath API and resolve storage only from header or configured cassette`
   - **Test**: `SoftprobeContext.active()` shape/getters expose cassette via `storage` only; `SoftprobeContext.getCassettePath()` is removed; no runtime `cassettePath` field/getter usage remains in middleware/wrappers.
 
-- [ ] **Task 5.4 Header coordination overrides defaults via run options**
+- [x] **Task 5.4 Header coordination overrides defaults via run options** — `fix(context): normalize x-softprobe header values from string arrays for run-scoped overrides`
   - **Test**: request `x-softprobe-*` values are reflected in active context.
 
 ---
 
 ## 6) Wrapper/Interceptor Alignment — Atomic
 
-- [ ] **Task 6.1 Postgres replay wrapper reads matcher from active context only**
+- [x] **Task 6.1 Postgres replay wrapper reads matcher from active context only** — `refactor(replay-postgres): source matcher from active SoftprobeContext only (no global fallback)`
   - **Test**: replay mock works without global matcher fallback mutation.
 
-- [ ] **Task 6.2 Redis replay wrapper reads matcher from active context only**
+- [x] **Task 6.2 Redis replay wrapper reads matcher from active context only** — `refactor(replay-redis): source matcher from active SoftprobeContext only (no global fallback)`
   - **Test**: replay mock works with context-seeded matcher records.
 
-- [ ] **Task 6.3 HTTP replay interceptor reads matcher from active context only**
+- [x] **Task 6.3 HTTP replay interceptor reads matcher from active context only** — `refactor(replay-http): source matcher from active SoftprobeContext only (no global fallback)`
   - **Test**: replay handler returns mocked response using context matcher state.
 
-- [ ] **Task 6.4 Wrapper strict/dev behavior remains wrapper-owned**
+- [x] **Task 6.4 Wrapper strict/dev behavior remains wrapper-owned** — `fix(replay-wrappers): enforce strict no-match failures and dev passthroughs in wrapper layer`
   - **Test**: strict mode hard-fails on `CONTINUE`; dev mode passthroughs.
 
-- [ ] **Task 6.5 Capture hooks write through context cassette helper**
+- [x] **Task 6.5 Capture hooks write through context cassette helper** — `refactor(capture-hooks): route inbound/outbound capture writes through context cassette helper with active trace ids`
   - **Test**: inbound/outbound capture paths call cassette save with active trace id.
 
 ---

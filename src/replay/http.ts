@@ -3,7 +3,6 @@ import { BatchInterceptor } from '@mswjs/interceptors';
 import { ClientRequestInterceptor } from '@mswjs/interceptors/ClientRequest';
 import { FetchInterceptor } from '@mswjs/interceptors/fetch';
 import { trace } from '@opentelemetry/api';
-import { softprobe } from '../api';
 import { SoftprobeContext } from '../context';
 import { ConfigManager } from '../config/config-manager';
 import { httpIdentifier } from '../identifier';
@@ -211,7 +210,7 @@ export async function handleHttpReplayRequest(
     const identifier = httpIdentifier(method, url);
 
     const match = options.match ?? (() => {
-      const matcher = softprobe.getActiveMatcher() as { match?: (spanOverride?: { attributes?: Record<string, unknown> }) => MatcherAction } | undefined;
+      const matcher = SoftprobeContext.active().matcher as { match?: (spanOverride?: { attributes?: Record<string, unknown> }) => MatcherAction } | undefined;
       if (!matcher?.match) return { action: 'CONTINUE' as const };
       const spanOverride = { attributes: { 'softprobe.protocol': 'http' as const, 'softprobe.identifier': identifier } };
       return matcher.match(spanOverride);

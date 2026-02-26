@@ -64,7 +64,6 @@ describe('HTTP replay shim + baggage (Task 15.1.2)', () => {
 
     const ctxReplay = SoftprobeContext.withData(context.active(), {
       mode: 'REPLAY',
-      cassettePath: '',
       matcher,
     });
     await context.with(ctxReplay, async () => {

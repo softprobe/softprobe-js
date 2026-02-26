@@ -9,6 +9,8 @@
 
 import type { SoftprobeCassetteRecord } from '../types/schema';
 import { redisIdentifier } from '../identifier';
+import { SoftprobeContext } from '../context';
+import { saveCaptureRecordFromContext } from '../core/cassette/context-capture';
 import { getCaptureStore } from './store-accessor';
 
 export const REDIS_INSTRUMENTATION_NAME = '@opentelemetry/instrumentation-redis-4';
@@ -48,9 +50,6 @@ export function buildRedisResponseHook(): (...args: unknown[]) => void {
       s.setAttribute?.('softprobe.response.body', JSON.stringify(response));
     }
 
-    const store = getCaptureStore();
-    if (!store) return;
-
     const ctx = s.spanContext?.() ?? { traceId: '', spanId: '' };
     const record: SoftprobeCassetteRecord = {
       version: '4.1',
@@ -64,6 +63,12 @@ export function buildRedisResponseHook(): (...args: unknown[]) => void {
       identifier,
       responsePayload: response,
     };
+    if (SoftprobeContext.getMode() === 'CAPTURE' && SoftprobeContext.getCassette()) {
+      void saveCaptureRecordFromContext(record).catch(() => {});
+      return;
+    }
+    const store = getCaptureStore();
+    if (!store) return;
     store.saveRecord(record);
   };
 }

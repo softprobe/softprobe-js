@@ -12,7 +12,6 @@ import { trace } from '@opentelemetry/api';
 import shimmer from 'shimmer';
 import { RedisSpan } from '../bindings/redis-span';
 import type { MatcherAction } from '../types/schema';
-import { softprobe } from '../api';
 import { SoftprobeContext } from '../context';
 
 /**
@@ -51,9 +50,17 @@ export function setupRedisReplay(): void {
             args: unknown[],
             _name: string
           ): unknown {
-            const matcher = softprobe.getActiveMatcher();
+            const matcher = SoftprobeContext.active().matcher;
             if (SoftprobeContext.getMode() === 'REPLAY' && !matcher) {
-              return Promise.reject(new Error('Softprobe replay: no match for redis command'));
+              if (SoftprobeContext.getStrictReplay()) {
+                return Promise.reject(new Error('Softprobe replay: no match for redis command'));
+              }
+              return (originalExecutor as (this: unknown, c: unknown, a: unknown[], n: string) => unknown).call(
+                this,
+                command,
+                args,
+                _name
+              );
             }
             if (!matcher) {
               return (originalExecutor as (this: unknown, c: unknown, a: unknown[], n: string) => unknown).call(

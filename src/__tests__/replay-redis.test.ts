@@ -8,9 +8,11 @@ import * as otelApi from '@opentelemetry/api';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import { SemanticMatcher } from '../replay/matcher';
+import { SoftprobeMatcher } from '../replay/softprobe-matcher';
 import { SoftprobeContext } from '../context';
 import { setupRedisReplay } from '../replay/redis';
 import { RedisSpan } from '../bindings/redis-span';
+import { softprobe } from '../api';
 import { runSoftprobeScope } from './helpers/run-softprobe-scope';
 
 function mockRedisSpan(identifier: string, responseBody: unknown): ReadableSpan {
@@ -151,14 +153,84 @@ describe('Task 18.2.1 Redis shim context-lookup', () => {
     setupRedisReplay();
   });
 
-  it('sendCommand no-ops when SoftprobeContext.getMode() === REPLAY and no matcher', async () => {
-    SoftprobeContext.initGlobal({ mode: 'REPLAY', cassettePath: '' });
+  it('strict replay hard-fails when SoftprobeContext.getMode() === REPLAY and no matcher', async () => {
+    SoftprobeContext.initGlobal({ mode: 'REPLAY', strictReplay: true });
 
     const { createClient } = require('redis');
     const client = createClient();
 
     await expect(client.get('anykey')).rejects.toThrow(/no match for redis command/);
 
-    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', cassettePath: '' });
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', strictReplay: false });
+  });
+});
+
+describe('Task 6.2 Redis replay wrapper uses active context matcher only', () => {
+  beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
+    setupRedisReplay();
+  });
+
+  afterEach(() => {
+    softprobe.setGlobalReplayMatcher(undefined);
+  });
+
+  it('ignores global matcher fallback when active replay context has no matcher', async () => {
+    const globalMatcher = new SoftprobeMatcher();
+    globalMatcher.use(() => ({ action: 'MOCK', payload: 'global-value' }));
+    softprobe.setGlobalReplayMatcher(globalMatcher);
+
+    const activeCtx = otelApi.context.active();
+    const replayCtxWithoutMatcher = SoftprobeContext.withData(activeCtx, {
+      mode: 'REPLAY',
+      traceId: 'redis-task-6-2',
+    });
+
+    await otelApi.context.with(replayCtxWithoutMatcher, async () => {
+      const { createClient } = require('redis');
+      const client = createClient();
+      try {
+        const value = await client.get('anykey');
+        expect(value).not.toBe('global-value');
+      } catch (e: unknown) {
+        const msg = (e as Error)?.message ?? '';
+        expect(msg).not.toMatch(/no match for redis command/);
+      }
+    });
+  });
+});
+
+describe('Task 6.4: Wrapper strict/dev behavior remains wrapper-owned (Redis)', () => {
+  beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
+    setupRedisReplay();
+  });
+
+  afterEach(() => {
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', strictReplay: false });
+  });
+
+  it('dev replay passthroughs when no active matcher is available', async () => {
+    SoftprobeContext.initGlobal({ mode: 'REPLAY', strictReplay: false });
+    const activeCtx = otelApi.context.active();
+    const replayCtxWithoutMatcher = SoftprobeContext.withData(activeCtx, {
+      mode: 'REPLAY',
+      traceId: 'redis-task-6-4',
+    });
+
+    await otelApi.context.with(replayCtxWithoutMatcher, async () => {
+      const { createClient } = require('redis');
+      const client = createClient();
+      try {
+        await client.get('anykey');
+      } catch (e: unknown) {
+        const msg = (e as Error)?.message ?? '';
+        expect(msg).not.toMatch(/no match for redis command/);
+      }
+    });
   });
 });

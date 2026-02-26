@@ -12,9 +12,7 @@ import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import type { CassetteStore } from '../store/cassette-store';
 import type { Cassette } from '../types/schema';
-import { setCaptureStore } from '../capture/store-accessor';
 import { CaptureEngine } from '../capture/express';
 import { softprobeFastifyPlugin } from '../capture/fastify';
 import { softprobe } from '../api';
@@ -27,19 +25,19 @@ const replayCassette: Cassette = {
 
 describe('softprobeFastifyPlugin capture path (Task 14.2.1)', () => {
   afterEach(async () => {
-    setCaptureStore(undefined);
     jest.restoreAllMocks();
   });
 
   it('onSend captures full payload and writes inbound record to side-channel', async () => {
-    SoftprobeContext.initGlobal({ mode: 'CAPTURE' });
+    const saveRecord = jest.fn<ReturnType<Cassette['saveRecord']>, Parameters<Cassette['saveRecord']>>(async () => {});
+    const cassette: Cassette = {
+      loadTrace: async () => [],
+      saveRecord,
+    };
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE', storage: cassette });
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId: 'trace-fastify-1', spanId: 'span-fastify-1' }),
     } as ReturnType<typeof trace.getActiveSpan>);
-
-    const saveRecord = jest.fn<void, [Parameters<CassetteStore['saveRecord']>[0]]>();
-    const mockStore = { saveRecord } as unknown as CassetteStore;
-    setCaptureStore(mockStore);
 
     const app = Fastify();
     await app.register(fp(softprobeFastifyPlugin));
@@ -64,7 +62,7 @@ describe('softprobeFastifyPlugin capture path (Task 14.2.1)', () => {
       })
     );
     expect(saveRecord).toHaveBeenCalledTimes(1);
-    const record = saveRecord.mock.calls[0][0];
+    const record = saveRecord.mock.calls[0][1];
     expect(record.type).toBe('inbound');
     expect(record.protocol).toBe('http');
     expect(record.traceId).toBe('trace-fastify-1');
@@ -214,5 +212,43 @@ describe('Task 5.2: Fastify plugin uses SoftprobeContext.run(options, handler)',
     expect(body.mode).toBe('CAPTURE');
     expect(body.traceId).toBe(traceId);
     expect(body.hasStorage).toBe(true);
+  });
+});
+
+describe('Task 5.4: Header coordination overrides defaults via run options in Fastify', () => {
+  beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('array coordination headers override default mode and span trace id in active context', async () => {
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', storage: replayCassette });
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
+      spanContext: () => ({ traceId: 'span-trace-fastify-5-4', spanId: 'span-1' }),
+    } as ReturnType<typeof trace.getActiveSpan>);
+    jest.spyOn(softprobe, 'ensureReplayLoadedForRequest').mockResolvedValue(undefined);
+
+    const app = Fastify();
+    await app.register(fp(softprobeFastifyPlugin));
+    app.get('/task-5-4-fastify', async () => SoftprobeContext.active());
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/task-5-4-fastify',
+      headers: {
+        'x-softprobe-mode': ['REPLAY'],
+        'x-softprobe-trace-id': ['header-trace-fastify-5-4'],
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.payload);
+    expect(body.mode).toBe('REPLAY');
+    expect(body.traceId).toBe('header-trace-fastify-5-4');
   });
 });

@@ -12,6 +12,8 @@ import type { CassetteStore } from '../store/cassette-store';
 import { setCaptureStore } from '../capture/store-accessor';
 import { handleHttpReplayRequest } from '../replay/http';
 import { SoftprobeContext } from '../context';
+import { softprobe } from '../api';
+import { SoftprobeMatcher } from '../replay/softprobe-matcher';
 
 type MockController = { respondWith: jest.Mock<void, [Response]> };
 
@@ -223,5 +225,49 @@ describe('HTTP interceptor CAPTURE branch', () => {
     expect(record.identifier).toBe('GET https://example.com/');
     expect((record.responsePayload as { statusCode?: number; body?: string }).statusCode).toBe(200);
     expect((record.responsePayload as { statusCode?: number; body?: string }).body).toBe('captured-body');
+  });
+});
+
+describe('Task 6.3 HTTP replay interceptor uses active context matcher only', () => {
+  const { context } = require('@opentelemetry/api');
+  const { AsyncHooksContextManager } = require('@opentelemetry/context-async-hooks');
+  const otelApi = require('@opentelemetry/api');
+
+  beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
+  });
+
+  afterEach(() => {
+    softprobe.setGlobalReplayMatcher(undefined);
+    SoftprobeContext.initGlobal({ mode: 'REPLAY', strictReplay: false });
+  });
+
+  it('does not use global matcher fallback when active replay context has no matcher', async () => {
+    const globalMatcher = new SoftprobeMatcher();
+    globalMatcher.use(() => ({
+      action: 'MOCK',
+      payload: { status: 200, body: { from: 'global-http-matcher' } },
+    }));
+    softprobe.setGlobalReplayMatcher(globalMatcher);
+
+    const controller = makeController();
+    const ctxReplayNoMatcher = SoftprobeContext.withData(context.active(), {
+      mode: 'REPLAY',
+      traceId: 'http-task-6-3',
+    });
+
+    await context.with(ctxReplayNoMatcher, async () => {
+      await handleHttpReplayRequest(
+        {
+          request: new Request('https://api.example.com/from-context-only', { method: 'GET' }),
+          controller,
+        },
+        { shouldIgnoreUrl: () => false }
+      );
+    });
+
+    expect(controller.respondWith).not.toHaveBeenCalled();
   });
 });

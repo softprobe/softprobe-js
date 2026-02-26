@@ -7,6 +7,8 @@ import * as otelApi from '@opentelemetry/api';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import { SemanticMatcher } from '../replay/matcher';
+import { SoftprobeMatcher } from '../replay/softprobe-matcher';
+import { softprobe } from '../api';
 import { SoftprobeContext } from '../context';
 import { setupPostgresReplay } from '../replay/postgres';
 import { runSoftprobeScope } from './helpers/run-softprobe-scope';
@@ -54,6 +56,58 @@ describe('Postgres Replay (Task 9.2.5)', () => {
 
       expect(mockQueryImpl).toHaveBeenCalledTimes(1);
       expect(mockQueryImpl).toHaveBeenCalledWith('SELECT other');
+    });
+  });
+});
+
+describe('Task 6.1: Postgres replay wrapper reads matcher from active context only', () => {
+  afterEach(() => {
+    softprobe.setGlobalReplayMatcher(undefined);
+  });
+
+  it('ignores global matcher fallback and uses original query when active context has no matcher', async () => {
+    const globalMatcher = new SoftprobeMatcher();
+    globalMatcher.use(() => ({
+      action: 'MOCK',
+      payload: { rows: [{ from: 'global-matcher' }], rowCount: 1, command: 'SELECT' },
+    }));
+    softprobe.setGlobalReplayMatcher(globalMatcher);
+
+    const activeCtx = otelApi.context.active();
+    const replayCtxWithoutMatcher = SoftprobeContext.withData(activeCtx, {
+      mode: 'REPLAY',
+      traceId: 't-6-1',
+    });
+
+    await otelApi.context.with(replayCtxWithoutMatcher, async () => {
+      const { Client } = require('pg');
+      const client = new Client();
+      await client.query('SELECT 1').catch(() => {});
+      expect(mockQueryImpl).toHaveBeenCalledTimes(1);
+      expect(mockQueryImpl).toHaveBeenCalledWith('SELECT 1');
+    });
+  });
+});
+
+describe('Task 6.4: Wrapper strict/dev behavior remains wrapper-owned (Postgres)', () => {
+  afterEach(() => {
+    SoftprobeContext.initGlobal({ strictReplay: false });
+  });
+
+  it('strict replay hard-fails when no active matcher is available', async () => {
+    SoftprobeContext.initGlobal({ strictReplay: true });
+
+    const activeCtx = otelApi.context.active();
+    const replayCtxWithoutMatcher = SoftprobeContext.withData(activeCtx, {
+      mode: 'REPLAY',
+      traceId: 't-6-4-pg',
+    });
+
+    await otelApi.context.with(replayCtxWithoutMatcher, async () => {
+      const { Client } = require('pg');
+      const client = new Client();
+      await expect(client.query('SELECT 1')).rejects.toThrow(/no match for pg\.query/);
+      expect(mockQueryImpl).not.toHaveBeenCalled();
     });
   });
 });

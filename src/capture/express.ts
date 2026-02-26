@@ -5,12 +5,13 @@
  */
 
 import { context, trace } from '@opentelemetry/api';
-import { getCaptureStore } from './store-accessor';
-import { writeInboundHttpRecord } from './http-inbound';
+import type { SoftprobeCassetteRecord } from '../types/schema';
+import { saveCaptureRecordFromContext } from '../core/cassette/context-capture';
 import { activateReplayForContext } from '../replay/express';
 import { SoftprobeContext } from '../context';
 import { softprobe } from '../api';
 import { resolveRequestStorageForContext } from '../core/cassette/context-request-storage';
+import { httpIdentifier } from '../identifier';
 
 export type QueueInboundResponsePayload = {
   status: number;
@@ -30,21 +31,25 @@ export function queueInboundResponse(
 ): void {
   const span = trace.getActiveSpan();
   const spanId = span?.spanContext().spanId ?? '';
-  const store = getCaptureStore();
-  if (!store) return;
 
   const [method, ...urlParts] = payload.identifier.split(' ');
   const url = urlParts.join(' ') || '/';
-
-  writeInboundHttpRecord(store, {
+  if (SoftprobeContext.getMode() !== 'CAPTURE' || !SoftprobeContext.getCassette()) return;
+  const record: SoftprobeCassetteRecord = {
+    version: '4.1',
     traceId,
     spanId,
-    method,
-    url,
-    requestBody: payload.requestBody,
-    statusCode: payload.status,
-    responseBody: payload.body,
-  });
+    timestamp: new Date().toISOString(),
+    type: 'inbound',
+    protocol: 'http',
+    identifier: httpIdentifier(method, url),
+    responsePayload: {
+      statusCode: payload.status,
+      body: payload.body,
+    },
+    ...(payload.requestBody !== undefined && { requestPayload: { body: payload.requestBody } }),
+  };
+  void saveCaptureRecordFromContext(record).catch(() => {});
 }
 
 /** Engine object for design alignment; used by Express and Fastify. */

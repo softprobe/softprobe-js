@@ -6,8 +6,12 @@
  */
 
 import type { CassetteStore } from '../store/cassette-store';
+import * as otelApi from '@opentelemetry/api';
+import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import { setCaptureStore, setCaptureUsesInterceptor } from '../capture/store-accessor';
 import { buildUndiciResponseHook, type UndiciResultLike } from '../capture/undici';
+import { SoftprobeContext } from '../context';
+import type { Cassette } from '../types/schema';
 
 afterEach(() => {
   setCaptureStore(undefined);
@@ -15,6 +19,12 @@ afterEach(() => {
 });
 
 describe('Undici outbound capture (Task 10.3)', () => {
+  beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
+  });
+
   it('10.3.1 captures outbound request/response into record with identifier = METHOD url', () => {
     const saveRecord = jest.fn<void, [Parameters<CassetteStore['saveRecord']>[0]]>();
     const mockStore = { saveRecord } as unknown as CassetteStore;
@@ -66,5 +76,38 @@ describe('Undici outbound capture (Task 10.3)', () => {
     expect(saveRecord).not.toHaveBeenCalled();
     expect(setAttribute).toHaveBeenCalledWith('softprobe.protocol', 'http');
     expect(setAttribute).toHaveBeenCalledWith('softprobe.identifier', 'GET https://example.com');
+  });
+
+  it('Task 6.5 outbound capture writes through context cassette helper with active trace id', async () => {
+    const saveRecord = jest.fn(async () => {});
+    const cassette: Cassette = {
+      loadTrace: async () => [],
+      saveRecord,
+    };
+    const responseHook = buildUndiciResponseHook();
+    const result: UndiciResultLike = {
+      request: { method: 'GET', url: 'https://api.example.com/users' },
+      response: { statusCode: 200, body: { ok: true } },
+    };
+    const mockSpan = {
+      spanContext: () => ({ traceId: 'span-trace-ignored', spanId: 'span-1' }),
+      parentSpanId: 'parent-1',
+      name: 'fetch',
+      setAttribute: () => {},
+    };
+
+    await SoftprobeContext.run(
+      { mode: 'CAPTURE', traceId: 'context-trace-http-6-5', storage: cassette },
+      async () => {
+        responseHook(mockSpan, result);
+        await Promise.resolve();
+      }
+    );
+
+    expect(saveRecord).toHaveBeenCalledTimes(1);
+    expect(saveRecord).toHaveBeenCalledWith(
+      'context-trace-http-6-5',
+      expect.objectContaining({ type: 'outbound', protocol: 'http' })
+    );
   });
 });

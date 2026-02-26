@@ -11,10 +11,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import type { CassetteStore } from '../store/cassette-store';
 import type { Cassette } from '../types/schema';
 import { CaptureEngine, softprobeExpressMiddleware } from '../capture/express';
-import * as storeAccessor from '../capture/store-accessor';
 import { softprobe } from '../api';
 import { SoftprobeContext } from '../context';
 
@@ -142,14 +140,15 @@ describe('Task 14.3.1: inbound request record contains parsed JSON body when mid
   });
 
   it('request record in NDJSON contains parsed JSON body when middleware is placed after body-parser', () => {
-    SoftprobeContext.initGlobal({ mode: 'CAPTURE' });
+    const saveRecord = jest.fn<ReturnType<Cassette['saveRecord']>, Parameters<Cassette['saveRecord']>>(async () => {});
+    const cassette: Cassette = {
+      loadTrace: async () => [],
+      saveRecord,
+    };
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE', storage: cassette });
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId: 'trace-body-1', spanId: 'span-body-1' }),
     } as ReturnType<typeof trace.getActiveSpan>);
-
-    const saveRecord = jest.fn<void, [Parameters<CassetteStore['saveRecord']>[0]]>();
-    const mockStore = { saveRecord } as unknown as CassetteStore;
-    jest.spyOn(storeAccessor, 'getCaptureStore').mockReturnValue(mockStore as ReturnType<typeof storeAccessor.getCaptureStore>);
 
     // Simulate body-parser has run: req.body is parsed JSON
     const parsedBody = { name: 'alice', count: 1 };
@@ -157,7 +156,7 @@ describe('Task 14.3.1: inbound request record contains parsed JSON body when mid
       method: 'POST',
       path: '/api/echo',
       body: parsedBody,
-      headers: { 'x-softprobe-cassette-path': '/capture-express-task-14-3-1.ndjson' },
+      headers: {},
     };
     const originalSend = jest.fn();
     const res = { statusCode: 201, send: originalSend };
@@ -167,7 +166,7 @@ describe('Task 14.3.1: inbound request record contains parsed JSON body when mid
     res.send({ ok: true });
 
     expect(saveRecord).toHaveBeenCalledTimes(1);
-    const record = saveRecord.mock.calls[0][0];
+    const record = saveRecord.mock.calls[0][1];
     expect(record.type).toBe('inbound');
     expect(record.requestPayload).toBeDefined();
     expect((record.requestPayload as { body?: unknown })?.body).toEqual(parsedBody);
@@ -284,5 +283,75 @@ describe('Task 5.1: Express middleware uses SoftprobeContext.run(options, next)'
     expect(seenStorage).toBeDefined();
     expect(typeof seenStorage?.loadTrace).toBe('function');
     expect(typeof seenStorage?.saveRecord).toBe('function');
+  });
+});
+
+describe('Task 5.4: Header coordination overrides defaults via run options in Express', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('array coordination headers override default mode and span trace id in active context', async () => {
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', storage: replayCassette });
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
+      spanContext: () => ({ traceId: 'span-trace-express-5-4', spanId: 'span-1' }),
+    } as ReturnType<typeof trace.getActiveSpan>);
+    jest.spyOn(softprobe, 'ensureReplayLoadedForRequest').mockResolvedValue(undefined);
+
+    let downstreamContext: ReturnType<typeof SoftprobeContext.active> | undefined;
+    let resolveNext: () => void;
+    const nextCalled = new Promise<void>((r) => { resolveNext = r; });
+    const next = () => {
+      downstreamContext = SoftprobeContext.active();
+      resolveNext();
+    };
+    const req = {
+      method: 'GET',
+      path: '/task-5-4-express',
+      headers: {
+        'x-softprobe-mode': ['REPLAY'],
+        'x-softprobe-trace-id': ['header-trace-express-5-4'],
+      },
+    };
+    const res = { statusCode: 200, send: jest.fn() };
+
+    softprobeExpressMiddleware(req as any, res as any, next);
+    await nextCalled;
+
+    expect(downstreamContext).toBeDefined();
+    expect(downstreamContext?.mode).toBe('REPLAY');
+    expect(downstreamContext?.traceId).toBe('header-trace-express-5-4');
+  });
+});
+
+describe('Task 6.5 inbound capture path writes through context cassette helper', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('queueInboundResponse writes with active context trace id', async () => {
+    const saveRecord = jest.fn(async () => {});
+    const cassette: Cassette = {
+      loadTrace: async () => [],
+      saveRecord,
+    };
+
+    await SoftprobeContext.run(
+      { mode: 'CAPTURE', traceId: 'context-trace-inbound-6-5', storage: cassette },
+      async () => {
+        CaptureEngine.queueInboundResponse('ignored-trace-id', {
+          status: 200,
+          body: { ok: true },
+          identifier: 'GET /task-6-5-inbound',
+        });
+        await Promise.resolve();
+      }
+    );
+
+    expect(saveRecord).toHaveBeenCalledTimes(1);
+    expect(saveRecord).toHaveBeenCalledWith(
+      'context-trace-inbound-6-5',
+      expect.objectContaining({ type: 'inbound', protocol: 'http' })
+    );
   });
 });

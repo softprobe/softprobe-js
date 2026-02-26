@@ -95,6 +95,16 @@ function initGlobal(config: {
 const HEADER_MODE = 'x-softprobe-mode';
 const HEADER_TRACE_ID = 'x-softprobe-trace-id';
 
+function readHeaderValue(
+  headers: Record<string, string | string[] | undefined>,
+  key: string
+): string | undefined {
+  const value = headers[key];
+  if (typeof value === 'string' && value) return value;
+  if (Array.isArray(value) && typeof value[0] === 'string' && value[0]) return value[0];
+  return undefined;
+}
+
 /**
  * Returns a new softprobe state by applying coordination headers over base. Used by middleware.
  */
@@ -102,12 +112,12 @@ function fromHeaders(
   base: Stored,
   headers: Record<string, string | string[] | undefined>
 ): Stored {
-  const mode = headers[HEADER_MODE];
-  const traceId = headers[HEADER_TRACE_ID];
+  const mode = readHeaderValue(headers, HEADER_MODE);
+  const traceId = readHeaderValue(headers, HEADER_TRACE_ID);
   return {
     ...base,
-    ...(typeof mode === 'string' && (mode === 'REPLAY' || mode === 'CAPTURE' || mode === 'PASSTHROUGH') && { mode: mode as Stored['mode'] }),
-    ...(typeof traceId === 'string' && traceId && { traceId }),
+    ...(mode && (mode === 'REPLAY' || mode === 'CAPTURE' || mode === 'PASSTHROUGH') && { mode: mode as Stored['mode'] }),
+    ...(traceId && { traceId }),
   };
 }
 

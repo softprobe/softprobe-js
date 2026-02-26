@@ -8,7 +8,6 @@ import shimmer from 'shimmer';
 import { trace } from '@opentelemetry/api';
 import type { SemanticMatcher } from './matcher';
 import type { SoftprobeMatcher } from './softprobe-matcher';
-import { softprobe } from '../api';
 import { SoftprobeContext } from '../context';
 import { PostgresSpan } from '../bindings/postgres-span';
 
@@ -55,8 +54,18 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
     'query',
     (originalQuery: (...args: unknown[]) => unknown) =>
       function wrappedQuery(this: unknown, ...args: unknown[]): unknown {
-        const matcher = softprobe.getActiveMatcher();
+        const matcher = SoftprobeContext.active().matcher;
         if (!matcher) {
+          if (SoftprobeContext.getMode() === 'REPLAY' && SoftprobeContext.getStrictReplay()) {
+            const strictErr = new Error('Softprobe replay: no match for pg.query');
+            const lastArg = args[args.length - 1];
+            const cb = typeof lastArg === 'function' ? (lastArg as (err: Error | null, res?: unknown) => void) : undefined;
+            if (cb) {
+              process.nextTick(() => cb(strictErr));
+              return undefined;
+            }
+            return Promise.reject(strictErr);
+          }
           return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
         }
 

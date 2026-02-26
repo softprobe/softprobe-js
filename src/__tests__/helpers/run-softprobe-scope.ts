@@ -56,7 +56,6 @@ export function runSoftprobeScope<T>(
         ...active,
         mode: scope.mode ?? active.mode,
         traceId: scope.traceId ?? active.traceId,
-        cassettePath: scope.cassettePath ?? active.cassettePath,
         strictReplay: scope.strictReplay ?? active.strictReplay,
         strictComparison: scope.strictComparison ?? active.strictComparison,
         matcher: scope.matcher ?? active.matcher,
