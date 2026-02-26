@@ -14,6 +14,9 @@ import { handleHttpReplayRequest } from '../replay/http';
 import { SoftprobeContext } from '../context';
 import { softprobe } from '../api';
 import { SoftprobeMatcher } from '../replay/softprobe-matcher';
+const { context } = require('@opentelemetry/api');
+const { AsyncHooksContextManager } = require('@opentelemetry/context-async-hooks');
+const otelApi = require('@opentelemetry/api');
 
 type MockController = { respondWith: jest.Mock<void, [Response]> };
 
@@ -23,6 +26,9 @@ function makeController(): MockController {
 
 describe('HTTP replay interceptor (Task 9.4)', () => {
   beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
     SoftprobeContext.initGlobal({ mode: 'REPLAY', strictReplay: false });
   });
   afterEach(() => {
@@ -31,18 +37,22 @@ describe('HTTP replay interceptor (Task 9.4)', () => {
 
   it('9.4.1 ignores configured URLs and does not call matcher', async () => {
     const controller = makeController();
+    const matcher = new SoftprobeMatcher();
     const match = jest.fn(() => ({ action: 'MOCK' as const, payload: { status: 200, body: 'x' } }));
+    matcher.use(match);
+    const ctx = SoftprobeContext.withData(context.active(), { mode: 'REPLAY', traceId: 'http-9-4-1', matcher });
 
-    await handleHttpReplayRequest(
-      {
-        request: new Request('https://collector.local/v1/traces', { method: 'POST' }),
-        controller,
-      },
-      {
-        shouldIgnoreUrl: (url) => Boolean(url?.includes('/v1/traces')),
-        match,
-      }
-    );
+    await context.with(ctx, async () => {
+      await handleHttpReplayRequest(
+        {
+          request: new Request('https://collector.local/v1/traces', { method: 'POST' }),
+          controller,
+        },
+        {
+          shouldIgnoreUrl: (url) => Boolean(url?.includes('/v1/traces')),
+        }
+      );
+    });
 
     expect(match).not.toHaveBeenCalled();
     expect(controller.respondWith).not.toHaveBeenCalled();
@@ -50,24 +60,28 @@ describe('HTTP replay interceptor (Task 9.4)', () => {
 
   it('9.4.2 MOCK responds with recorded payload (status/body)', async () => {
     const controller = makeController();
-
-    await handleHttpReplayRequest(
-      {
-        request: new Request('https://api.example.com/users', { method: 'GET' }),
-        controller,
+    const matcher = new SoftprobeMatcher();
+    matcher.use(() => ({
+      action: 'MOCK',
+      payload: {
+        status: 201,
+        body: { ok: true },
+        headers: { 'x-test': '1', 'content-type': 'application/json' },
       },
-      {
-        shouldIgnoreUrl: () => false,
-        match: () => ({
-          action: 'MOCK',
-          payload: {
-            status: 201,
-            body: { ok: true },
-            headers: { 'x-test': '1', 'content-type': 'application/json' },
-          },
-        }),
-      }
-    );
+    }));
+    const ctx = SoftprobeContext.withData(context.active(), { mode: 'REPLAY', traceId: 'http-9-4-2', matcher });
+
+    await context.with(ctx, async () => {
+      await handleHttpReplayRequest(
+        {
+          request: new Request('https://api.example.com/users', { method: 'GET' }),
+          controller,
+        },
+        {
+          shouldIgnoreUrl: () => false,
+        }
+      );
+    });
 
     expect(controller.respondWith).toHaveBeenCalledTimes(1);
     const response = controller.respondWith.mock.calls[0][0];
@@ -79,17 +93,21 @@ describe('HTTP replay interceptor (Task 9.4)', () => {
   it('9.4.3 CONTINUE + STRICT returns JSON error Response(500)', async () => {
     SoftprobeContext.initGlobal({ mode: 'REPLAY', strictReplay: true });
     const controller = makeController();
+    const matcher = new SoftprobeMatcher();
+    matcher.use(() => ({ action: 'CONTINUE' as const }));
+    const ctx = SoftprobeContext.withData(context.active(), { mode: 'REPLAY', traceId: 'http-9-4-3', matcher, strictReplay: true });
 
-    await handleHttpReplayRequest(
-      {
-        request: new Request('https://api.example.com/users', { method: 'GET' }),
-        controller,
-      },
-      {
-        shouldIgnoreUrl: () => false,
-        match: () => ({ action: 'CONTINUE' }),
-      }
-    );
+    await context.with(ctx, async () => {
+      await handleHttpReplayRequest(
+        {
+          request: new Request('https://api.example.com/users', { method: 'GET' }),
+          controller,
+        },
+        {
+          shouldIgnoreUrl: () => false,
+        }
+      );
+    });
 
     expect(controller.respondWith).toHaveBeenCalledTimes(1);
     const response = controller.respondWith.mock.calls[0][0];
@@ -104,17 +122,21 @@ describe('HTTP replay interceptor (Task 9.4)', () => {
   it('9.4.4 CONTINUE + DEV allows passthrough (no response)', async () => {
     SoftprobeContext.initGlobal({ strictReplay: false });
     const controller = makeController();
+    const matcher = new SoftprobeMatcher();
+    matcher.use(() => ({ action: 'CONTINUE' as const }));
+    const ctx = SoftprobeContext.withData(context.active(), { mode: 'REPLAY', traceId: 'http-9-4-4', matcher, strictReplay: false });
 
-    await handleHttpReplayRequest(
-      {
-        request: new Request('https://api.example.com/users', { method: 'GET' }),
-        controller,
-      },
-      {
-        shouldIgnoreUrl: () => false,
-        match: () => ({ action: 'CONTINUE' }),
-      }
-    );
+    await context.with(ctx, async () => {
+      await handleHttpReplayRequest(
+        {
+          request: new Request('https://api.example.com/users', { method: 'GET' }),
+          controller,
+        },
+        {
+          shouldIgnoreUrl: () => false,
+        }
+      );
+    });
 
     expect(controller.respondWith).not.toHaveBeenCalled();
   });
@@ -124,11 +146,6 @@ describe('HTTP replay interceptor (Task 9.4)', () => {
  * Task 18.2.2: HTTP interceptor retrieves mode from active context to decide between MOCK and PASSTHROUGH.
  */
 describe('Task 18.2.2 HTTP interceptor context mode', () => {
-  const { context } = require('@opentelemetry/api');
-  const { AsyncHooksContextManager } = require('@opentelemetry/context-async-hooks');
-  const otelApi = require('@opentelemetry/api');
-  const { SoftprobeContext } = require('../context');
-
   beforeAll(() => {
     const contextManager = new AsyncHooksContextManager();
     contextManager.enable();
@@ -137,12 +154,14 @@ describe('Task 18.2.2 HTTP interceptor context mode', () => {
 
   it('when mode is REPLAY, interceptor uses matcher and can MOCK', async () => {
     const controller = makeController();
+    const matcher = new SoftprobeMatcher();
     const match = jest.fn(() => ({ action: 'MOCK' as const, payload: { status: 200, body: { replayed: true } } }));
+    matcher.use(match);
 
     const activeCtx = context.active();
     const ctxReplay = SoftprobeContext.withData(activeCtx, {
       mode: 'REPLAY',
-      cassettePath: '',
+      matcher,
     });
 
     await context.with(ctxReplay, async () => {
@@ -151,7 +170,7 @@ describe('Task 18.2.2 HTTP interceptor context mode', () => {
           request: new Request('https://api.example.com/foo', { method: 'GET' }),
           controller,
         },
-        { shouldIgnoreUrl: () => false, match }
+        { shouldIgnoreUrl: () => false }
       );
     });
 
@@ -164,12 +183,13 @@ describe('Task 18.2.2 HTTP interceptor context mode', () => {
 
   it('when mode is PASSTHROUGH, interceptor does not MOCK (passthrough)', async () => {
     const controller = makeController();
-    const match = jest.fn(() => ({ action: 'MOCK' as const, payload: { status: 200, body: 'ignored' } }));
+    const matcher = new SoftprobeMatcher();
+    matcher.use(() => ({ action: 'MOCK' as const, payload: { status: 200, body: 'ignored' } }));
 
     const activeCtx = context.active();
     const ctxPassthrough = SoftprobeContext.withData(activeCtx, {
       mode: 'PASSTHROUGH',
-      cassettePath: '',
+      matcher,
     });
 
     await context.with(ctxPassthrough, async () => {
@@ -178,7 +198,7 @@ describe('Task 18.2.2 HTTP interceptor context mode', () => {
           request: new Request('https://api.example.com/bar', { method: 'GET' }),
           controller,
         },
-        { shouldIgnoreUrl: () => false, match }
+        { shouldIgnoreUrl: () => false }
       );
     });
 
@@ -268,6 +288,12 @@ describe('Task 6.3 HTTP replay interceptor uses active context matcher only', ()
       );
     });
 
-    expect(controller.respondWith).not.toHaveBeenCalled();
+    expect(controller.respondWith).toHaveBeenCalledTimes(1);
+    const response = controller.respondWith.mock.calls[0][0];
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: 'Softprobe Replay Error',
+      details: 'Softprobe replay matcher is required in REPLAY mode',
+    });
   });
 });

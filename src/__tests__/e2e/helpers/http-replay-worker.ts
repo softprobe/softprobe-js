@@ -1,30 +1,22 @@
 /**
  * Task 12.4.2: Child worker for HTTP replay E2E.
- * Env: SOFTPROBE_CONFIG_PATH, REPLAY_URL
+ * Env: SOFTPROBE_CONFIG_PATH, REPLAY_URL, REPLAY_TRACE_ID
  * Stdout: JSON { status, body }
  */
 
 import '../../../init';
 import { loadNdjson } from '../../../store/load-ndjson';
-import { SemanticMatcher } from '../../../replay/matcher';
-import type { SoftprobeCassetteRecord } from '../../../types/schema';
-import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
-import { runSoftprobeScope } from '../../helpers/run-softprobe-scope';
+import type { Cassette } from '../../../types/schema';
 import { ConfigManager } from '../../../config/config-manager';
-
-/** Builds a minimal span-like for SemanticMatcher (E2E uses flat match by identifier). */
-function toSpan(identifier: string, payload: unknown): Record<string, unknown> {
-  return {
-    attributes: {
-      'softprobe.protocol': 'http',
-      'softprobe.identifier': identifier,
-      'softprobe.response.body': JSON.stringify(payload ?? {}),
-    },
-  };
-}
+import { NdjsonCassette } from '../../../core/cassette/ndjson-cassette';
+import { softprobe } from '../../../api';
+import { NodeSDK } from '@opentelemetry/sdk-node';
+import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
+import { applyUndiciFetchAsGlobal } from '../../../replay/undici';
 
 async function main(): Promise<void> {
   const replayUrl = process.env.REPLAY_URL;
+  const replayTraceId = process.env.REPLAY_TRACE_ID;
   const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
   let cassettePath = '';
   try {
@@ -35,30 +27,44 @@ async function main(): Promise<void> {
   }
   if (!replayUrl) throw new Error('REPLAY_URL is required');
   if (!cassettePath) throw new Error('cassettePath is required in config');
+  const storage: Cassette = replayTraceId
+    ? new NdjsonCassette(cassettePath)
+    : {
+        loadTrace: async () => loadNdjson(cassettePath),
+        saveRecord: async () => {},
+      };
 
-  const records = await loadNdjson(cassettePath) as SoftprobeCassetteRecord[];
-  const spans = records
-    .filter(
-      (r): r is SoftprobeCassetteRecord & { identifier: string } =>
-        r.type === 'outbound' && r.protocol === 'http' && typeof r.identifier === 'string'
-    )
-    .map((r) => toSpan(r.identifier, r.responsePayload));
+  const sdk = new NodeSDK({
+    instrumentations: [getNodeAutoInstrumentations()],
+  });
+  sdk.start();
+  applyUndiciFetchAsGlobal();
 
-  if (spans.length === 0) {
-    throw new Error('No outbound HTTP records found in cassette');
-  }
-
-  await runSoftprobeScope(
+  await softprobe.run(
     {
-      traceId: 'http-e2e-replay',
-      matcher: new SemanticMatcher(spans as unknown as ReadableSpan[]),
+      mode: 'REPLAY',
+      traceId: replayTraceId || 'http-e2e-replay',
+      storage,
     },
     async () => {
-      const response = await fetch(replayUrl);
+      const undici = require('undici') as { fetch: typeof fetch };
+      const response = await undici.fetch(replayUrl);
       const body = await response.text();
-      process.stdout.write(JSON.stringify({ status: response.status, body }));
+      const hasLegacyModeEnv =
+        typeof process.env.SOFTPROBE_MODE === 'string' && process.env.SOFTPROBE_MODE.length > 0;
+      const hasLegacyCassetteEnv =
+        typeof process.env.SOFTPROBE_CASSETTE_PATH === 'string' &&
+        process.env.SOFTPROBE_CASSETTE_PATH.length > 0;
+      process.stdout.write(
+        JSON.stringify({ status: response.status, body, hasLegacyModeEnv, hasLegacyCassetteEnv })
+      );
     }
   );
+  try {
+    await sdk.shutdown();
+  } catch {
+    /* ignore */
+  }
   process.exit(0);
 }
 

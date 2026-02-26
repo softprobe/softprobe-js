@@ -1,27 +1,29 @@
 /**
  * Task 12.3.2: Child worker for Redis replay E2E.
- * Loads softprobe/init (REPLAY) first, then runs Redis GET under
- * runSoftprobeScope({ cassettePath }).
+ * Loads softprobe/init (REPLAY) first, then runs Redis GET under softprobe.run(REPLAY).
  *
- * Env: SOFTPROBE_CONFIG_PATH, REDIS_KEY
+ * Env: SOFTPROBE_CONFIG_PATH, REDIS_KEY, REPLAY_TRACE_ID
  * Stdout: JSON { value }
  */
 
+import '../../../init';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-import { runSoftprobeScope } from '../../helpers/run-softprobe-scope';
+import { trace } from '@opentelemetry/api';
 import { ConfigManager } from '../../../config/config-manager';
-
-require('../../../init');
+import { softprobe } from '../../../api';
+import { NdjsonCassette } from '../../../core/cassette/ndjson-cassette';
+import { loadNdjson } from '../../../store/load-ndjson';
+import type { Cassette } from '../../../types/schema';
 
 async function main() {
   const sdk = new NodeSDK({ instrumentations: getNodeAutoInstrumentations() });
   sdk.start();
 
-  const { softprobe } = require('../../../api');
   const { createClient } = require('redis');
 
   const key = process.env.REDIS_KEY;
+  const replayTraceId = process.env.REPLAY_TRACE_ID;
   const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
   let cassettePath = '';
   try {
@@ -31,38 +33,31 @@ async function main() {
   }
   if (!key) throw new Error('REDIS_KEY is required');
   if (!cassettePath) throw new Error('cassettePath is required in config');
+  const storage: Cassette = replayTraceId
+    ? new NdjsonCassette(cassettePath)
+    : {
+        loadTrace: async () => loadNdjson(cassettePath),
+        saveRecord: async () => {},
+      };
 
   // Intentionally do not connect to a live Redis server.
   const client = createClient({ url: 'redis://127.0.0.1:6399' });
 
-  const value = await runSoftprobeScope({ cassettePath }, async () => {
-    const matcher = softprobe.getActiveMatcher();
-    if (matcher && typeof matcher.use === 'function') {
-      matcher.use((_span: unknown, records: Array<{
-        type: string;
-        protocol: string;
-        identifier: string;
-        responsePayload?: unknown;
-      }>) => {
-        const rec = records.find(
-          (r) =>
-            r.type === 'outbound' &&
-            r.protocol === 'redis' &&
-            r.identifier === `GET ${key}`
-        );
-        return rec
-          ? { action: 'MOCK' as const, payload: rec.responsePayload }
-          : { action: 'CONTINUE' as const };
-      });
-    }
-    return client.get(key);
-  });
-
-  try {
-    client.destroy();
-  } catch {
-    // no-op
-  }
+  const value = await softprobe.run(
+    {
+      mode: 'REPLAY',
+      traceId: replayTraceId || 'redis-e2e-replay',
+      storage,
+    },
+    async () =>
+      trace.getTracer('softprobe-e2e').startActiveSpan('redis-replay-command', async (span) => {
+        try {
+          return await client.get(key);
+        } finally {
+          span.end();
+        }
+      })
+  );
 
   try {
     await sdk.shutdown();

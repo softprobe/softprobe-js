@@ -1,15 +1,16 @@
 /**
  * Task 12.2.2: Child worker for Postgres NDJSON replay E2E (DB disconnected).
- * Loads softprobe/init (REPLAY), then runWithContext with cassette; runs pg query
+ * Loads softprobe/init (REPLAY), then runs query under softprobe.run(REPLAY) with NdjsonCassette;
  * which is mocked from the cassette — no real DB connection.
  *
- * Env: SOFTPROBE_CONFIG_PATH
+ * Env: SOFTPROBE_CONFIG_PATH, REPLAY_TRACE_ID
  * Stdout: JSON { rows, rowCount } from replayed query.
  */
 
 import path from 'path';
-import { runSoftprobeScope } from '../../helpers/run-softprobe-scope';
 import { ConfigManager } from '../../../config/config-manager';
+import { softprobe } from '../../../api';
+import { NdjsonCassette } from '../../../core/cassette/ndjson-cassette';
 
 const initPath = path.join(__dirname, '..', '..', '..', 'init.ts');
 require(initPath);
@@ -21,6 +22,7 @@ async function main() {
   sdk.start();
 
   const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
+  const replayTraceId = process.env.REPLAY_TRACE_ID;
   let cassettePath = '';
   try {
     cassettePath = new ConfigManager(configPath).get().cassettePath ?? '';
@@ -31,15 +33,26 @@ async function main() {
     process.stderr.write('cassettePath is required in config');
     process.exit(1);
   }
+  if (!replayTraceId) {
+    process.stderr.write('REPLAY_TRACE_ID is required');
+    process.exit(1);
+  }
 
-  await runSoftprobeScope({ cassettePath }, async () => {
+  await softprobe.run(
+    {
+      mode: 'REPLAY',
+      traceId: replayTraceId,
+      storage: new NdjsonCassette(cassettePath),
+    },
+    async () => {
     const { Client } = require('pg');
     const client = new Client({ connectionString: process.env.PG_URL || 'postgres://localhost:9999/nodb' });
     const queryText = 'SELECT 1 AS num, $1::text AS label';
     const values = ['e2e-cassette'];
     const result = await client.query(queryText, values);
     process.stdout.write(JSON.stringify({ rows: result.rows, rowCount: result.rowCount }));
-  });
+    }
+  );
 
   try {
     await sdk.shutdown();

@@ -2,7 +2,7 @@
  * HTTP/Undici replay: intercepts fetch so that under replay context requests
  * are resolved by the active matcher (no live network). Pairs with capture
  * Task 4.4; identifier = method + URL per design §3.1, §6.2.
- * Uses SoftprobeMatcher.match(spanOverride) so replay returns the exact recorded
+ * Uses SoftprobeMatcher.match() so replay returns the exact recorded
  * response (Node 18+ global fetch uses undici; MSW FetchInterceptor can bypass).
  * When an inbound record exists for the trace, we return its "http" section as
  * the fetch body so the app response matches the recorded inbound (same Traceparent etc).
@@ -12,6 +12,7 @@ import shimmer from 'shimmer';
 import { trace } from '@opentelemetry/api';
 import { softprobe } from '../api';
 import { SoftprobeContext } from '../context';
+import { HttpSpan } from '../bindings/http-span';
 
 /** responsePayload shape from cassette outbound HTTP record. */
 interface RecordedHttpPayload {
@@ -61,17 +62,28 @@ export function setupUndiciReplay(): void {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = (init?.method ?? 'GET').toUpperCase();
       const identifier = `${method} ${url}`;
+      HttpSpan.tagRequest(method, url, undefined, trace.getActiveSpan() ?? undefined);
 
-      const matcher = softprobe.getActiveMatcher() as { match?: (spanOverride?: { attributes?: Record<string, unknown> }) => { action: string; payload?: unknown }; _getTraceId?: () => string | undefined } | undefined;
-      if (!matcher?.match) return original(input, init);
+      const matcher = softprobe.getActiveMatcher() as {
+        match?: (spanOverride?: { attributes?: Record<string, unknown> }) => { action: string; payload?: unknown };
+        _getTraceId?: () => string | undefined;
+      } | undefined;
+      if (!matcher?.match) {
+        if (SoftprobeContext.getStrictReplay()) return Promise.resolve(strictNoMatchResponse());
+        return original(input, init);
+      }
 
-      const spanOverride = { attributes: { 'softprobe.protocol': 'http' as const, 'softprobe.identifier': identifier } };
-      const result = matcher.match(spanOverride);
+      const result = matcher.match({
+        attributes: {
+          'softprobe.protocol': 'http',
+          'softprobe.identifier': identifier,
+        },
+      });
 
       if (result.action === 'MOCK' && result.payload != null) {
         // Prefer inbound .http from matcher's records (set for this request); fallback to global store by traceId.
         const matcherWithInbound = matcher as {
-          match?: (spanOverride?: { attributes?: Record<string, unknown> }) => { action: string; payload?: unknown };
+          match?: () => { action: string; payload?: unknown };
           _getTraceId?: () => string | undefined;
           _getInboundHttpBody?: () => unknown;
         };

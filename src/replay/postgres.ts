@@ -25,7 +25,10 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
   }
 
   const connectKey = 'connect' as const;
-  if (!(pg.Client.prototype[connectKey] as { __wrapped?: boolean })?.__wrapped) {
+  if (
+    typeof pg.Client.prototype[connectKey] === 'function' &&
+    !(pg.Client.prototype[connectKey] as { __wrapped?: boolean })?.__wrapped
+  ) {
     shimmer.wrap(
       pg.Client.prototype,
       connectKey,
@@ -56,16 +59,18 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
     (originalQuery: (...args: unknown[]) => unknown) =>
       function wrappedQuery(this: unknown, ...args: unknown[]): unknown {
         const matcher = SoftprobeContext.active().matcher;
+        const mode = SoftprobeContext.getMode();
+        const strictReplay = SoftprobeContext.getStrictReplay();
         if (!matcher) {
-          if (SoftprobeContext.getMode() === 'REPLAY' && SoftprobeContext.getStrictReplay()) {
-            const strictErr = new Error('Softprobe replay: no match for pg.query');
+          if (mode === 'REPLAY' && strictReplay) {
+            const replayErr = new Error('Softprobe replay: no match for pg.query');
             const lastArg = args[args.length - 1];
             const cb = typeof lastArg === 'function' ? (lastArg as (err: Error | null, res?: unknown) => void) : undefined;
             if (cb) {
-              process.nextTick(() => cb(strictErr));
+              process.nextTick(() => cb(replayErr));
               return undefined;
             }
-            return Promise.reject(strictErr);
+            return Promise.reject(replayErr);
           }
           return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
         }
@@ -86,19 +91,19 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
         let payload: unknown;
         const softprobeMatcher = matcher as SoftprobeMatcher;
         if (typeof softprobeMatcher.match === 'function') {
-          const spanLike = {
+          const r = softprobeMatcher.match({
             attributes: {
               'softprobe.protocol': 'postgres',
               'softprobe.identifier': queryString,
+              ...(valsArray !== undefined && { 'softprobe.request.body': JSON.stringify(valsArray) }),
             },
-          } as { attributes: Record<string, unknown> };
-          const r = softprobeMatcher.match(spanLike);
+          });
           if (r.action === 'MOCK') {
             payload = r.payload;
           } else if (r.action === 'PASSTHROUGH') {
             return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
           } else {
-            if (SoftprobeContext.getStrictReplay()) {
+            if (strictReplay) {
               const strictErr = new Error('Softprobe replay: no match for pg.query');
               if (cb) {
                 process.nextTick(() => (cb as (err: Error | null, res?: unknown) => void)(strictErr));
@@ -116,7 +121,7 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
               requestBody: valsArray,
             });
           } catch (err) {
-            if (SoftprobeContext.getStrictReplay()) {
+            if (strictReplay) {
               const strictErr = new Error('Softprobe replay: no match for pg.query');
               if (cb) {
                 process.nextTick(() => (cb as (err: Error | null, res?: unknown) => void)(strictErr));

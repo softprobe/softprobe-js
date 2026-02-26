@@ -6,13 +6,13 @@
 
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { runChild } from './run-child';
 import { loadNdjson } from '../../store/load-ndjson';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
 import { setupPostgresReplay } from '../../replay/postgres';
 import { runSoftprobeScope } from '../helpers/run-softprobe-scope';
+import { E2eArtifacts } from './helpers/e2e-artifacts';
 
 const WORKER_SCRIPT = path.join(__dirname, 'helpers', 'pg-cassette-capture-worker.ts');
 
@@ -25,21 +25,19 @@ function getPostgresOutboundRecords(
 }
 
 describe('E2E Postgres cassette capture (Task 12.2.1)', () => {
+  let artifacts: E2eArtifacts;
   let pgContainer: StartedPostgreSqlContainer;
   let cassettePath: string;
 
   beforeAll(async () => {
+    artifacts = new E2eArtifacts();
     pgContainer = await new PostgreSqlContainer('postgres:16').start();
-    cassettePath = path.join(
-      os.tmpdir(),
-      `softprobe-e2e-cassette-pg-${Date.now()}.ndjson`
-    );
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    cassettePath = artifacts.createTempFile('softprobe-e2e-cassette-pg', '.ndjson');
   }, 60000);
 
   afterAll(async () => {
     await pgContainer?.stop();
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    artifacts.cleanup();
   });
 
   it('12.2.1: CAPTURE script writes NDJSON with rows', async () => {
@@ -77,21 +75,19 @@ describe('E2E Postgres cassette capture (Task 12.2.1)', () => {
  * Capture uses a real Postgres container to record; replay uses the cassette only (dummy PG URL).
  */
 describe('E2E Postgres cassette replay (Task 12.2.2)', () => {
+  let artifacts: E2eArtifacts;
   let pgContainer: StartedPostgreSqlContainer;
   let cassettePath: string;
 
   beforeAll(async () => {
+    artifacts = new E2eArtifacts();
     pgContainer = await new PostgreSqlContainer('postgres:16').start();
-    cassettePath = path.join(
-      os.tmpdir(),
-      `softprobe-e2e-replay-pg-${Date.now()}.ndjson`
-    );
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    cassettePath = artifacts.createTempFile('softprobe-e2e-replay-pg', '.ndjson');
   }, 60000);
 
   afterAll(async () => {
     await pgContainer?.stop();
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    artifacts.cleanup();
   });
 
   it('12.2.2: REPLAY script works with DB disconnected', async () => {

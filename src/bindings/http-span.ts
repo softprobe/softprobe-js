@@ -46,10 +46,25 @@ export function tagRequest(
  */
 export function fromSpan(span: ReadableSpan): HttpSpanData | null {
   const protocol = span?.attributes?.['softprobe.protocol'];
-  if (protocol !== 'http') return null;
-  const identifier = span?.attributes?.['softprobe.identifier'];
-  if (typeof identifier !== 'string') return null;
-  return { protocol: 'http', identifier };
+  if (protocol === 'http') {
+    const identifier = span?.attributes?.['softprobe.identifier'];
+    if (typeof identifier === 'string') return { protocol: 'http', identifier };
+  }
+
+  // OTel HTTP client span fallback (no softprobe tagging required).
+  const attrs = span?.attributes ?? {};
+  const methodRaw =
+    attrs['http.request.method'] ??
+    attrs['http.method'] ??
+    attrs['http.request.method_original'];
+  const urlRaw =
+    attrs['url.full'] ??
+    attrs['http.url'] ??
+    attrs['http.target'];
+  if (typeof methodRaw === 'string' && typeof urlRaw === 'string') {
+    return { protocol: 'http', identifier: httpIdentifier(methodRaw, urlRaw) };
+  }
+  return null;
 }
 
 /** HttpSpan namespace for tagRequest and fromSpan. */

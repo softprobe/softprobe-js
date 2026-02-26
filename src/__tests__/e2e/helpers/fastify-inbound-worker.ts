@@ -2,17 +2,13 @@
  * Shared Fastify app for inbound capture and replay E2E (Task 14.4.3).
  * Mode is driven by YAML config (SOFTPROBE_CONFIG_PATH).
  * - CAPTURE: cassettePath in config; GET /exit flushes store and exits.
- * - REPLAY: cassettePath in config; loads cassette and sets global matcher before listen; GET /exit exits.
+ * - REPLAY: uses runtime replay wiring from init + middleware/context run path; GET /exit exits.
  * PORT required for both.
  * Same route flow as Express worker: GET / does outbound fetch to httpbin.org.
  */
 
 import '../../../init';
 import { getCaptureStore } from '../../../capture/store-accessor';
-import { loadNdjson } from '../../../store/load-ndjson';
-import { softprobe } from '../../../api';
-import { SoftprobeMatcher } from '../../../replay/softprobe-matcher';
-import { createDefaultMatcher } from '../../../replay/extract-key';
 import { ConfigManager } from '../../../config/config-manager';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
@@ -24,14 +20,11 @@ sdk.start();
 
 const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
 let softprobeMode = 'PASSTHROUGH';
-let cassettePathFromConfig = '';
 try {
   const cfg = new ConfigManager(configPath).get();
   softprobeMode = cfg.mode ?? 'PASSTHROUGH';
-  cassettePathFromConfig = cfg.cassettePath ?? '';
 } catch {
   softprobeMode = 'PASSTHROUGH';
-  cassettePathFromConfig = '';
 }
 const isReplay = softprobeMode === 'REPLAY';
 
@@ -43,17 +36,6 @@ function _dbg(location: string, message: string, data: Record<string, unknown>):
 
 async function startServer(): Promise<void> {
   _dbg('fastify-inbound-worker.ts:startServer', 'startServer entered', { port: process.env.PORT, isReplay });
-  if (isReplay) {
-    const cassettePath = cassettePathFromConfig;
-    if (!cassettePath) throw new Error('cassettePath is required in config for REPLAY');
-    const records = await loadNdjson(cassettePath);
-    _dbg('fastify-inbound-worker.ts:startServer', 'loadNdjson done', { recordCount: records.length });
-    softprobe.setReplayRecordsCache(records);
-    const matcher = new SoftprobeMatcher();
-    matcher.use(createDefaultMatcher());
-    softprobe.setGlobalReplayMatcher(matcher);
-  }
-
   const fastify = require('fastify');
   const app = await fastify();
 

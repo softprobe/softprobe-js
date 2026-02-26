@@ -8,8 +8,8 @@ import path from 'path';
 import { runServer, waitForServer, closeServer } from './run-child';
 import { loadNdjson } from '../../store/load-ndjson';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
+import { E2eArtifacts } from './helpers/e2e-artifacts';
 
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const WORKER_SCRIPT = path.join(__dirname, 'helpers', 'express-inbound-worker.ts');
 const OUTBOUND_WORKER_SCRIPT = path.join(__dirname, 'helpers', 'diff-headers-server.ts');
 
@@ -18,15 +18,16 @@ function byTrace(records: SoftprobeCassetteRecord[], traceId: string): Softprobe
 }
 
 describe('Task 9.1 - Capture E2E via cassette interface', () => {
+  let artifacts: E2eArtifacts;
   let cassettePath: string;
 
   beforeEach(() => {
-    cassettePath = path.join(PROJECT_ROOT, `task-9-1-${Date.now()}.ndjson`);
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    artifacts = new E2eArtifacts();
+    cassettePath = artifacts.createTempFile('task-9-1', '.ndjson');
   });
 
   afterEach(() => {
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    artifacts.cleanup();
   });
 
   it('writes inbound and outbound records for one trace using request-scoped cassette', async () => {

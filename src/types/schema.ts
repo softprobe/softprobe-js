@@ -24,6 +24,9 @@ export type MatcherAction =
 /**
  * V4 matcher function: (span, records) => MatcherAction. Used by SoftprobeMatcher list.
  * Design §7.1: first non-CONTINUE return wins; matchers do not execute passthrough.
+ * Input contract: span attributes are the canonical source for matching keys
+ * (e.g. `softprobe.protocol`, `softprobe.identifier`). Raw dependency call args
+ * are expected to be transformed into span attributes by wrappers/instrumentation.
  */
 export type MatcherFn = (
   span: Span | undefined,

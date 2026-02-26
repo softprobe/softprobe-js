@@ -7,6 +7,7 @@ import { SoftprobeContext } from '../context';
 import { ConfigManager } from '../config/config-manager';
 import { httpIdentifier } from '../identifier';
 import type { MatcherAction } from '../types/schema';
+import { HttpSpan } from '../bindings/http-span';
 import { getCaptureStore, setCaptureUsesInterceptor } from '../capture/store-accessor';
 import { tapReadableStream } from '../capture/stream-tap';
 import { applyUndiciFetchAsGlobal } from './undici';
@@ -31,7 +32,6 @@ function getCaptureMaxPayloadSize(): number {
 
 type HttpReplayOptions = {
   shouldIgnoreUrl?: (url?: string) => boolean;
-  match?: () => MatcherAction;
   /** When set and mode is CAPTURE, used to perform the real request (avoids re-entering the interceptor). */
   bypassFetch?: (input: Request | string | URL, init?: RequestInit) => Promise<Response>;
 };
@@ -208,15 +208,26 @@ export async function handleHttpReplayRequest(
 
     const method = (request.method ?? 'GET').toUpperCase();
     const identifier = httpIdentifier(method, url);
+    HttpSpan.tagRequest(method, url, undefined, trace.getActiveSpan() ?? undefined);
 
-    const match = options.match ?? (() => {
-      const matcher = SoftprobeContext.active().matcher as { match?: (spanOverride?: { attributes?: Record<string, unknown> }) => MatcherAction } | undefined;
-      if (!matcher?.match) return { action: 'CONTINUE' as const };
-      const spanOverride = { attributes: { 'softprobe.protocol': 'http' as const, 'softprobe.identifier': identifier } };
-      return matcher.match(spanOverride);
+    const matcher = SoftprobeContext.active().matcher as {
+      match?: (spanOverride?: { attributes?: Record<string, unknown> }) => MatcherAction;
+    } | undefined;
+    const match = matcher?.match?.bind(matcher);
+    if (!match) {
+      if (SoftprobeContext.getStrictReplay()) {
+        controller.respondWith(
+          jsonErrorResponse('[Softprobe] No recorded traces found for http request')
+        );
+      }
+      return;
+    }
+    const result = match({
+      attributes: {
+        'softprobe.protocol': 'http',
+        'softprobe.identifier': identifier,
+      },
     });
-
-    const result = match();
 
     if (result.action === 'MOCK') {
       const payload = (result.payload ?? {}) as {

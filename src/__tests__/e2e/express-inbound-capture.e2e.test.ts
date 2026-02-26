@@ -2,6 +2,12 @@
  * Task 14.4.1: Express capture E2E writes inbound + outbound records.
  * Test: run Express app in CAPTURE; hit one route; NDJSON contains inbound record
  * (status/body) and at least one outbound record (http/redis/postgres).
+ *
+ * Inbound = request INTO the app (the HTTP request we send to GET / and the response
+ * the app returns). Recorded by Express middleware with type 'inbound'.
+ *
+ * Outbound = calls the app makes TO external backends (e.g. fetch() to httpbin,
+ * Postgres, Redis). Recorded by instrumentation with type 'outbound'.
  */
 
 import fs from 'fs';
@@ -9,14 +15,16 @@ import path from 'path';
 import { runServer, waitForServer, closeServer } from './run-child';
 import { loadNdjson } from '../../store/load-ndjson';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
+import { E2eArtifacts } from './helpers/e2e-artifacts';
 
 const WORKER_SCRIPT = path.join(__dirname, 'helpers', 'express-inbound-worker.ts');
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 
+/** Records for requests INTO the app (e.g. GET / and its response). */
 function getInboundRecords(records: SoftprobeCassetteRecord[]): SoftprobeCassetteRecord[] {
   return records.filter((r) => r.type === 'inbound');
 }
 
+/** Records for calls the app makes TO external backends (http/redis/postgres). */
 function getOutboundRecords(records: SoftprobeCassetteRecord[]): SoftprobeCassetteRecord[] {
   return records.filter(
     (r) =>
@@ -26,15 +34,16 @@ function getOutboundRecords(records: SoftprobeCassetteRecord[]): SoftprobeCasset
 }
 
 describe('E2E Express inbound capture (Task 14.4.1)', () => {
+  let artifacts: E2eArtifacts;
   let cassettePath: string;
 
   beforeAll(() => {
-    cassettePath = path.join(PROJECT_ROOT, `express-inbound-e2e-${Date.now()}.ndjson`);
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    artifacts = new E2eArtifacts();
+    cassettePath = artifacts.createTempFile('express-inbound-e2e', '.ndjson');
   });
 
   afterAll(() => {
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    artifacts.cleanup();
   });
 
   it('CAPTURE writes NDJSON with inbound record and at least one outbound record', async () => {
@@ -65,6 +74,7 @@ describe('E2E Express inbound capture (Task 14.4.1)', () => {
     expect(fs.existsSync(cassettePath)).toBe(true);
     const records = await loadNdjson(cassettePath);
 
+    // Inbound: the GET / request we sent and the 200 response the app returned.
     const inbound = getInboundRecords(records);
     expect(inbound.length).toBeGreaterThanOrEqual(1);
     const oneInbound = inbound[0];
@@ -74,6 +84,7 @@ describe('E2E Express inbound capture (Task 14.4.1)', () => {
     expect((oneInbound.responsePayload as { statusCode?: number }).statusCode).toBe(200);
     expect((oneInbound.responsePayload as { body?: unknown }).body).toBeDefined();
 
+    // Outbound: at least one dependency call the app made (e.g. fetch to httpbin).
     const outbound = getOutboundRecords(records);
     expect(outbound.length).toBeGreaterThanOrEqual(1);
   }, 30000);

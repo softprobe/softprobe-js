@@ -44,15 +44,31 @@ export function tagQuery(
  */
 export function fromSpan(span: ReadableSpan): PostgresSpanData | null {
   const protocol = span?.attributes?.['softprobe.protocol'];
-  if (protocol !== 'postgres') return null;
-  const identifier = span?.attributes?.['softprobe.identifier'];
-  if (typeof identifier !== 'string') return null;
-  return {
-    protocol: 'postgres',
-    identifier,
-    sql: identifier,
-    values: [],
-  };
+  if (protocol === 'postgres') {
+    const identifier = span?.attributes?.['softprobe.identifier'];
+    if (typeof identifier === 'string') {
+      return {
+        protocol: 'postgres',
+        identifier,
+        sql: identifier,
+        values: [],
+      };
+    }
+  }
+
+  // OTel db span fallback (no softprobe tagging required).
+  const attrs = span?.attributes ?? {};
+  const dbSystem = attrs['db.system'];
+  const statement = attrs['db.statement'];
+  if (
+    (dbSystem === 'postgresql' || dbSystem === 'postgres') &&
+    typeof statement === 'string' &&
+    statement.length > 0
+  ) {
+    const identifier = pgIdentifier(statement);
+    return { protocol: 'postgres', identifier, sql: identifier, values: [] };
+  }
+  return null;
 }
 
 /** PostgresSpan namespace for tagQuery and fromSpan. */

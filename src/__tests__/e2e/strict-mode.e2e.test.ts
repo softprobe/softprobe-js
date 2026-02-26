@@ -5,8 +5,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { runChild } from './run-child';
+import { E2eArtifacts } from './helpers/e2e-artifacts';
 
 const STRICT_REPLAY_WORKER = path.join(__dirname, 'helpers', 'http-strict-replay-worker.ts');
 
@@ -26,20 +26,19 @@ function buildMinimalCassetteLine(identifier: string): string {
 }
 
 describe('E2E strict mode (Task 13.1)', () => {
+  let artifacts: E2eArtifacts;
   let cassettePath: string;
   const RECORDED_IDENTIFIER = 'GET http://example.com/recorded';
   const UNRECORDED_URL = 'http://example.com/unrecorded';
 
   beforeAll(() => {
-    cassettePath = path.join(
-      os.tmpdir(),
-      `softprobe-e2e-strict-${Date.now()}.ndjson`
-    );
+    artifacts = new E2eArtifacts();
+    cassettePath = artifacts.createTempFile('softprobe-e2e-strict', '.ndjson');
     fs.writeFileSync(cassettePath, buildMinimalCassetteLine(RECORDED_IDENTIFIER), 'utf8');
   });
 
   afterAll(() => {
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    artifacts.cleanup();
   });
 
   it('13.1: in strict replay, unrecorded call hard-fails and does not touch real network', () => {
@@ -50,6 +49,7 @@ describe('E2E strict mode (Task 13.1)', () => {
         SOFTPROBE_STRICT_REPLAY: '1',
         SOFTPROBE_CASSETTE_PATH: cassettePath,
         UNRECORDED_URL,
+        REPLAY_TRACE_ID: 'strict-e2e-replay',
       },
       { useTsNode: true }
     );

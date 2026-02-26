@@ -34,7 +34,7 @@ describe('Task 9.3 - strict negative replay for unrecorded outbound call', () =>
 
       const traceparent = `00-${FIXTURE_TRACE_ID}-0000000000000001-01`;
       const res = await fetch(`http://127.0.0.1:${appPort}/unrecorded`, {
-        headers: { traceparent },
+        headers: { traceparent, 'x-softprobe-trace-id': FIXTURE_TRACE_ID },
         signal: AbortSignal.timeout(15000),
       });
 

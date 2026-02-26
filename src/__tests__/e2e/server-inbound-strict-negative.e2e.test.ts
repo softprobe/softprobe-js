@@ -35,7 +35,7 @@ describe('E2E Server-side strict negative (Task 14.4.4)', () => {
       await waitForServer(port, 20000);
       const traceparent = `00-${FIXTURE_TRACE_ID}-0000000000000001-01`;
       const res = await fetch(`http://127.0.0.1:${port}/unrecorded`, {
-        headers: { traceparent },
+        headers: { traceparent, 'x-softprobe-trace-id': FIXTURE_TRACE_ID },
         signal: AbortSignal.timeout(15000),
       });
 

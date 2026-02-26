@@ -41,16 +41,37 @@ export function tagCommand(cmd: string, args: string[], span?: SpanLike): void {
  */
 export function fromSpan(span: ReadableSpan): RedisSpanData | null {
   const protocol = span?.attributes?.['softprobe.protocol'];
-  if (protocol !== 'redis') return null;
-  const identifier = span?.attributes?.['softprobe.identifier'];
-  const cmd = span?.attributes?.['softprobe.redis.cmd'];
-  if (typeof identifier !== 'string' || !cmd) return null;
-  const argsJson = span?.attributes?.['softprobe.redis.args_json'];
-  const args =
-    typeof argsJson === 'string'
-      ? (JSON.parse(argsJson) ?? [])
-      : [];
-  return { protocol: 'redis', identifier, cmd: String(cmd), args };
+  if (protocol === 'redis') {
+    const identifier = span?.attributes?.['softprobe.identifier'];
+    const cmd = span?.attributes?.['softprobe.redis.cmd'];
+    if (typeof identifier === 'string' && cmd) {
+      const argsJson = span?.attributes?.['softprobe.redis.args_json'];
+      const args = typeof argsJson === 'string' ? (JSON.parse(argsJson) ?? []) : [];
+      return { protocol: 'redis', identifier, cmd: String(cmd), args };
+    }
+  }
+
+  // OTel db span fallback (no softprobe tagging required).
+  const attrs = span?.attributes ?? {};
+  const dbSystem = attrs['db.system'];
+  const statement = attrs['db.statement'];
+  if (
+    dbSystem === 'redis' &&
+    typeof statement === 'string' &&
+    statement.trim().length > 0
+  ) {
+    const parts = statement.trim().split(/\s+/);
+    const cmd = (parts[0] ?? '').toUpperCase();
+    const args = parts.slice(1);
+    if (!cmd) return null;
+    return {
+      protocol: 'redis',
+      identifier: redisIdentifier(cmd, args),
+      cmd,
+      args,
+    };
+  }
+  return null;
 }
 
 /** RedisSpan namespace for tagCommand and fromSpan. */

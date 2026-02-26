@@ -36,11 +36,21 @@ export type MatcherFn = (
 - `_setRecords(records)`: set active record set
 - `match()`: return first non-`CONTINUE`, else `CONTINUE`
 
+Matcher input source:
+- matchers read protocol/identifier from the current OTel span attributes
+- wrappers/interceptors should tag the active span before calling `match()`
+- `spanOverride` is a compatibility fallback only when no active span exists; it must mirror the same `softprobe.*` attribute contract
+
 ---
 
 ## 3) Default Matching
 
 Default key: `(protocol, identifier)`
+
+Key extraction source:
+- extracted from span attributes (`softprobe.protocol`, `softprobe.identifier`)
+- matcher API does not parse raw dependency call arguments directly
+- wrappers convert call arguments into span attributes first (same contract as capture bindings)
 
 Record filter:
 - outbound only

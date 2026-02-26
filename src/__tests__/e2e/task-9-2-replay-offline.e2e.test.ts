@@ -4,37 +4,41 @@
  */
 
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { runChild, runServer, waitForServer, closeServer } from './run-child';
+import { E2eArtifacts } from './helpers/e2e-artifacts';
 
 const EXPRESS_WORKER = path.join(__dirname, 'helpers', 'express-inbound-worker.ts');
 const EXPRESS_FIXTURE = path.join(__dirname, 'fixtures', 'express-replay.ndjson');
 const PG_REPLAY_WORKER = path.join(__dirname, 'helpers', 'pg-cassette-replay-worker.ts');
 const REDIS_REPLAY_WORKER = path.join(__dirname, 'helpers', 'redis-replay-worker.ts');
 const FIXTURE_TRACE_ID = '00000000000000000000000000000001';
+const PG_TRACE_ID = '00000000000000000000000000000092';
+const REDIS_TRACE_ID = '00000000000000000000000000000093';
 
 function writeFixture(pathname: string, lines: string[]): void {
   fs.writeFileSync(pathname, `${lines.join('\n')}\n`, 'utf8');
 }
 
 describe('Task 9.2 - replay succeeds with dependencies offline', () => {
+  let artifacts: E2eArtifacts;
   let pgCassettePath: string;
   let redisCassettePath: string;
   let redisKey: string;
   let redisValue: string;
 
   beforeEach(() => {
+    artifacts = new E2eArtifacts();
     const now = Date.now();
-    pgCassettePath = path.join(os.tmpdir(), `task-9-2-pg-${now}.ndjson`);
-    redisCassettePath = path.join(os.tmpdir(), `task-9-2-redis-${now}.ndjson`);
+    pgCassettePath = artifacts.createTempFile('task-9-2-pg', '.ndjson');
+    redisCassettePath = artifacts.createTempFile('task-9-2-redis', '.ndjson');
     redisKey = `task9:redis:key:${now}`;
     redisValue = `task9:redis:value:${now}`;
 
     writeFixture(pgCassettePath, [
       JSON.stringify({
         version: '4.1',
-        traceId: '00000000000000000000000000000092',
+        traceId: PG_TRACE_ID,
         spanId: '0000000000000092',
         timestamp: '2026-01-01T00:00:00.000Z',
         type: 'outbound',
@@ -47,7 +51,7 @@ describe('Task 9.2 - replay succeeds with dependencies offline', () => {
     writeFixture(redisCassettePath, [
       JSON.stringify({
         version: '4.1',
-        traceId: '00000000000000000000000000000093',
+        traceId: REDIS_TRACE_ID,
         spanId: '0000000000000093',
         timestamp: '2026-01-01T00:00:00.000Z',
         type: 'outbound',
@@ -59,8 +63,7 @@ describe('Task 9.2 - replay succeeds with dependencies offline', () => {
   });
 
   afterEach(() => {
-    if (fs.existsSync(pgCassettePath)) fs.unlinkSync(pgCassettePath);
-    if (fs.existsSync(redisCassettePath)) fs.unlinkSync(redisCassettePath);
+    artifacts.cleanup();
   });
 
   it('strict replay succeeds for recorded HTTP/Postgres/Redis without live dependencies', async () => {
@@ -80,7 +83,7 @@ describe('Task 9.2 - replay succeeds with dependencies offline', () => {
       await waitForServer(httpPort, 20000);
       const traceparent = `00-${FIXTURE_TRACE_ID}-0000000000000001-01`;
       const httpRes = await fetch(`http://127.0.0.1:${httpPort}/`, {
-        headers: { traceparent },
+        headers: { traceparent, 'x-softprobe-trace-id': FIXTURE_TRACE_ID },
         signal: AbortSignal.timeout(20000),
       });
       expect(httpRes.ok).toBe(true);
@@ -104,6 +107,7 @@ describe('Task 9.2 - replay succeeds with dependencies offline', () => {
         SOFTPROBE_STRICT_REPLAY: '1',
         SOFTPROBE_CASSETTE_PATH: pgCassettePath,
         PG_URL: 'postgres://127.0.0.1:63999/offline',
+        REPLAY_TRACE_ID: PG_TRACE_ID,
       },
       { useTsNode: true }
     );
@@ -117,6 +121,7 @@ describe('Task 9.2 - replay succeeds with dependencies offline', () => {
         SOFTPROBE_STRICT_REPLAY: '1',
         SOFTPROBE_CASSETTE_PATH: redisCassettePath,
         REDIS_KEY: redisKey,
+        REPLAY_TRACE_ID: REDIS_TRACE_ID,
       },
       { useTsNode: true }
     );

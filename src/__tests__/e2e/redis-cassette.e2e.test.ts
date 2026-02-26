@@ -6,11 +6,11 @@
 
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
 import { RedisContainer, StartedRedisContainer } from '@testcontainers/redis';
 import { runChild } from './run-child';
 import { loadNdjson } from '../../store/load-ndjson';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
+import { E2eArtifacts } from './helpers/e2e-artifacts';
 
 const CAPTURE_WORKER = path.join(__dirname, 'helpers', 'redis-cassette-capture-worker.ts');
 const REPLAY_WORKER = path.join(__dirname, 'helpers', 'redis-replay-worker.ts');
@@ -20,25 +20,24 @@ function getRedisOutboundRecords(records: SoftprobeCassetteRecord[]): SoftprobeC
 }
 
 describe('E2E Redis cassette capture/replay (Task 12.3)', () => {
+  let artifacts: E2eArtifacts;
   let redisContainer: StartedRedisContainer;
   let cassettePath: string;
   let redisKey: string;
   let redisValue: string;
+  let replayTraceId = '';
 
   beforeAll(async () => {
+    artifacts = new E2eArtifacts();
     redisContainer = await new RedisContainer('redis:7').start();
-    cassettePath = path.join(
-      os.tmpdir(),
-      `softprobe-e2e-cassette-redis-${Date.now()}.ndjson`
-    );
+    cassettePath = artifacts.createTempFile('softprobe-e2e-cassette-redis', '.ndjson');
     redisKey = `softprobe:e2e:${Date.now()}`;
     redisValue = 'redis-e2e-value';
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
   }, 60000);
 
   afterAll(async () => {
     await redisContainer?.stop();
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    artifacts.cleanup();
   });
 
   it('12.3.1: CAPTURE writes NDJSON', async () => {
@@ -65,6 +64,7 @@ describe('E2E Redis cassette capture/replay (Task 12.3)', () => {
     const getRecord = redisRecords.find((r) => r.identifier === `GET ${redisKey}`);
     expect(getRecord).toBeDefined();
     expect(getRecord?.responsePayload).toBe(redisValue);
+    replayTraceId = getRecord?.traceId ?? '';
   }, 60000);
 
   it('12.3.2: REPLAY works without redis', async () => {
@@ -77,6 +77,7 @@ describe('E2E Redis cassette capture/replay (Task 12.3)', () => {
         SOFTPROBE_CASSETTE_PATH: cassettePath,
         SOFTPROBE_STRICT_REPLAY: '1',
         REDIS_KEY: redisKey,
+        ...(replayTraceId && { REPLAY_TRACE_ID: replayTraceId }),
       },
       { useTsNode: true }
     );

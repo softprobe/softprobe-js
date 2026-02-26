@@ -9,10 +9,10 @@ import path from 'path';
 import { runServer, waitForServer, closeServer } from './run-child';
 import { loadNdjson } from '../../store/load-ndjson';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
+import { E2eArtifacts } from './helpers/e2e-artifacts';
 
 const WORKER_SCRIPT = path.join(__dirname, 'helpers', 'express-inbound-worker.ts');
 const FIXTURE_CASSETTE = path.join(__dirname, 'fixtures', 'express-replay.ndjson');
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 
 /** Known traceId in fixtures/express-replay.ndjson (32 hex lowercase). */
 const FIXTURE_TRACE_ID = '00000000000000000000000000000001';
@@ -22,12 +22,13 @@ function getInboundRecords(records: SoftprobeCassetteRecord[]): SoftprobeCassett
 }
 
 describe('E2E Express inbound replay (Task 14.4.2)', () => {
+  let artifacts: E2eArtifacts;
   let cassettePath: string;
   let capturedTraceId: string;
 
   beforeAll(async () => {
-    cassettePath = path.join(PROJECT_ROOT, `express-replay-e2e-${Date.now()}.ndjson`);
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    artifacts = new E2eArtifacts();
+    cassettePath = artifacts.createTempFile('express-replay-e2e', '.ndjson');
 
     const port = 30000 + (Date.now() % 10000);
     const child = runServer(
@@ -60,7 +61,7 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
   }, 35000);
 
   afterAll(() => {
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    artifacts.cleanup();
   });
 
   it('REPLAY + strict with fixture cassette succeeds (propagation + matcher)', async () => {
@@ -80,7 +81,7 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
       await waitForServer(port, 20000);
       const traceparent = `00-${FIXTURE_TRACE_ID}-0000000000000001-01`;
       const res = await fetch(`http://127.0.0.1:${port}/`, {
-        headers: { traceparent },
+        headers: { traceparent, 'x-softprobe-trace-id': FIXTURE_TRACE_ID },
       });
       expect(res.ok).toBe(true);
       const body = (await res.json()) as { ok?: boolean; outbound?: unknown };
@@ -115,7 +116,7 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
       const traceIdHex = String(capturedTraceId).trim().toLowerCase();
       const traceparent = `00-${traceIdHex}-0000000000000001-01`;
       const res = await fetch(`http://127.0.0.1:${port}/`, {
-        headers: { traceparent },
+        headers: { traceparent, 'x-softprobe-trace-id': traceIdHex },
       });
       expect(res.ok).toBe(true);
       const body = (await res.json()) as { ok?: boolean; outbound?: unknown };

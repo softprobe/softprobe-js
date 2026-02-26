@@ -22,9 +22,16 @@ async function main(): Promise<void> {
     applyHttpReplay();
   }
 
-  const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(15000),
+    headers: { 'x-softprobe-probe': '1' },
+  });
   const body = await response.text();
   const statusCode = response.status;
+  const hasLegacyModeEnv = typeof process.env.SOFTPROBE_MODE === 'string' && process.env.SOFTPROBE_MODE.length > 0;
+  const hasLegacyCassetteEnv =
+    typeof process.env.SOFTPROBE_CASSETTE_PATH === 'string' &&
+    process.env.SOFTPROBE_CASSETTE_PATH.length > 0;
 
   const store = getCaptureStore();
   if (!store) throw new Error('Capture store is not initialized');
@@ -35,7 +42,15 @@ async function main(): Promise<void> {
     /* ignore */
   }
 
-  process.stdout.write(JSON.stringify({ url, status: statusCode, body }));
+  process.stdout.write(
+    JSON.stringify({
+      url,
+      status: statusCode,
+      body,
+      hasLegacyModeEnv,
+      hasLegacyCassetteEnv,
+    })
+  );
   process.exit(0);
 }
 

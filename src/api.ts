@@ -85,7 +85,10 @@ export function setGlobalReplayMatcher(matcher: SoftprobeMatcher | undefined): v
 export function activateReplayForContext(traceId: string): void {
   const matcher = getActiveMatcher();
   if (matcher && '_setRecords' in matcher) {
-    (matcher as SoftprobeMatcher)._setRecords(getRecordsForTrace(traceId));
+    const records = getRecordsForTrace(traceId);
+    if (records.length > 0) {
+      (matcher as SoftprobeMatcher)._setRecords(records);
+    }
   }
 }
 

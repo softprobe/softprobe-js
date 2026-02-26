@@ -8,13 +8,13 @@ import path from 'path';
 import { runServer, waitForServer, closeServer } from './run-child';
 import { loadNdjson } from '../../store/load-ndjson';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
+import { E2eArtifacts } from './helpers/e2e-artifacts';
 
 const WORKER_SCRIPT = path.join(__dirname, 'helpers', 'fastify-inbound-worker.ts');
 const FIXTURE_CASSETTE = path.join(__dirname, 'fixtures', 'express-replay.ndjson');
 
 /** Disable OTel Fastify instrumentation so our framework mutator's wrapper gets the raw factory (Fastify 5 returns Promise; OTel expects sync). */
 const FASTIFY_WORKER_ENV = { OTEL_NODE_DISABLED_INSTRUMENTATIONS: 'fastify' };
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 
 /** Known traceId in fixtures/express-replay.ndjson (32 hex lowercase). */
 const FIXTURE_TRACE_ID = '00000000000000000000000000000001';
@@ -32,16 +32,17 @@ function getOutboundRecords(records: SoftprobeCassetteRecord[]): SoftprobeCasset
 }
 
 describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
+  let artifacts: E2eArtifacts;
   let cassettePath: string;
   let capturedTraceId: string;
 
   beforeAll(() => {
-    cassettePath = path.join(PROJECT_ROOT, `fastify-inbound-e2e-${Date.now()}.ndjson`);
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    artifacts = new E2eArtifacts();
+    cassettePath = artifacts.createTempFile('fastify-inbound-e2e', '.ndjson');
   });
 
   afterAll(() => {
-    if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    artifacts.cleanup();
   });
 
   it('CAPTURE writes NDJSON with inbound record and at least one outbound record', async () => {
@@ -93,7 +94,7 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
       await waitForServer(port, 20000);
       const traceparent = `00-${FIXTURE_TRACE_ID}-0000000000000001-01`;
       const res = await fetch(`http://127.0.0.1:${port}/`, {
-        headers: { traceparent },
+        headers: { traceparent, 'x-softprobe-trace-id': FIXTURE_TRACE_ID },
         signal: AbortSignal.timeout(20000),
       });
       expect(res.ok).toBe(true);
@@ -150,7 +151,7 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
       const traceIdHex = String(capturedTraceId).trim().toLowerCase();
       const traceparent = `00-${traceIdHex}-0000000000000001-01`;
       const res = await fetch(`http://127.0.0.1:${replayPort}/`, {
-        headers: { traceparent },
+        headers: { traceparent, 'x-softprobe-trace-id': traceIdHex },
         signal: AbortSignal.timeout(20000),
       });
       expect(res.ok).toBe(true);

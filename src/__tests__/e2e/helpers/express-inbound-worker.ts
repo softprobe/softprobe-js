@@ -1,8 +1,13 @@
 /**
  * Shared Express app for inbound capture and replay E2E (Tasks 14.4.1, 14.4.2).
+ *
+ * Inbound vs outbound (for capture/replay):
+ * - Inbound = HTTP request INTO this app (e.g. GET /). Express middleware records it (type 'inbound').
+ * - Outbound = Calls this app makes TO external backends (e.g. fetch()). Instrumentation records them (type 'outbound').
+ *
  * Mode is driven by YAML config (SOFTPROBE_CONFIG_PATH).
  * - CAPTURE: cassettePath in config; GET /exit flushes store and exits.
- * - REPLAY: cassettePath in config; loads cassette and sets global matcher before listen; GET /exit exits.
+ * - REPLAY: uses runtime replay wiring from init + middleware/context run path; GET /exit exits.
  * - SOFTPROBE_E2E_OUTBOUND_URL optionally overrides default outbound URL for deterministic local tests.
  * - SOFTPROBE_E2E_UNRECORDED_URL optionally overrides strict-negative outbound URL.
  * PORT required for both.
@@ -10,10 +15,6 @@
 
 import '../../../init';
 import { getCaptureStore } from '../../../capture/store-accessor';
-import { loadNdjson } from '../../../store/load-ndjson';
-import { softprobe } from '../../../api';
-import { SoftprobeMatcher } from '../../../replay/softprobe-matcher';
-import { createDefaultMatcher } from '../../../replay/extract-key';
 import { ConfigManager } from '../../../config/config-manager';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
@@ -25,14 +26,11 @@ sdk.start();
 
 const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
 let softprobeMode = 'PASSTHROUGH';
-let cassettePathFromConfig = '';
 try {
   const cfg = new ConfigManager(configPath).get();
   softprobeMode = cfg.mode ?? 'PASSTHROUGH';
-  cassettePathFromConfig = cfg.cassettePath ?? '';
 } catch {
   softprobeMode = 'PASSTHROUGH';
-  cassettePathFromConfig = '';
 }
 const isReplay = softprobeMode === 'REPLAY';
 const outboundUrl = process.env.SOFTPROBE_E2E_OUTBOUND_URL || 'https://httpbin.org/get';
@@ -48,29 +46,20 @@ async function startServer(): Promise<void> {
   // #region agent log
   _dbg('express-inbound-worker.ts:startServer', 'startServer entered', { port: process.env.PORT, isReplay });
   // #endregion
-  if (isReplay) {
-    const cassettePath = cassettePathFromConfig;
-    if (!cassettePath) throw new Error('cassettePath is required in config for REPLAY');
-    const records = await loadNdjson(cassettePath);
-    // #region agent log
-    _dbg('express-inbound-worker.ts:startServer', 'loadNdjson done', { recordCount: records.length });
-    // #endregion
-    softprobe.setReplayRecordsCache(records);
-    const matcher = new SoftprobeMatcher();
-    matcher.use(createDefaultMatcher());
-    softprobe.setGlobalReplayMatcher(matcher);
-  }
-
   const express = require('express');
   const app = express();
 
+  // INBOUND: This route is the "inbound" — the request comes INTO our app (GET /).
+  // Express/Softprobe middleware records it as type 'inbound' (request + response).
   app.get('/', async (_req: unknown, res: { status: (n: number) => { json: (body: unknown) => void }; json: (body: unknown) => void }) => {
+    // OUTBOUND: This fetch() is a call FROM our app TO an external backend.
+    // Instrumentation records it as type 'outbound' (e.g. protocol 'http').
     const r = await fetch(outboundUrl, { signal: AbortSignal.timeout(15000) });
     const j = (await r.json()) as Record<string, unknown>;
     res.status(200).json({ ok: true, outbound: j });
   });
 
-  /** Route that performs an unrecorded outbound call; in strict replay this should return softprobe 500 and never passthrough. */
+  /** INBOUND: GET /unrecorded is the inbound request. OUTBOUND: fetch(unrecordedUrl) below. In strict replay the unrecorded outbound fails. */
   app.get('/unrecorded', async (_req: unknown, res: { status: (n: number) => { json: (body: unknown) => void } }) => {
     const r = await fetch(unrecordedUrl, { signal: AbortSignal.timeout(15000) });
     const j = (await r.json()) as Record<string, unknown>;

@@ -210,14 +210,14 @@ Implementation rule per task:
     - update `http-cassette-capture-worker.ts` to make an actual network call (no direct hook invocation).
     - keep dependency local-only to avoid flaky external services.
 
-- [ ] **Task 11.2 Add replay injection assertion for HTTP payload/body fidelity**
+- [x] **Task 11.2 Add replay injection assertion for HTTP payload/body fidelity** — `test(e2e): assert replay body equals recorded cassette payload with deterministic url/method marker fields`
   - **Problem**: HTTP replay E2E currently asserts mainly status success; payload injection fidelity is not enforced.
   - **Test**: replay response body must equal recorded `responsePayload.body` for the same trace/identifier.
   - **Solution**:
     - extend `http-cassette.e2e.test.ts` to parse replay JSON and compare full payload (not only status).
     - assert deterministic fields from cassette (`url`, `method`, custom marker field).
 
-- [ ] **Task 11.3 Add YAML-driven boot E2E (no mode/cassette env overrides)**
+- [x] **Task 11.3 Add YAML-driven boot E2E (no mode/cassette env overrides)** — `test(e2e): assert capture/replay YAML boot works with SOFTPROBE_CONFIG_PATH only and legacy mode/cassette env vars unset in child workers`
   - **Problem**: E2E primarily configures mode/path via env vars; YAML boot path is not validated end-to-end.
   - **Test**:
     - CAPTURE scenario: worker uses `SOFTPROBE_CONFIG_PATH` pointing to YAML with `mode: CAPTURE` and `cassettePath`, writes cassette.
@@ -227,7 +227,7 @@ Implementation rule per task:
     - add E2E workers that only import `init` and rely on config manager path.
     - assert env vars for mode/path are unset in child process input.
 
-- [ ] **Task 11.4 Prove strict replay network isolation for recorded positive path**
+- [x] **Task 11.4 Prove strict replay network isolation for recorded positive path** — `test(e2e): assert replay returns recorded payload against replacement probe server and tagged probe hit count stays zero`
   - **Problem**: negative path has no-hit probe assertion; positive recorded path does not explicitly prove passthrough was avoided.
   - **Test**: in strict replay for a recorded call, response succeeds and probe server hit count remains `0`.
   - **Solution**:
