@@ -13,7 +13,6 @@ import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentation
 import { trace } from '@opentelemetry/api';
 import { ConfigManager } from '../../../config/config-manager';
 import { softprobe } from '../../../api';
-import { NdjsonCassette } from '../../../core/cassette/ndjson-cassette';
 
 async function main() {
   const sdk = new NodeSDK({ instrumentations: getNodeAutoInstrumentations() });
@@ -37,7 +36,6 @@ async function main() {
   if (!cassettePath) throw new Error('cassettePath is required in config');
   const cassetteDir = path.dirname(cassettePath);
   const traceId = path.basename(cassettePath, '.ndjson');
-  const storage = new NdjsonCassette(cassetteDir, traceId);
 
   // Intentionally do not connect to a live Redis server.
   const client = createClient({ url: 'redis://127.0.0.1:6399' });
@@ -45,8 +43,8 @@ async function main() {
   const value = await softprobe.run(
     {
       mode: 'REPLAY',
-      traceId: replayTraceId,
-      storage,
+      traceId,
+      cassetteDirectory: cassetteDir,
     },
     async () =>
       trace.getTracer('softprobe-e2e').startActiveSpan('redis-replay-command', async (span) => {

@@ -10,7 +10,6 @@
 import path from 'path';
 import { ConfigManager } from '../../../config/config-manager';
 import { softprobe } from '../../../api';
-import { NdjsonCassette } from '../../../core/cassette/ndjson-cassette';
 
 const initPath = path.join(__dirname, '..', '..', '..', 'init.ts');
 require(initPath);
@@ -35,14 +34,13 @@ async function main() {
   }
   const cassetteDir = path.dirname(cassettePath);
   const traceId = path.basename(cassettePath, '.ndjson');
-  const storage = new NdjsonCassette(cassetteDir, traceId);
 
   let output: { rows: unknown[]; rowCount: number } | undefined;
   await softprobe.run(
     {
       mode: 'REPLAY',
-      traceId: replayTraceId,
-      storage,
+      traceId,
+      cassetteDirectory: cassetteDir,
     },
     async () => {
     const { Client } = require('pg');

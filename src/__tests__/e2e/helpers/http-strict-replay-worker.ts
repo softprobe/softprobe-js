@@ -9,7 +9,6 @@ import path from 'path';
 import '../../../init';
 import { softprobe } from '../../../api';
 import { ConfigManager } from '../../../config/config-manager';
-import { NdjsonCassette } from '../../../core/cassette/ndjson-cassette';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 
@@ -36,8 +35,8 @@ async function main(): Promise<void> {
   await softprobe.run(
     {
       mode: 'REPLAY',
-      traceId: process.env.REPLAY_TRACE_ID ?? 'strict-e2e-replay',
-      storage: new NdjsonCassette(cassetteDir, traceId),
+      traceId,
+      cassetteDirectory: cassetteDir,
     },
     async () => {
       const undici = require('undici') as { fetch: typeof fetch };

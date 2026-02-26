@@ -1,5 +1,5 @@
 import path from 'path';
-import { NdjsonCassette } from './ndjson-cassette';
+import { SoftprobeContext } from '../../context';
 import type { Cassette } from '../../types/schema';
 
 const HEADER_CASSETTE_PATH = 'x-softprobe-cassette-path';
@@ -30,7 +30,7 @@ export function resolveRequestStorage(input: {
   if (cassettePathHeader) {
     const dir = path.dirname(cassettePathHeader);
     const traceId = path.basename(cassettePathHeader, '.ndjson');
-    return { storage: new NdjsonCassette(dir, traceId), cassettePathHeader };
+    return { storage: SoftprobeContext.getOrCreateCassette(dir, traceId), cassettePathHeader };
   }
   if (input.existingCassette) return { storage: input.existingCassette, cassettePathHeader };
   if (input.configuredCassette) return { storage: input.configuredCassette, cassettePathHeader };

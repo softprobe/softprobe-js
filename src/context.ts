@@ -56,6 +56,7 @@ function cacheKey(cassetteDirectory: string, traceId: string): string {
 
 /**
  * Task 13.5: Get or create a cassette for the given directory and traceId. Reuses same instance for same key.
+ * Task 13.6: Only this module creates NdjsonCassette; request-storage and middleware use this instead of constructing.
  */
 function getOrCreateCassette(cassetteDirectory: string, traceId: string): Cassette {
   const key = cacheKey(cassetteDirectory, traceId);
@@ -65,6 +66,18 @@ function getOrCreateCassette(cassetteDirectory: string, traceId: string): Casset
     cassetteCache.set(key, cassette);
   }
   return cassette;
+}
+
+/**
+ * Task 13.6: Test-only factory for a cassette with optional writer (e.g. flush test).
+ * Only the context module creates cassette instances; this is the designated test helper.
+ */
+export function createTestCassette(
+  cassetteDirectory: string,
+  traceId: string,
+  writer?: { appendLine?: (line: string) => void | Promise<void>; flush?: () => void | Promise<void> }
+): Cassette {
+  return new NdjsonCassette(cassetteDirectory, traceId, writer ?? {});
 }
 
 function merge(base: Stored, partial: PartialData): Stored {
@@ -255,4 +268,6 @@ export const SoftprobeContext = {
   fromHeaders,
   setGlobalReplayMatcher,
   run,
+  /** Task 13.6: Obtain cassette for (directory, traceId) without constructing; used by request-storage/middleware. */
+  getOrCreateCassette,
 };

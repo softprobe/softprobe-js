@@ -7,7 +7,6 @@
 import path from 'path';
 import '../../../init';
 import { ConfigManager } from '../../../config/config-manager';
-import { NdjsonCassette } from '../../../core/cassette/ndjson-cassette';
 import { softprobe } from '../../../api';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
@@ -28,7 +27,6 @@ async function main(): Promise<void> {
   if (!cassettePath) throw new Error('cassettePath is required in config');
   const cassetteDir = path.dirname(cassettePath);
   const traceId = path.basename(cassettePath, '.ndjson');
-  const storage = new NdjsonCassette(cassetteDir, traceId);
 
   const sdk = new NodeSDK({
     instrumentations: [getNodeAutoInstrumentations()],
@@ -39,8 +37,8 @@ async function main(): Promise<void> {
   await softprobe.run(
     {
       mode: 'REPLAY',
-      traceId: replayTraceId,
-      storage,
+      traceId,
+      cassetteDirectory: cassetteDir,
     },
     async () => {
       const undici = require('undici') as { fetch: typeof fetch };
