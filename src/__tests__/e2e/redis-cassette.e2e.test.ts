@@ -77,7 +77,7 @@ describe('E2E Redis cassette capture/replay (Task 12.3)', () => {
         SOFTPROBE_CASSETTE_PATH: cassettePath,
         SOFTPROBE_STRICT_REPLAY: '1',
         REDIS_KEY: redisKey,
-        ...(replayTraceId && { REPLAY_TRACE_ID: replayTraceId }),
+        REPLAY_TRACE_ID: replayTraceId,
       },
       { useTsNode: true }
     );

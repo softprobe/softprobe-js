@@ -11,8 +11,6 @@ import path from 'path';
 import { ConfigManager } from '../../../config/config-manager';
 import { softprobe } from '../../../api';
 import { NdjsonCassette } from '../../../core/cassette/ndjson-cassette';
-import { loadNdjson } from '../../../store/load-ndjson';
-import type { Cassette } from '../../../types/schema';
 
 const initPath = path.join(__dirname, '..', '..', '..', 'init.ts');
 require(initPath);
@@ -24,7 +22,7 @@ async function main() {
   sdk.start();
 
   const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
-  const replayTraceId = process.env.REPLAY_TRACE_ID;
+  const replayTraceId = process.env.REPLAY_TRACE_ID ?? 'pg-replay-e2e';
   let cassettePath = '';
   try {
     cassettePath = new ConfigManager(configPath).get().cassettePath ?? '';
@@ -35,18 +33,13 @@ async function main() {
     process.stderr.write('cassettePath is required in config');
     process.exit(1);
   }
-  const storage: Cassette = replayTraceId
-    ? new NdjsonCassette(cassettePath)
-    : {
-        loadTrace: async () => loadNdjson(cassettePath),
-        saveRecord: async () => {},
-      };
+  const storage = new NdjsonCassette(cassettePath);
 
   let output: { rows: unknown[]; rowCount: number } | undefined;
   await softprobe.run(
     {
       mode: 'REPLAY',
-      traceId: replayTraceId ?? 'pg-replay-e2e',
+      traceId: replayTraceId,
       storage,
     },
     async () => {

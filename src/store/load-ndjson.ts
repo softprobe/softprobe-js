@@ -25,7 +25,11 @@ export async function loadNdjson(
   for await (const line of rl) {
     if (!line.trim()) continue;
     const rec = JSON.parse(line) as SoftprobeCassetteRecord;
-    if (traceId === undefined || rec.traceId === traceId) {
+    if (traceId === undefined) {
+      out.push(rec);
+    } else if (traceId === '') {
+      if (!rec.traceId || rec.traceId === '') out.push(rec);
+    } else if (rec.traceId && rec.traceId.toLowerCase() === traceId.toLowerCase()) {
       out.push(rec);
     }
   }

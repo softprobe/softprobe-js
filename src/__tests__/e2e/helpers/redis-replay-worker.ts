@@ -13,8 +13,6 @@ import { trace } from '@opentelemetry/api';
 import { ConfigManager } from '../../../config/config-manager';
 import { softprobe } from '../../../api';
 import { NdjsonCassette } from '../../../core/cassette/ndjson-cassette';
-import { loadNdjson } from '../../../store/load-ndjson';
-import type { Cassette } from '../../../types/schema';
 
 async function main() {
   const sdk = new NodeSDK({ instrumentations: getNodeAutoInstrumentations() });
@@ -23,7 +21,10 @@ async function main() {
   const { createClient } = require('redis');
 
   const key = process.env.REDIS_KEY;
-  const replayTraceId = process.env.REPLAY_TRACE_ID;
+  const replayTraceId =
+    process.env.REPLAY_TRACE_ID !== undefined
+      ? process.env.REPLAY_TRACE_ID
+      : 'redis-e2e-replay';
   const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
   let cassettePath = '';
   try {
@@ -33,12 +34,7 @@ async function main() {
   }
   if (!key) throw new Error('REDIS_KEY is required');
   if (!cassettePath) throw new Error('cassettePath is required in config');
-  const storage: Cassette = replayTraceId
-    ? new NdjsonCassette(cassettePath)
-    : {
-        loadTrace: async () => loadNdjson(cassettePath),
-        saveRecord: async () => {},
-      };
+  const storage = new NdjsonCassette(cassettePath);
 
   // Intentionally do not connect to a live Redis server.
   const client = createClient({ url: 'redis://127.0.0.1:6399' });
@@ -46,7 +42,7 @@ async function main() {
   const value = await softprobe.run(
     {
       mode: 'REPLAY',
-      traceId: replayTraceId || 'redis-e2e-replay',
+      traceId: replayTraceId,
       storage,
     },
     async () =>

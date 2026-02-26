@@ -5,8 +5,6 @@
  */
 
 import '../../../init';
-import { loadNdjson } from '../../../store/load-ndjson';
-import type { Cassette } from '../../../types/schema';
 import { ConfigManager } from '../../../config/config-manager';
 import { NdjsonCassette } from '../../../core/cassette/ndjson-cassette';
 import { softprobe } from '../../../api';
@@ -16,7 +14,7 @@ import { applyUndiciFetchAsGlobal } from '../../../replay/undici';
 
 async function main(): Promise<void> {
   const replayUrl = process.env.REPLAY_URL;
-  const replayTraceId = process.env.REPLAY_TRACE_ID;
+  const replayTraceId = process.env.REPLAY_TRACE_ID ?? 'http-e2e-replay';
   const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
   let cassettePath = '';
   try {
@@ -27,12 +25,7 @@ async function main(): Promise<void> {
   }
   if (!replayUrl) throw new Error('REPLAY_URL is required');
   if (!cassettePath) throw new Error('cassettePath is required in config');
-  const storage: Cassette = replayTraceId
-    ? new NdjsonCassette(cassettePath)
-    : {
-        loadTrace: async () => loadNdjson(cassettePath),
-        saveRecord: async () => {},
-      };
+  const storage = new NdjsonCassette(cassettePath);
 
   const sdk = new NodeSDK({
     instrumentations: [getNodeAutoInstrumentations()],
@@ -43,7 +36,7 @@ async function main(): Promise<void> {
   await softprobe.run(
     {
       mode: 'REPLAY',
-      traceId: replayTraceId || 'http-e2e-replay',
+      traceId: replayTraceId,
       storage,
     },
     async () => {

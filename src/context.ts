@@ -175,7 +175,10 @@ function run<T>(options: SoftprobeRunOptions, fn: () => T | Promise<T>): T | Pro
   const defaultTraceId = (): string => randomBytes(16).toString('hex');
 
   if (options.mode === 'REPLAY') {
-    const traceId = options.traceId || mergedBase.traceId || base.traceId || defaultTraceId();
+    const traceId =
+      options.traceId !== undefined && options.traceId !== null
+        ? options.traceId
+        : mergedBase.traceId || base.traceId || defaultTraceId();
     return (async () => {
       const records = await options.storage.loadTrace(traceId);
       const matcher = new SoftprobeMatcher();
