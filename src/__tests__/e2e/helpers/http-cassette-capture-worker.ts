@@ -1,37 +1,39 @@
 /**
  * Task 12.4.1: Child worker for HTTP NDJSON cassette capture E2E.
- * Env: SOFTPROBE_MODE=CAPTURE, SOFTPROBE_CASSETTE_PATH
+ * Env: SOFTPROBE_MODE=CAPTURE, SOFTPROBE_CASSETTE_PATH, CAPTURE_URL
  * Stdout: JSON { url, status, body }
  */
 
 import '../../../init';
-import { buildUndiciResponseHook } from '../../../capture/undici';
 import { getCaptureStore } from '../../../capture/store-accessor';
 
 async function main(): Promise<void> {
-  const url = 'http://offline.softprobe.local/health';
-  const statusCode = 200;
-  const body = 'http-e2e-ok';
+  const url = process.env.CAPTURE_URL;
+  if (!url) throw new Error('CAPTURE_URL is required');
 
-  const attrs: Record<string, unknown> = {};
-  const span = {
-    name: 'GET',
-    parentSpanId: undefined as string | undefined,
-    spanContext: () => ({ traceId: 'http-e2e-trace', spanId: 'http-e2e-span' }),
-    setAttribute: (k: string, v: unknown) => {
-      attrs[k] = v;
-    },
-  };
+  const { NodeSDK } = require('@opentelemetry/sdk-node');
+  const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
+  const sdk = new NodeSDK({ instrumentations: getNodeAutoInstrumentations() });
+  sdk.start();
 
-  const hook = buildUndiciResponseHook();
-  hook(span, {
-    request: { method: 'GET', url },
-    response: { statusCode, body },
-  });
+  const applyHttpReplay = (globalThis as unknown as { __softprobeApplyHttpReplay?: () => unknown })
+    .__softprobeApplyHttpReplay;
+  if (typeof applyHttpReplay === 'function') {
+    applyHttpReplay();
+  }
+
+  const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  const body = await response.text();
+  const statusCode = response.status;
 
   const store = getCaptureStore();
   if (!store) throw new Error('Capture store is not initialized');
   await store.flushOnExit();
+  try {
+    await sdk.shutdown();
+  } catch {
+    /* ignore */
+  }
 
   process.stdout.write(JSON.stringify({ url, status: statusCode, body }));
   process.exit(0);

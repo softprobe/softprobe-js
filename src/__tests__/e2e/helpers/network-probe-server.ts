@@ -2,6 +2,7 @@
  * Local probe server for strict-negative replay E2E.
  * Exposes:
  * - GET /probe-call: increments hit counter
+ * - GET /payload: returns deterministic payload
  * - GET /hits: returns current hit count as JSON
  */
 
@@ -21,6 +22,12 @@ const server = http.createServer((req: any, res: any) => {
     hitCount += 1;
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ touched: true, hitCount }));
+    return;
+  }
+
+  if (req.url === '/payload' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, source: 'probe-static' }));
     return;
   }
 

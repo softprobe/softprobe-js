@@ -2,7 +2,7 @@
  * Boot entry: softprobe/init.
  * Must be imported first (before OTel). Reads config from .softprobe/config.yml
  * (or SOFTPROBE_CONFIG_PATH) and runs CAPTURE or REPLAY init accordingly; design §4.1, §11.
- * No SOFTPROBE_MODE / SOFTPROBE_CASSETTE_PATH; mode and cassettePath come from config only.
+ * Mode and cassettePath come from config only (no env fallback for runtime mode/path).
  */
 
 const { ConfigManager } = require('./config/config-manager');
@@ -30,18 +30,16 @@ try {
   mode = (g.mode as string) ?? 'PASSTHROUGH';
   cassettePath = (g.cassettePath as string) ?? '';
 } catch {
-  // No config file (e.g. E2E child or examples): fall back to env so callers can pass mode/cassettePath.
-  const envMode = process.env.SOFTPROBE_MODE ?? 'PASSTHROUGH';
-  const envPath = process.env.SOFTPROBE_CASSETTE_PATH ?? '';
+  // No config file: default to PASSTHROUGH with no cassette path.
   SoftprobeContext.initGlobal({
-    mode: envMode,
-    cassettePath: envPath,
-    storage: envPath ? new NdjsonCassette(envPath) : undefined,
-    strictReplay: process.env.SOFTPROBE_STRICT_REPLAY === '1',
-    strictComparison: process.env.SOFTPROBE_STRICT_COMPARISON === '1',
+    mode: 'PASSTHROUGH',
+    cassettePath: '',
+    storage: undefined,
+    strictReplay: false,
+    strictComparison: false,
   });
-  mode = envMode;
-  cassettePath = envPath;
+  mode = 'PASSTHROUGH';
+  cassettePath = '';
 }
 
 if (mode === 'CAPTURE') {

@@ -198,6 +198,53 @@ Implementation rule per task:
 
 ---
 
+## 11) E2E Hardening for Real Capture/Replay + YAML Config — Atomic
+
+> User-approved exception for this phase: these are test-focused tasks and may be implemented without strict Red/Green ceremony.
+
+- [x] **Task 11.1 Replace synthetic HTTP capture with true outbound interception E2E** — `test(e2e): switch HTTP capture worker to real local fetch interception and assert recorded body fidelity`
+  - **Problem**: current HTTP capture worker invokes capture hook directly instead of executing a real outbound call through runtime instrumentation.
+  - **Test**: in CAPTURE mode, worker performs a real `fetch` to a local probe server; cassette must contain outbound `http` record whose `identifier`, `statusCode`, and `responsePayload.body` match probe response.
+  - **Solution**:
+    - add a dedicated local HTTP probe worker (`/payload`, deterministic JSON response).
+    - update `http-cassette-capture-worker.ts` to make an actual network call (no direct hook invocation).
+    - keep dependency local-only to avoid flaky external services.
+
+- [ ] **Task 11.2 Add replay injection assertion for HTTP payload/body fidelity**
+  - **Problem**: HTTP replay E2E currently asserts mainly status success; payload injection fidelity is not enforced.
+  - **Test**: replay response body must equal recorded `responsePayload.body` for the same trace/identifier.
+  - **Solution**:
+    - extend `http-cassette.e2e.test.ts` to parse replay JSON and compare full payload (not only status).
+    - assert deterministic fields from cassette (`url`, `method`, custom marker field).
+
+- [ ] **Task 11.3 Add YAML-driven boot E2E (no mode/cassette env overrides)**
+  - **Problem**: E2E primarily configures mode/path via env vars; YAML boot path is not validated end-to-end.
+  - **Test**:
+    - CAPTURE scenario: worker uses `SOFTPROBE_CONFIG_PATH` pointing to YAML with `mode: CAPTURE` and `cassettePath`, writes cassette.
+    - REPLAY scenario: worker uses `SOFTPROBE_CONFIG_PATH` YAML with `mode: REPLAY` and same cassette, succeeds offline without `SOFTPROBE_MODE`/`SOFTPROBE_CASSETTE_PATH`.
+  - **Solution**:
+    - create temporary per-test YAML fixture files.
+    - add E2E workers that only import `init` and rely on config manager path.
+    - assert env vars for mode/path are unset in child process input.
+
+- [ ] **Task 11.4 Prove strict replay network isolation for recorded positive path**
+  - **Problem**: negative path has no-hit probe assertion; positive recorded path does not explicitly prove passthrough was avoided.
+  - **Test**: in strict replay for a recorded call, response succeeds and probe server hit count remains `0`.
+  - **Solution**:
+    - record against local probe in capture phase.
+    - stop/replace dependency in replay phase and verify replay still succeeds.
+    - query probe `/hits` after replay to confirm no live outbound execution.
+
+- [ ] **Task 11.5 Remove test-only matcher/store bootstrapping from replay workers**
+  - **Problem**: some replay workers manually load records/matcher, bypassing canonical context run + cassette load path.
+  - **Test**: replay workers must succeed using only production APIs (`init`, middleware/context entry, `softprobe.run`) with no direct `setReplayRecordsCache` or custom matcher injection.
+  - **Solution**:
+    - refactor replay workers to rely on `SoftprobeContext.run` with `NdjsonCassette` where needed.
+    - disallow direct calls to `loadNdjson` + synthetic span conversion in those workers.
+    - keep assertions focused on behavior parity with runtime boot flow.
+
+---
+
 ## Done Criteria (V6)
 
 - `SoftprobeContext.run(options, fn)` is the single scoped execution API.
