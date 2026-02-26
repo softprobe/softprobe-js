@@ -74,20 +74,11 @@ async function start(): Promise<void> {
     });
   });
 
-  /** Flush capture store to disk (e.g. after a request with x-softprobe-mode: CAPTURE). Used by E2E and manual testing. */
-  app.get('/flush', (_req, res) => {
-    softprobe.flushCapture();
-    res.send('ok');
-  });
-
-  /** In CAPTURE mode, flush cassette and exit so NDJSON is written. Used by example:capture. */
+  /** In CAPTURE mode, exit (writes are direct; no flush needed). Used by example:capture. */
   app.get('/exit', (_req, res) => {
     res.send('ok');
     if (process.env.SOFTPROBE_MODE === 'CAPTURE') {
-      setImmediate(() => {
-        softprobe.flushCapture();
-        process.exit(0);
-      });
+      setImmediate(() => process.exit(0));
     }
   });
 

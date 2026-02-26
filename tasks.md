@@ -388,22 +388,22 @@ Implementation rule per task:
   - **Test**: Grep or code check: no `new NdjsonCassette` (or cassette factory call) in init.ts, capture/express.ts, capture/fastify.ts, core/cassette/request-storage.ts, or replay helpers; only the context module (or a private factory it uses) creates cassettes. Tests that need a cassette do so via SoftprobeContext.run(..., fn) and getCassette() inside fn, or via a documented test-only helper that creates context/cassette for (directory, traceId) for assertion purposes only.
   - **Solution**: Move all cassette construction into the context layer (or a single factory called only from context); refactor request-storage and middleware to obtain storage from SoftprobeContext (get-or-create by traceId) instead of constructing NdjsonCassette from header path; refactor tests to use run-scoped getCassette() or a test helper; remove store/load-ndjson and store/context-routing-capture-store as needed so that only the context path creates and uses cassettes.
 
-- [ ] **Task 13.7 Cassette and NdjsonCassette have no mode awareness**
+- [x] **Task 13.7 Cassette and NdjsonCassette have no mode awareness** — `docs(cassette): Cassette doc describes only load/save/flush; test enforces no CAPTURE/REPLAY/mode in type or impl`
   - **Goal**: Cassette interface and implementation are pure read/write storage; no references to CAPTURE, REPLAY, or mode.
   - **Test**: Grep or comment check: in the Cassette type definition and in NdjsonCassette (and any cassette adapter), no string literal or reference to "CAPTURE", "REPLAY", or "mode". Documentation for Cassette describes only load/save/flush semantics.
   - **Solution**: Remove any mode-based logic or comments from Cassette interface and NdjsonCassette; ensure all mode decisions (when to load vs save) live in SoftprobeContext and call sites (e.g. run(), capture helpers).
 
-- [ ] **Task 13.8 Update context-capture and capture hooks to use saveRecord(record) only**
+- [x] **Task 13.8 Update context-capture and capture hooks to use saveRecord(record) only** — `test(capture): assert saveRecord(record) called with one arg only in write-helper and hook tests`
   - **Goal**: Capture write path uses the new Cassette signature; no traceId passed to saveRecord.
   - **Test**: saveCaptureRecordFromContext (and any direct cassette.saveRecord caller) calls `getCassette().saveRecord(record)` with one argument. Unit tests for capture hooks (postgres, redis, undici, http) run inside a context with a mock cassette and assert saveRecord(record) is called with the expected record (no traceId argument).
   - **Solution**: Change saveCaptureRecordFromContext to call `cassette.saveRecord(record)`; update capture hooks that call the cassette to use the same signature; ensure record still contains traceId for the single-trace file.
 
-- [ ] **Task 13.9 Update context.run REPLAY branch to use loadTrace() only**
+- [x] **Task 13.9 Update context.run REPLAY branch to use loadTrace() only** — `already done in 13.3: run() calls storage.loadTrace() with no args; test asserts zero arguments`
   - **Goal**: REPLAY path in SoftprobeContext.run() calls cassette.loadTrace() with no arguments.
   - **Test**: In REPLAY run, the cassette attached to options is invoked with loadTrace() (no args) once before the callback; matcher is seeded with the returned records. Unit test spies on the cassette's loadTrace and asserts it was called with zero arguments.
   - **Solution**: In context.ts run() for REPLAY, replace loadTrace(traceId) with loadTrace(); ensure the cassette instance is already bound to the run's traceId so the correct file is read.
 
-- [ ] **Task 13.10 Remove store/load-ndjson and store/context-routing-capture-store; use only Cassette**
+- [x] **Task 13.10 Remove store/load-ndjson and store/context-routing-capture-store; use only Cassette** — `store/load-ndjson and context-routing-capture-store removed; capture/replay use cassette only`
   - **Goal**: No standalone loadNdjson or context-routing capture store; all read/write goes through the Cassette interface and SoftprobeContext-created cassettes.
   - **Test**: No imports of load-ndjson or context-routing-capture-store from production code (init, middleware, replay store-accessor, api, etc.); E2E and unit tests that need to read cassette files do so via getCassette() in scope or a test helper that reads `{cassetteDirectory}/{traceId}.ndjson` for assertions. Replay store-accessor (if still needed) obtains records via context's cassette or a single internal path that uses the cassette factory for the given path/directory+traceId.
   - **Solution**: Delete store/load-ndjson.ts and store/context-routing-capture-store.ts. Move any necessary stream-read logic into the cassette layer (internal to NdjsonCassette or its factory). Refactor loadReplayRecordsFromPath, CLI diff, E2E assertions, and examples to use SoftprobeContext.run + getCassette().loadTrace() or a test-only file read for `{dir}/{traceId}.ndjson`. Remove getCaptureStore/setCaptureStore and all capture store fallbacks; capture uses only saveCaptureRecordFromContext with context's cassette.

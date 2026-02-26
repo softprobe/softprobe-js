@@ -8,7 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { RedisContainer, StartedRedisContainer } from '@testcontainers/redis';
 import { runChild } from './run-child';
-import { loadNdjson } from '../../store/load-ndjson';
+import { loadCassetteRecordsByPath } from '../helpers/read-cassette-file';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
 import { E2eArtifacts } from './helpers/e2e-artifacts';
 
@@ -57,7 +57,7 @@ describe('E2E Redis cassette capture/replay (Task 12.3)', () => {
     expect(result.stderr).toBe('');
 
     expect(fs.existsSync(cassettePath)).toBe(true);
-    const records = await loadNdjson(cassettePath);
+    const records = await loadCassetteRecordsByPath(cassettePath);
     const redisRecords = getRedisOutboundRecords(records);
     expect(redisRecords.length).toBeGreaterThanOrEqual(1);
 

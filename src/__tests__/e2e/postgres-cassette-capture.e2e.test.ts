@@ -8,7 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { runChild } from './run-child';
-import { loadNdjson } from '../../store/load-ndjson';
+import { loadCassetteRecordsByPath } from '../helpers/read-cassette-file';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
 import { E2eArtifacts } from './helpers/e2e-artifacts';
 
@@ -54,7 +54,7 @@ describe('E2E Postgres cassette capture (Task 12.2.1)', () => {
     expect(result.stderr).toBe('');
 
     expect(fs.existsSync(cassettePath)).toBe(true);
-    const records = await loadNdjson(cassettePath);
+    const records = await loadCassetteRecordsByPath(cassettePath);
     const pgRecords = getPostgresOutboundRecords(records);
     expect(pgRecords.length).toBeGreaterThanOrEqual(1);
 
@@ -102,7 +102,7 @@ describe('E2E Postgres cassette replay (Task 12.2.2)', () => {
     );
     expect(captureResult.exitCode).toBe(0);
 
-    const records = await loadNdjson(cassettePath);
+    const records = await loadCassetteRecordsByPath(cassettePath);
     const recordedTraceId = records.find(
       (r) => r.type === 'outbound' && r.protocol === 'postgres'
     )?.traceId;

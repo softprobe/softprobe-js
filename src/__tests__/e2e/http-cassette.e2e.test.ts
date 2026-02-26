@@ -7,7 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import { runChild, runServer, waitForServer, closeServer } from './run-child';
-import { loadNdjson } from '../../store/load-ndjson';
+import { loadCassetteRecordsByPath } from '../helpers/read-cassette-file';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
 import { E2eArtifacts } from './helpers/e2e-artifacts';
 
@@ -81,7 +81,7 @@ describe('E2E HTTP cassette capture/replay (Task 12.4)', () => {
       expect(captureOut.hasLegacyCassetteEnv).toBe(false);
 
       expect(fs.existsSync(cassettePath)).toBe(true);
-      const records = await loadNdjson(cassettePath);
+      const records = await loadCassetteRecordsByPath(cassettePath);
       const httpRecords = getHttpOutboundRecords(records);
       expect(httpRecords.length).toBeGreaterThanOrEqual(1);
 
@@ -155,7 +155,7 @@ describe('E2E HTTP cassette capture/replay (Task 12.4)', () => {
       const hitsPayload = (await hitsRes.json()) as { hitCount?: number };
       expect(hitsPayload.hitCount).toBe(0);
 
-      const records = await loadNdjson(cassettePath);
+      const records = await loadCassetteRecordsByPath(cassettePath);
       const outbound = records
         .find((r) => r.type === 'outbound' && r.protocol === 'http' && r.identifier === `GET ${recordedUrl}`);
       expect(outbound).toBeDefined();

@@ -6,7 +6,7 @@
 import fs from 'fs';
 import path from 'path';
 import { runServer, waitForServer, closeServer } from './run-child';
-import { loadNdjson } from '../../store/load-ndjson';
+import { loadCassetteRecordsByPath } from '../helpers/read-cassette-file';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
 import { E2eArtifacts } from './helpers/e2e-artifacts';
 
@@ -73,7 +73,7 @@ describe('Task 9.1 - Capture E2E via cassette interface', () => {
     }
 
     expect(fs.existsSync(cassettePath)).toBe(true);
-    const records = await loadNdjson(cassettePath);
+    const records = await loadCassetteRecordsByPath(cassettePath);
     const traceRecords = byTrace(records, traceId);
 
     expect(traceRecords.length).toBeGreaterThanOrEqual(2);

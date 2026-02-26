@@ -51,7 +51,7 @@ Detailed specs are in:
 1. Entry middleware/hook builds run options and calls `SoftprobeContext.run(options, fn)`.
 2. Application and child spans run with active softprobe context.
 3. Capture hooks write inbound/outbound records through the active cassette.
-4. NDJSON is buffered/flushed by cassette implementation.
+4. NDJSON is written directly by the cassette implementation (no in-process buffer; optional flush for future optimization).
 
 ### 3.2 Replay
 

@@ -1,7 +1,6 @@
 import type { SoftprobeCassetteRecord, SoftprobeRunOptions } from './types/schema';
 import type { SemanticMatcher } from './replay/matcher';
 import { SoftprobeMatcher } from './replay/softprobe-matcher';
-import { getCaptureStore } from './capture/store-accessor';
 import { getContextWithReplayBaggage } from './api/baggage';
 import { compareInboundWithRecord, type CompareInboundInput } from './api/compare';
 import {
@@ -107,14 +106,6 @@ export async function ensureReplayLoadedForRequest(cassettePath: string): Promis
   }
 }
 
-/**
- * Flushes the capture cassette store to disk. Call before process.exit in CAPTURE mode
- * (e.g. from a /exit route) so the NDJSON file is written. Design §16.2 example.
- */
-export function flushCapture(): void {
-  getCaptureStore()?.flushOnExit();
-}
-
 /** Runs callback inside a scoped Softprobe context using SoftprobeRunOptions. */
 export function run<T>(options: SoftprobeRunOptions, fn: () => T | Promise<T>): T | Promise<T> {
   return SoftprobeContext.run(options, fn);
@@ -132,7 +123,6 @@ export const softprobe = {
   setGlobalReplayMatcher,
   activateReplayForContext,
   ensureReplayLoadedForRequest,
-  flushCapture,
   run,
   getContextWithReplayBaggage,
 };

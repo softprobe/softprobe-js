@@ -150,12 +150,8 @@ describe('NdjsonCassette.saveRecord', () => {
 });
 
 describe('NdjsonCassette.flush', () => {
-  it('delegates to underlying writer flush when available', async () => {
-    const flush = jest.fn<Promise<void>, []>().mockResolvedValue(undefined);
-    const cassette = createTestCassette(os.tmpdir(), 'unused', { flush });
-
-    await cassette.flush?.();
-
-    expect(flush).toHaveBeenCalledTimes(1);
+  it('is a no-op for direct-write implementation', async () => {
+    const cassette = createTestCassette(os.tmpdir(), 'unused');
+    await expect(cassette.flush?.()).resolves.toBeUndefined();
   });
 });

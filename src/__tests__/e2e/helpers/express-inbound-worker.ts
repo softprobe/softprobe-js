@@ -14,7 +14,6 @@
  */
 
 import '../../../init';
-import { getCaptureStore } from '../../../capture/store-accessor';
 import { ConfigManager } from '../../../config/config-manager';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
@@ -70,7 +69,7 @@ async function startServer(): Promise<void> {
   app.get('/exit', (_req: unknown, res: { send: (s: string) => void }) => {
     res.send('ok');
     setImmediate(() => {
-      if (!isReplay) getCaptureStore()?.flushOnExit();
+      // Background flusher handles flush; direct write needs no explicit flush
       process.exit(0);
     });
   });

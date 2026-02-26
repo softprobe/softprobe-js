@@ -6,7 +6,6 @@
 
 import { context, trace } from '@opentelemetry/api';
 import type { SoftprobeCassetteRecord } from '../types/schema';
-import { saveCaptureRecordFromContext } from '../core/cassette/context-capture';
 import { activateReplayForContext } from '../replay/express';
 import { SoftprobeContext } from '../context';
 import { softprobe } from '../api';
@@ -34,7 +33,8 @@ export function queueInboundResponse(
 
   const [method, ...urlParts] = payload.identifier.split(' ');
   const url = urlParts.join(' ') || '/';
-  if (SoftprobeContext.getMode() !== 'CAPTURE' || !SoftprobeContext.getCassette()) return;
+  const cassette = SoftprobeContext.getCassette();
+  if (SoftprobeContext.getMode() !== 'CAPTURE' || !cassette) return;
   const record: SoftprobeCassetteRecord = {
     version: '4.1',
     traceId,
@@ -49,7 +49,8 @@ export function queueInboundResponse(
     },
     ...(payload.requestBody !== undefined && { requestPayload: { body: payload.requestBody } }),
   };
-  void saveCaptureRecordFromContext(record).catch(() => {});
+  const tid = SoftprobeContext.getTraceId();
+  void cassette.saveRecord(tid ? { ...record, traceId: tid } : record).catch(() => {});
 }
 
 /** Engine object for design alignment; used by Express and Fastify. */

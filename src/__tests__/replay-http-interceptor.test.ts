@@ -8,8 +8,7 @@
  * Plan: CAPTURE branch — when mode is CAPTURE, perform request with bypass fetch, tap response body, saveRecord, respondWith.
  */
 
-import type { CassetteStore } from '../store/cassette-store';
-import { setCaptureStore } from '../capture/store-accessor';
+import type { Cassette } from '../types/schema';
 import { handleHttpReplayRequest } from '../replay/http';
 import { SoftprobeContext } from '../context';
 import { softprobe } from '../api';
@@ -207,35 +206,35 @@ describe('Task 18.2.2 HTTP interceptor context mode', () => {
 });
 
 /**
- * Plan: CAPTURE branch — when mode is CAPTURE, bypass fetch, tap response with tapReadableStream, saveRecord, respondWith.
+ * Plan: CAPTURE branch — when mode is CAPTURE, bypass fetch, tap response with tapReadableStream, saveRecord via context cassette, respondWith.
+ * Task 13.10: Use run-scoped storage instead of setCaptureStore.
  */
 describe('HTTP interceptor CAPTURE branch', () => {
   afterEach(() => {
-    setCaptureStore(undefined);
     SoftprobeContext.initGlobal({ mode: 'REPLAY' });
   });
 
   it('when mode is CAPTURE, performs request with bypassFetch, taps body, saves outbound record, responds with response', async () => {
-    const saveRecord = jest.fn<void, [Parameters<CassetteStore['saveRecord']>[0]]>();
-    const mockStore = { saveRecord } as unknown as CassetteStore;
-    setCaptureStore(mockStore);
-    SoftprobeContext.initGlobal({ mode: 'CAPTURE' });
+    const saveRecord = jest.fn<Promise<void>, [import('../types/schema').SoftprobeCassetteRecord]>(async () => {});
+    const mockCassette: Cassette = { loadTrace: async () => [], saveRecord };
 
-    const controller = makeController();
-    const bypassFetch = jest.fn().mockResolvedValue(new Response('captured-body', { status: 200 }));
+    await SoftprobeContext.run({ mode: 'CAPTURE', traceId: 'trace-http-cap', storage: mockCassette }, async () => {
+      const controller = makeController();
+      const bypassFetch = jest.fn().mockResolvedValue(new Response('captured-body', { status: 200 }));
 
-    await handleHttpReplayRequest(
-      {
-        request: new Request('https://example.com/', { method: 'GET' }),
-        controller,
-      },
-      { shouldIgnoreUrl: () => false, bypassFetch }
-    );
+      await handleHttpReplayRequest(
+        {
+          request: new Request('https://example.com/', { method: 'GET' }),
+          controller,
+        },
+        { shouldIgnoreUrl: () => false, bypassFetch }
+      );
 
-    expect(controller.respondWith).toHaveBeenCalledTimes(1);
-    const response = controller.respondWith.mock.calls[0][0];
-    expect(response.status).toBe(200);
-    expect(await response.text()).toBe('captured-body');
+      expect(controller.respondWith).toHaveBeenCalledTimes(1);
+      const response = controller.respondWith.mock.calls[0][0];
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe('captured-body');
+    });
 
     await new Promise((r) => setTimeout(r, 30));
     expect(saveRecord).toHaveBeenCalledTimes(1);

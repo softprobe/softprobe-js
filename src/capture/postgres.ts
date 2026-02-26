@@ -11,8 +11,6 @@
 
 import type { SoftprobeCassetteRecord } from '../types/schema';
 import { SoftprobeContext } from '../context';
-import { saveCaptureRecordFromContext } from '../core/cassette/context-capture';
-import { getCaptureStore } from './store-accessor';
 
 /** Query info passed to the pg requestHook. Contract: PgRequestHookInformation. */
 export interface PgQueryInfo {
@@ -85,12 +83,10 @@ export function buildPostgresResponseHook(): (span: unknown, result: unknown) =>
       identifier: (attrs['softprobe.identifier'] as string) ?? '',
       responsePayload: { rows: data.rows ?? [], rowCount: data.rowCount ?? 0, command: data.command },
     };
-    if (SoftprobeContext.getMode() === 'CAPTURE' && SoftprobeContext.getCassette()) {
-      void saveCaptureRecordFromContext(record).catch(() => {});
-      return;
+    const cassette = SoftprobeContext.getCassette();
+    if (SoftprobeContext.getMode() === 'CAPTURE' && cassette) {
+      const tid = SoftprobeContext.getTraceId();
+      void cassette.saveRecord(tid ? { ...record, traceId: tid } : record).catch(() => {});
     }
-    const store = getCaptureStore();
-    if (!store) return;
-    store.saveRecord(record);
   };
 }

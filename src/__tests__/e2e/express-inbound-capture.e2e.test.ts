@@ -13,7 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import { runServer, waitForServer, closeServer } from './run-child';
-import { loadNdjson } from '../../store/load-ndjson';
+import { loadCassetteRecordsByPath } from '../helpers/read-cassette-file';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
 import { E2eArtifacts } from './helpers/e2e-artifacts';
 
@@ -72,7 +72,7 @@ describe('E2E Express inbound capture (Task 14.4.1)', () => {
     }
 
     expect(fs.existsSync(cassettePath)).toBe(true);
-    const records = await loadNdjson(cassettePath);
+    const records = await loadCassetteRecordsByPath(cassettePath);
 
     // Inbound: the GET / request we sent and the 200 response the app returned.
     const inbound = getInboundRecords(records);

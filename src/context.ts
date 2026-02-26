@@ -47,37 +47,13 @@ let globalDefault: Stored = {
 
 let globalReplayMatcher: SoftprobeMatcher | undefined;
 
-/** Task 13.5: cache keyed by (cassetteDirectory, traceId) for get-or-create cassette per trace. */
-const cassetteCache = new Map<string, Cassette>();
-
-function cacheKey(cassetteDirectory: string, traceId: string): string {
-  return `${cassetteDirectory}\0${traceId}`;
-}
-
 /**
- * Task 13.5: Get or create a cassette for the given directory and traceId. Reuses same instance for same key.
+ * Create a cassette for the given directory and traceId. No cache; each call returns a new instance.
  * Task 13.6: Only this module creates NdjsonCassette; request-storage and middleware use this instead of constructing.
+ * Warning: Do not use directly. Use SoftprobeContext.run() instead.
  */
 function getOrCreateCassette(cassetteDirectory: string, traceId: string): Cassette {
-  const key = cacheKey(cassetteDirectory, traceId);
-  let cassette = cassetteCache.get(key);
-  if (!cassette) {
-    cassette = new NdjsonCassette(cassetteDirectory, traceId);
-    cassetteCache.set(key, cassette);
-  }
-  return cassette;
-}
-
-/**
- * Task 13.6: Test-only factory for a cassette with optional writer (e.g. flush test).
- * Only the context module creates cassette instances; this is the designated test helper.
- */
-export function createTestCassette(
-  cassetteDirectory: string,
-  traceId: string,
-  writer?: { appendLine?: (line: string) => void | Promise<void>; flush?: () => void | Promise<void> }
-): Cassette {
-  return new NdjsonCassette(cassetteDirectory, traceId, writer ?? {});
+  return getCassette() ?? new NdjsonCassette(cassetteDirectory, traceId);
 }
 
 function merge(base: Stored, partial: PartialData): Stored {

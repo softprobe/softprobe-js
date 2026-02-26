@@ -111,8 +111,7 @@ When the active context has `mode === 'CAPTURE'`, the application uses the conte
 
 - Context provides `traceId` and `cassette` (created for this request’s traceId).
 - Inbound and outbound hooks call `cassette.saveRecord(record)` (cassette from `SoftprobeContext.getCassette()`).
-- Writes are best-effort and non-blocking where possible; queued writes should avoid line interleaving.
-- Call `cassette.flush?.()` at request end or process exit as needed.
+- Writes go directly to the cassette file (no in-process buffer). Optional `cassette.flush?.()` remains for future buffered implementations; the default adapter’s flush is a no-op.
 
 ---
 
@@ -131,9 +130,9 @@ When the active context has `mode === 'REPLAY'`, the application uses the contex
 The reference adapter is an NDJSON-backed implementation (e.g. NdjsonCassette) used only inside SoftprobeContext. It is pure storage: read and write only, with no concept of mode.
 
 - Backed by a single file path derived from `cassetteDirectory` and `traceId`.
-- Implements `loadTrace()` via stream read of that file.
-- Implements `saveRecord(record)` via append (with optional queue and flush).
-- Exposes optional `flush` for drain-on-exit.
+- Implements `loadTrace()` by reading that file.
+- Implements `saveRecord(record)` by appending one NDJSON line directly to the file (no in-process buffer). Optimizations such as buffering can be added later.
+- Exposes optional `flush()` as a no-op for the default direct-write implementation; the interface allows future implementations to use flush for draining a buffer.
 
 This adapter is not constructed by init, middleware, or CLI directly; only the SoftprobeContext creation path instantiates it. NDJSON loading and file layout are implementation details behind the Cassette interface.
 

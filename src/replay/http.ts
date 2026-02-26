@@ -8,7 +8,7 @@ import { ConfigManager } from '../config/config-manager';
 import { httpIdentifier } from '../identifier';
 import type { MatcherAction } from '../types/schema';
 import { HttpSpan } from '../bindings/http-span';
-import { getCaptureStore, setCaptureUsesInterceptor } from '../capture/store-accessor';
+import { setCaptureUsesInterceptor } from '../capture/store-accessor';
 import { tapReadableStream } from '../capture/stream-tap';
 import { applyUndiciFetchAsGlobal } from './undici';
 
@@ -98,20 +98,22 @@ async function handleCaptureRequest(
 
   if (!response.body) {
     controller.respondWith(response);
-    const store = getCaptureStore();
-    if (store) {
-      store.saveRecord({
-        version: '4.1',
+    const cassette = SoftprobeContext.getCassette();
+    if (SoftprobeContext.getMode() === 'CAPTURE' && cassette) {
+      const rec = {
+        version: '4.1' as const,
         traceId,
         spanId,
         parentSpanId,
         spanName,
         timestamp: new Date().toISOString(),
-        type: 'outbound',
-        protocol: 'http',
+        type: 'outbound' as const,
+        protocol: 'http' as const,
         identifier,
         responsePayload: { statusCode: response.status },
-      });
+      };
+      const tid = SoftprobeContext.getTraceId();
+      void cassette.saveRecord(tid ? { ...rec, traceId: tid } : rec).catch(() => {});
     }
     return;
   }
@@ -133,25 +135,27 @@ async function handleCaptureRequest(
       controller.respondWith(newResponse);
       getCaptured()
         .then((captured) => {
-          const store = getCaptureStore();
-          if (!store) return;
+          const cassette = SoftprobeContext.getCassette();
+          if (SoftprobeContext.getMode() !== 'CAPTURE' || !cassette) return;
           const bodyStr = captured.body.toString('utf8');
-          store.saveRecord({
-            version: '4.1',
+          const rec = {
+            version: '4.1' as const,
             traceId,
             spanId,
             parentSpanId,
             spanName,
             timestamp: new Date().toISOString(),
-            type: 'outbound',
-            protocol: 'http',
+            type: 'outbound' as const,
+            protocol: 'http' as const,
             identifier,
             responsePayload: {
               statusCode: response.status,
               body: bodyStr,
               ...(captured.truncated && { truncated: true }),
             },
-          });
+          };
+          const tid = SoftprobeContext.getTraceId();
+          void cassette.saveRecord(tid ? { ...rec, traceId: tid } : rec).catch(() => {});
         })
         .catch(() => {});
     } catch {
@@ -162,25 +166,27 @@ async function handleCaptureRequest(
       .clone()
       .text()
       .then((bodyText) => {
-        const store = getCaptureStore();
-        if (!store) return;
+        const cassette = SoftprobeContext.getCassette();
+        if (SoftprobeContext.getMode() !== 'CAPTURE' || !cassette) return;
         const capped = bodyText.length > maxPayloadSize ? bodyText.slice(0, maxPayloadSize) : bodyText;
-        store.saveRecord({
-          version: '4.1',
+        const rec = {
+          version: '4.1' as const,
           traceId,
           spanId,
           parentSpanId,
           spanName,
           timestamp: new Date().toISOString(),
-          type: 'outbound',
-          protocol: 'http',
+          type: 'outbound' as const,
+          protocol: 'http' as const,
           identifier,
           responsePayload: {
             statusCode: response.status,
             body: capped,
             ...(bodyText.length > maxPayloadSize && { truncated: true }),
           },
-        });
+        };
+        const tid = SoftprobeContext.getTraceId();
+        void cassette.saveRecord(tid ? { ...rec, traceId: tid } : rec).catch(() => {});
       })
       .catch(() => {});
     controller.respondWith(response);

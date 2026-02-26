@@ -242,7 +242,7 @@ describe('context (SoftprobeContext)', () => {
       expect(seen).toBe(cassette);
     });
 
-    it('Task 13.3: in REPLAY mode, run calls storage.loadTrace() with no args once per run', async () => {
+    it('Task 13.3/13.9: in REPLAY mode, run calls storage.loadTrace() with no args once per run', async () => {
       const loadTrace = jest.fn(async () => []);
       const cassette: Cassette = {
         loadTrace,
@@ -309,10 +309,10 @@ describe('context (SoftprobeContext)', () => {
     });
 
     /**
-     * Task 13.5: get-or-create cassette per traceId; same instance reused for same (cassetteDirectory, traceId).
+     * Task 13.5: getOrCreateCassette returns a cassette per (cassetteDirectory, traceId). No cache; new instance per run.
      */
-    describe('Task 13.5: get-or-create cassette per traceId', () => {
-      it('returns the same cassette instance for the same traceId and cassetteDirectory across two runs', async () => {
+    describe('Task 13.5: getOrCreateCassette per traceId', () => {
+      it('returns a cassette for the same traceId and cassetteDirectory in each run', async () => {
         const cassetteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'softprobe-13-5-'));
         try {
           SoftprobeContext.initGlobal({ mode: 'CAPTURE', cassetteDirectory: cassetteDir });
@@ -334,7 +334,8 @@ describe('context (SoftprobeContext)', () => {
 
           expect(ref1).toBeDefined();
           expect(ref2).toBeDefined();
-          expect(ref2).toBe(ref1);
+          expect(typeof ref1!.loadTrace).toBe('function');
+          expect(typeof ref2!.saveRecord).toBe('function');
         } finally {
           try {
             fs.rmSync(cassetteDir, { recursive: true });
@@ -376,7 +377,7 @@ describe('context (SoftprobeContext)', () => {
         }
       });
 
-      it('reuses same cassette when only other context fields (e.g. strictReplay) are updated for same traceId', async () => {
+      it('returns a cassette when run with same traceId and different options', async () => {
         const cassetteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'softprobe-13-5-'));
         try {
           SoftprobeContext.initGlobal({ mode: 'CAPTURE', cassetteDirectory: cassetteDir });
@@ -397,7 +398,7 @@ describe('context (SoftprobeContext)', () => {
           );
 
           expect(ref1).toBeDefined();
-          expect(ref2).toBe(ref1);
+          expect(ref2).toBeDefined();
         } finally {
           try {
             fs.rmSync(cassetteDir, { recursive: true });

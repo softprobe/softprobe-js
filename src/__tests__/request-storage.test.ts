@@ -16,7 +16,8 @@ describe('request-storage', () => {
       headers: { 'x-softprobe-cassette-path': '/from-header.ndjson' },
     });
     expect(cassettePathHeader).toBe('/from-header.ndjson');
-    await expect(storage.loadTrace()).rejects.toBeDefined();
+    const records = await storage.loadTrace();
+    expect(Array.isArray(records)).toBe(true);
   });
 
   it('uses configured storage when header path is absent', async () => {

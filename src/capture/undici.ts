@@ -12,8 +12,7 @@
 
 import type { SoftprobeCassetteRecord } from '../types/schema';
 import { SoftprobeContext } from '../context';
-import { saveCaptureRecordFromContext } from '../core/cassette/context-capture';
-import { getCaptureStore, captureUsesInterceptor } from './store-accessor';
+import { captureUsesInterceptor } from './store-accessor';
 
 /** Request-like shape from undici instrumentation (method, url or origin+path). Contract: align with real package. */
 export interface UndiciRequestLike {
@@ -104,12 +103,10 @@ export function buildUndiciResponseHook(): (span: unknown, result: unknown) => v
       requestPayload,
       responsePayload,
     };
-    if (SoftprobeContext.getMode() === 'CAPTURE' && SoftprobeContext.getCassette()) {
-      void saveCaptureRecordFromContext(record).catch(() => {});
-      return;
+    const cassette = SoftprobeContext.getCassette();
+    if (SoftprobeContext.getMode() === 'CAPTURE' && cassette) {
+      const tid = SoftprobeContext.getTraceId();
+      void cassette.saveRecord(tid ? { ...record, traceId: tid } : record).catch(() => {});
     }
-    const store = getCaptureStore();
-    if (!store) return;
-    store.saveRecord(record);
   };
 }

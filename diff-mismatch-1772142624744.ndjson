@@ -1,0 +1,1 @@
+{"version":"4.1","traceId":"trace-diff-mismatch","spanId":"span1","timestamp":"2026-02-26T21:50:24.744Z","type":"inbound","protocol":"http","identifier":"GET /diff-mismatch","responsePayload":{"statusCode":200,"body":{"ok":true}}}

@@ -2,10 +2,12 @@
  * Replay-mode record store accessor. Eager-loaded at boot (REPLAY init or tests)
  * or on demand when request has x-softprobe-mode=REPLAY + x-softprobe-cassette-path.
  * Middleware retrieves only records for the current traceId. Task 15.3.1.
+ * Task 13.10: Load via Cassette (getOrCreateCassette) only; no loadNdjson.
  */
 
+import path from 'path';
 import type { SoftprobeCassetteRecord } from '../types/schema';
-import { loadNdjson } from '../store/load-ndjson';
+import { SoftprobeContext } from '../context';
 
 /** Eager-loaded or on-demand loaded global store. */
 let replayRecordsCache: SoftprobeCassetteRecord[] = [];
@@ -22,14 +24,17 @@ export function setReplayRecordsCache(records: SoftprobeCassetteRecord[]): void 
 }
 
 /**
- * Loads records from a cassette path, with in-memory cache by path.
- * Used when request has x-softprobe-mode=REPLAY and x-softprobe-cassette-path (no server REPLAY boot required).
+ * Loads records from a cassette path (one file per trace: {dir}/{traceId}.ndjson), with in-memory cache by path.
+ * Task 13.10: Uses SoftprobeContext.getOrCreateCassette so read goes through Cassette only.
  */
-export async function loadReplayRecordsFromPath(path: string): Promise<SoftprobeCassetteRecord[]> {
-  const cached = pathCache.get(path);
+export async function loadReplayRecordsFromPath(filePath: string): Promise<SoftprobeCassetteRecord[]> {
+  const cached = pathCache.get(filePath);
   if (cached) return cached;
-  const records = await loadNdjson(path);
-  pathCache.set(path, records);
+  const dir = path.dirname(filePath);
+  const traceId = path.basename(filePath, '.ndjson');
+  const cassette = SoftprobeContext.getOrCreateCassette(dir, traceId);
+  const records = await cassette.loadTrace();
+  pathCache.set(filePath, records);
   return records;
 }
 

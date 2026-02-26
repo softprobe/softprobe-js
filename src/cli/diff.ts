@@ -3,10 +3,11 @@
  * Design §3.1: CLI injects x-softprobe-mode, x-softprobe-trace-id, x-softprobe-cassette-path.
  * Sends cassette path as absolute so the server can load it regardless of its cwd.
  * Sends W3C Traceparent so the server's OTel context uses the same trace id as the cassette.
+ * Task 13.10: Load via Cassette (getOrCreateCassette) only; no loadNdjson.
  */
 
 import path from 'path';
-import { loadNdjson } from '../store/load-ndjson';
+import { SoftprobeContext } from '../context';
 import type { SoftprobeCassetteRecord } from '../types/schema';
 
 /** Builds W3C Traceparent header (version-traceId-spanId-flags) so the server uses the cassette trace. */
@@ -42,7 +43,9 @@ export async function runDiff(file: string, target: string): Promise<RunDiffResu
       `Cassette file not found: ${cassettePath}. Run the diff from the repository root, e.g. bin/softprobe diff examples/basic-app/softprobe-cassettes.ndjson http://localhost:3000`
     );
   }
-  const records = await loadNdjson(cassettePath);
+  const dir = path.dirname(cassettePath);
+  const traceId = path.basename(cassettePath, '.ndjson');
+  const records = await SoftprobeContext.getOrCreateCassette(dir, traceId).loadTrace();
   const inbound = records.find((r: SoftprobeCassetteRecord) => r.type === 'inbound');
   if (!inbound) throw new Error("Cassette missing 'inbound' record.");
 
