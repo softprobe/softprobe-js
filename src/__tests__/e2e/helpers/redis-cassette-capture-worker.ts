@@ -3,7 +3,7 @@
  * Loads softprobe/init (CAPTURE) first so capture hooks are active,
  * then executes SET/GET against Redis.
  *
- * Env: SOFTPROBE_MODE=CAPTURE, SOFTPROBE_CASSETTE_PATH, REDIS_URL, REDIS_KEY, REDIS_VALUE
+ * Env: SOFTPROBE_CONFIG_PATH, REDIS_URL, REDIS_KEY, REDIS_VALUE
  * Stdout: JSON { key, value, reply }
  */
 

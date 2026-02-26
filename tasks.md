@@ -243,6 +243,30 @@ Implementation rule per task:
     - disallow direct calls to `loadNdjson` + synthetic span conversion in those workers.
     - keep assertions focused on behavior parity with runtime boot flow.
 
+- [ ] **Task 11.6 Remove legacy env->YAML compatibility bridge in E2E launcher**
+  - **Problem**: `run-child` currently translates legacy `SOFTPROBE_*` env vars into generated YAML, which hides non-YAML call sites and weakens strict YAML-only enforcement.
+  - **Test**: all E2E entry points pass `SOFTPROBE_CONFIG_PATH` explicitly; `run-child` no longer accepts/rewrites `SOFTPROBE_MODE`/`SOFTPROBE_CASSETTE_PATH`/strict env flags.
+  - **Solution**:
+    - remove legacy env translation logic from `run-child.ts`.
+    - update each E2E test setup to create and pass explicit YAML config files.
+    - fail fast in helpers when `SOFTPROBE_CONFIG_PATH` is missing.
+
+- [ ] **Task 11.7 Define and enforce an E2E coverage matrix to reduce duplication**
+  - **Problem**: overlapping E2E cases increase runtime and maintenance while obscuring the minimum required guarantees per framework/protocol/mode.
+  - **Test**: matrix document/check maps each required scenario to exactly one primary E2E test (`capture`, `replay-offline`, `strict-negative`, `yaml-boot`) per framework/protocol.
+  - **Solution**:
+    - add a concise matrix in `tasks.md` or dedicated test README.
+    - merge/remove duplicate scenarios once matrix coverage is confirmed.
+    - keep only one canonical test per guarantee plus minimal parity checks.
+
+- [ ] **Task 11.8 Introduce shared E2E assertions/helpers across Express/Fastify parity flows**
+  - **Problem**: similar assertions are duplicated between Express and Fastify E2E files, making drift/regressions more likely.
+  - **Test**: both framework suites reuse shared assertion helpers for cassette record validation and replay response parity.
+  - **Solution**:
+    - extract shared assertion utilities under `src/__tests__/e2e/helpers/`.
+    - keep framework-specific setup isolated, but centralize validation logic.
+    - ensure behavior parity is asserted consistently across both frameworks.
+
 ---
 
 ## Done Criteria (V6)

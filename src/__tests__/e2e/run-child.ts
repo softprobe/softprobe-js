@@ -5,11 +5,53 @@
  */
 
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 import { spawn, spawnSync, type ChildProcess } from 'child_process';
 
 export interface RunChildOptions {
   /** When true, run script with `npx ts-node` so .ts files work. */
   useTsNode?: boolean;
+}
+
+const LEGACY_SOFTPROBE_ENV_KEYS = [
+  'SOFTPROBE_MODE',
+  'SOFTPROBE_CASSETTE_PATH',
+  'SOFTPROBE_STRICT_REPLAY',
+  'SOFTPROBE_STRICT_COMPARISON',
+] as const;
+
+function buildYamlConfigFromLegacyEnv(
+  env: Record<string, string>
+): { configPath?: string; childEnv: Record<string, string> } {
+  const childEnv = { ...env };
+  const hasLegacy = LEGACY_SOFTPROBE_ENV_KEYS.some((k) => childEnv[k] != null && childEnv[k] !== '');
+  if (!hasLegacy || childEnv.SOFTPROBE_CONFIG_PATH) {
+    return { childEnv };
+  }
+
+  const mode = childEnv.SOFTPROBE_MODE ?? 'PASSTHROUGH';
+  const cassettePath = childEnv.SOFTPROBE_CASSETTE_PATH ?? '';
+  const strictReplay = childEnv.SOFTPROBE_STRICT_REPLAY === '1';
+  const strictComparison = childEnv.SOFTPROBE_STRICT_COMPARISON === '1';
+  const configPath = path.join(
+    os.tmpdir(),
+    `softprobe-e2e-config-${Date.now()}-${Math.random().toString(36).slice(2)}.yml`
+  );
+
+  const lines = [
+    `mode: ${mode}`,
+    `cassettePath: ${JSON.stringify(cassettePath)}`,
+    'replay:',
+    `  strictReplay: ${strictReplay ? 'true' : 'false'}`,
+    `  strictComparison: ${strictComparison ? 'true' : 'false'}`,
+  ];
+  fs.writeFileSync(configPath, `${lines.join('\n')}\n`, 'utf8');
+  childEnv.SOFTPROBE_CONFIG_PATH = configPath;
+  for (const key of LEGACY_SOFTPROBE_ENV_KEYS) {
+    delete childEnv[key];
+  }
+  return { configPath, childEnv };
 }
 
 /**
@@ -22,24 +64,30 @@ export function runChild(
   options: RunChildOptions = {}
 ): { stdout: string; stderr: string; exitCode: number } {
   const { useTsNode } = options;
+  const { configPath, childEnv } = buildYamlConfigFromLegacyEnv(env);
   const args = useTsNode
     ? ['ts-node', '--transpile-only', scriptPath]
     : [scriptPath];
   const executable = useTsNode ? 'npx' : process.execPath;
-  const result = spawnSync(executable, args, {
-    encoding: 'utf-8',
-    env: { ...process.env, ...env },
-    cwd: path.resolve(__dirname, '..', '..', '..'),
-  });
-  return {
-    stdout: result.stdout ?? '',
-    stderr: result.stderr ?? '',
-    exitCode: result.status ?? -1,
-  };
+  try {
+    const result = spawnSync(executable, args, {
+      encoding: 'utf-8',
+      env: { ...process.env, ...childEnv },
+      cwd: path.resolve(__dirname, '..', '..', '..'),
+    });
+    return {
+      stdout: result.stdout ?? '',
+      stderr: result.stderr ?? '',
+      exitCode: result.status ?? -1,
+    };
+  } finally {
+    if (configPath && fs.existsSync(configPath)) fs.unlinkSync(configPath);
+  }
 }
 
 /** Project root (repo root when tests run from repo). */
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
+const generatedServerConfigByPid = new Map<number, string>();
 
 // #region agent log
 function _dbg(location: string, message: string, data: Record<string, unknown>, hypothesisId: string): void {
@@ -57,6 +105,7 @@ export function runServer(
   options: RunChildOptions = {}
 ): ChildProcess {
   const { useTsNode = true } = options;
+  const { configPath, childEnv } = buildYamlConfigFromLegacyEnv(env);
   const port = env.PORT;
   // #region agent log
   _dbg('run-child.ts:runServer', 'runServer called', { port, scriptPath, cwd: PROJECT_ROOT, useTsNode }, 'A');
@@ -66,13 +115,16 @@ export function runServer(
     : [scriptPath];
   const executable = useTsNode ? 'npx' : process.execPath;
   const child = spawn(executable, args, {
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...childEnv, ...(configPath ? { SOFTPROBE_GENERATED_CONFIG_PATH: configPath } : {}) },
     stdio: ['ignore', 'pipe', 'pipe'],
     cwd: PROJECT_ROOT,
   });
   // #region agent log
   _dbg('run-child.ts:runServer', 'spawn done', { port, pid: child.pid }, 'E');
   // #endregion
+  if (configPath && child.pid) {
+    generatedServerConfigByPid.set(child.pid, configPath);
+  }
   return child;
 }
 
@@ -91,6 +143,11 @@ export async function closeServer(child: ChildProcess): Promise<void> {
   child.stdin?.destroy();
   child.stdout?.destroy();
   child.stderr?.destroy();
+  const generatedConfigPath = child.pid ? generatedServerConfigByPid.get(child.pid) : undefined;
+  if (generatedConfigPath && fs.existsSync(generatedConfigPath)) {
+    fs.unlinkSync(generatedConfigPath);
+  }
+  if (child.pid) generatedServerConfigByPid.delete(child.pid);
 }
 
 /** Poll until GET http://127.0.0.1:port/ returns any HTTP response (server is listening and responding) or timeout. */

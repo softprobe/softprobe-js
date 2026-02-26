@@ -3,7 +3,7 @@
  * Loads softprobe/init (CAPTURE) first so CassetteStore is set; runs one pg query;
  * on exit the store flushes and NDJSON is written.
  *
- * Env: SOFTPROBE_MODE=CAPTURE, SOFTPROBE_CASSETTE_PATH, PG_URL
+ * Env: SOFTPROBE_CONFIG_PATH, PG_URL
  * Stdout: JSON { rows, rowCount } from the query (for optional assertions).
  */
 

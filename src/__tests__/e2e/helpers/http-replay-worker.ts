@@ -1,16 +1,16 @@
 /**
  * Task 12.4.2: Child worker for HTTP replay E2E.
- * Env: SOFTPROBE_MODE=REPLAY, SOFTPROBE_CASSETTE_PATH, REPLAY_URL
+ * Env: SOFTPROBE_CONFIG_PATH, REPLAY_URL
  * Stdout: JSON { status, body }
  */
 
 import '../../../init';
 import { loadNdjson } from '../../../store/load-ndjson';
-import { softprobe } from '../../../api';
 import { SemanticMatcher } from '../../../replay/matcher';
 import type { SoftprobeCassetteRecord } from '../../../types/schema';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { runSoftprobeScope } from '../../helpers/run-softprobe-scope';
+import { ConfigManager } from '../../../config/config-manager';
 
 /** Builds a minimal span-like for SemanticMatcher (E2E uses flat match by identifier). */
 function toSpan(identifier: string, payload: unknown): Record<string, unknown> {
@@ -25,9 +25,16 @@ function toSpan(identifier: string, payload: unknown): Record<string, unknown> {
 
 async function main(): Promise<void> {
   const replayUrl = process.env.REPLAY_URL;
-  const cassettePath = process.env.SOFTPROBE_CASSETTE_PATH;
+  const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
+  let cassettePath = '';
+  try {
+    const cfg = new ConfigManager(configPath).get();
+    cassettePath = cfg.cassettePath ?? '';
+  } catch {
+    cassettePath = '';
+  }
   if (!replayUrl) throw new Error('REPLAY_URL is required');
-  if (!cassettePath) throw new Error('SOFTPROBE_CASSETTE_PATH is required');
+  if (!cassettePath) throw new Error('cassettePath is required in config');
 
   const records = await loadNdjson(cassettePath) as SoftprobeCassetteRecord[];
   const spans = records

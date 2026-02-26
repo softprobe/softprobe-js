@@ -1,6 +1,6 @@
 /**
  * Task 13.1: Child worker for strict-replay E2E.
- * Env: SOFTPROBE_MODE=REPLAY, SOFTPROBE_STRICT_REPLAY=1, SOFTPROBE_CASSETTE_PATH, UNRECORDED_URL
+ * Env: SOFTPROBE_CONFIG_PATH, UNRECORDED_URL
  * Fetches UNRECORDED_URL (not in cassette); expects 500 from interceptor, not passthrough.
  * Stdout: JSON { status, body }
  */
@@ -12,6 +12,7 @@ import { SemanticMatcher } from '../../../replay/matcher';
 import type { SoftprobeCassetteRecord } from '../../../types/schema';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { runSoftprobeScope } from '../../helpers/run-softprobe-scope';
+import { ConfigManager } from '../../../config/config-manager';
 
 function toSpan(identifier: string, payload: unknown): Record<string, unknown> {
   return {
@@ -25,9 +26,15 @@ function toSpan(identifier: string, payload: unknown): Record<string, unknown> {
 
 async function main(): Promise<void> {
   const unrecordedUrl = process.env.UNRECORDED_URL;
-  const cassettePath = process.env.SOFTPROBE_CASSETTE_PATH;
+  const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
+  let cassettePath = '';
+  try {
+    cassettePath = new ConfigManager(configPath).get().cassettePath ?? '';
+  } catch {
+    cassettePath = '';
+  }
   if (!unrecordedUrl) throw new Error('UNRECORDED_URL is required');
-  if (!cassettePath) throw new Error('SOFTPROBE_CASSETTE_PATH is required');
+  if (!cassettePath) throw new Error('cassettePath is required in config');
 
   const records = (await loadNdjson(cassettePath)) as SoftprobeCassetteRecord[];
   const spans = records

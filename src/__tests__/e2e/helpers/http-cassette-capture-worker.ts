@@ -1,6 +1,6 @@
 /**
  * Task 12.4.1: Child worker for HTTP NDJSON cassette capture E2E.
- * Env: SOFTPROBE_MODE=CAPTURE, SOFTPROBE_CASSETTE_PATH, CAPTURE_URL
+ * Env: SOFTPROBE_CONFIG_PATH, CAPTURE_URL
  * Stdout: JSON { url, status, body }
  */
 

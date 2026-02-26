@@ -1,8 +1,8 @@
 /**
  * Shared Express app for inbound capture and replay E2E (Tasks 14.4.1, 14.4.2).
- * Mode is driven by env: SOFTPROBE_MODE=CAPTURE | REPLAY.
- * - CAPTURE: SOFTPROBE_CASSETTE_PATH required; GET /exit flushes store and exits.
- * - REPLAY: SOFTPROBE_CASSETTE_PATH required; loads cassette and sets global matcher before listen; GET /exit exits.
+ * Mode is driven by YAML config (SOFTPROBE_CONFIG_PATH).
+ * - CAPTURE: cassettePath in config; GET /exit flushes store and exits.
+ * - REPLAY: cassettePath in config; loads cassette and sets global matcher before listen; GET /exit exits.
  * - SOFTPROBE_E2E_OUTBOUND_URL optionally overrides default outbound URL for deterministic local tests.
  * - SOFTPROBE_E2E_UNRECORDED_URL optionally overrides strict-negative outbound URL.
  * PORT required for both.
@@ -14,6 +14,7 @@ import { loadNdjson } from '../../../store/load-ndjson';
 import { softprobe } from '../../../api';
 import { SoftprobeMatcher } from '../../../replay/softprobe-matcher';
 import { createDefaultMatcher } from '../../../replay/extract-key';
+import { ConfigManager } from '../../../config/config-manager';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 
@@ -22,7 +23,18 @@ const sdk = new NodeSDK({
 });
 sdk.start();
 
-const isReplay = process.env.SOFTPROBE_MODE === 'REPLAY';
+const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
+let softprobeMode = 'PASSTHROUGH';
+let cassettePathFromConfig = '';
+try {
+  const cfg = new ConfigManager(configPath).get();
+  softprobeMode = cfg.mode ?? 'PASSTHROUGH';
+  cassettePathFromConfig = cfg.cassettePath ?? '';
+} catch {
+  softprobeMode = 'PASSTHROUGH';
+  cassettePathFromConfig = '';
+}
+const isReplay = softprobeMode === 'REPLAY';
 const outboundUrl = process.env.SOFTPROBE_E2E_OUTBOUND_URL || 'https://httpbin.org/get';
 const unrecordedUrl = process.env.SOFTPROBE_E2E_UNRECORDED_URL || 'https://httpbin.org/post';
 
@@ -37,8 +49,8 @@ async function startServer(): Promise<void> {
   _dbg('express-inbound-worker.ts:startServer', 'startServer entered', { port: process.env.PORT, isReplay });
   // #endregion
   if (isReplay) {
-    const cassettePath = process.env.SOFTPROBE_CASSETTE_PATH;
-    if (!cassettePath) throw new Error('SOFTPROBE_CASSETTE_PATH is required for REPLAY');
+    const cassettePath = cassettePathFromConfig;
+    if (!cassettePath) throw new Error('cassettePath is required in config for REPLAY');
     const records = await loadNdjson(cassettePath);
     // #region agent log
     _dbg('express-inbound-worker.ts:startServer', 'loadNdjson done', { recordCount: records.length });

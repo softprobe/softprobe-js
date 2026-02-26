@@ -43,14 +43,11 @@ try {
 }
 
 if (mode === 'CAPTURE') {
-  const { initCapture } = require('./capture/init');
   const { setCaptureStore } = require('./capture/store-accessor');
   const { CassetteStore } = require('./store/cassette-store');
   const { applyAutoInstrumentationMutator } = require('./capture/mutator');
   const { applyFrameworkMutators } = require('./capture/framework-mutator');
   const { setupHttpReplayInterceptor } = require('./replay/http');
-
-  initCapture();
 
   const outPath = cassettePath || './softprobe-cassettes.ndjson';
   const store = new CassetteStore(outPath);
@@ -67,7 +64,6 @@ if (mode === 'CAPTURE') {
 // Also apply replay patches (undici, pg, redis) so replay works via headers (x-softprobe-mode: REPLAY + x-softprobe-cassette-path);
 // middleware loads cassette on demand; no SOFTPROBE_MODE=REPLAY required at boot.
 if (mode === 'PASSTHROUGH') {
-  const { initCapture } = require('./capture/init');
   const { setCaptureStore } = require('./capture/store-accessor');
   const { contextRoutingCaptureStore } = require('./store/context-routing-capture-store');
   const { applyAutoInstrumentationMutator } = require('./capture/mutator');
@@ -77,7 +73,6 @@ if (mode === 'PASSTHROUGH') {
   const { setupRedisReplay } = require('./replay/redis');
   const { setupUndiciReplay } = require('./replay/undici');
 
-  initCapture();
   setCaptureStore(contextRoutingCaptureStore);
   process.on('beforeExit', () => contextRoutingCaptureStore.flushOnExit());
 

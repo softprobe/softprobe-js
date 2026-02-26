@@ -21,6 +21,8 @@ function getHttpOutboundRecords(records: SoftprobeCassetteRecord[]): SoftprobeCa
 
 describe('E2E HTTP cassette capture/replay (Task 12.4)', () => {
   let cassettePath: string;
+  let captureConfigPath: string;
+  let replayConfigPath: string;
   let recordedUrl: string;
 
   beforeAll(() => {
@@ -28,11 +30,23 @@ describe('E2E HTTP cassette capture/replay (Task 12.4)', () => {
       os.tmpdir(),
       `softprobe-e2e-cassette-http-${Date.now()}.ndjson`
     );
+    captureConfigPath = path.join(
+      os.tmpdir(),
+      `softprobe-e2e-http-capture-${Date.now()}.yml`
+    );
+    replayConfigPath = path.join(
+      os.tmpdir(),
+      `softprobe-e2e-http-replay-${Date.now()}.yml`
+    );
     if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    if (fs.existsSync(captureConfigPath)) fs.unlinkSync(captureConfigPath);
+    if (fs.existsSync(replayConfigPath)) fs.unlinkSync(replayConfigPath);
   });
 
   afterAll(() => {
     if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    if (fs.existsSync(captureConfigPath)) fs.unlinkSync(captureConfigPath);
+    if (fs.existsSync(replayConfigPath)) fs.unlinkSync(replayConfigPath);
   });
 
   it('12.4.1: CAPTURE writes NDJSON', async () => {
@@ -45,11 +59,15 @@ describe('E2E HTTP cassette capture/replay (Task 12.4)', () => {
     try {
       await waitForServer(probePort, 20000);
       const captureUrl = `http://127.0.0.1:${probePort}/payload`;
+      fs.writeFileSync(
+        captureConfigPath,
+        `mode: CAPTURE\ncassettePath: ${JSON.stringify(cassettePath)}\n`,
+        'utf8'
+      );
       const result = runChild(
         CAPTURE_WORKER,
         {
-          SOFTPROBE_MODE: 'CAPTURE',
-          SOFTPROBE_CASSETTE_PATH: cassettePath,
+          SOFTPROBE_CONFIG_PATH: captureConfigPath,
           CAPTURE_URL: captureUrl,
         },
         { useTsNode: true }
@@ -81,11 +99,15 @@ describe('E2E HTTP cassette capture/replay (Task 12.4)', () => {
   it('12.4.2: REPLAY runs with network disabled (no live server)', () => {
     // The capture worker closes its local HTTP server before exiting. If replay did passthrough,
     // this fetch would fail with connection refused.
+    fs.writeFileSync(
+      replayConfigPath,
+      `mode: REPLAY\ncassettePath: ${JSON.stringify(cassettePath)}\n`,
+      'utf8'
+    );
     const result = runChild(
       REPLAY_WORKER,
       {
-        SOFTPROBE_MODE: 'REPLAY',
-        SOFTPROBE_CASSETTE_PATH: cassettePath,
+        SOFTPROBE_CONFIG_PATH: replayConfigPath,
         REPLAY_URL: recordedUrl,
       },
       { useTsNode: true }

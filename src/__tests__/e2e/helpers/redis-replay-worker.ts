@@ -3,13 +3,14 @@
  * Loads softprobe/init (REPLAY) first, then runs Redis GET under
  * runSoftprobeScope({ cassettePath }).
  *
- * Env: SOFTPROBE_MODE=REPLAY, SOFTPROBE_CASSETTE_PATH, REDIS_KEY
+ * Env: SOFTPROBE_CONFIG_PATH, REDIS_KEY
  * Stdout: JSON { value }
  */
 
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
 import { runSoftprobeScope } from '../../helpers/run-softprobe-scope';
+import { ConfigManager } from '../../../config/config-manager';
 
 require('../../../init');
 
@@ -21,9 +22,15 @@ async function main() {
   const { createClient } = require('redis');
 
   const key = process.env.REDIS_KEY;
-  const cassettePath = process.env.SOFTPROBE_CASSETTE_PATH;
+  const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
+  let cassettePath = '';
+  try {
+    cassettePath = new ConfigManager(configPath).get().cassettePath ?? '';
+  } catch {
+    cassettePath = '';
+  }
   if (!key) throw new Error('REDIS_KEY is required');
-  if (!cassettePath) throw new Error('SOFTPROBE_CASSETTE_PATH is required');
+  if (!cassettePath) throw new Error('cassettePath is required in config');
 
   // Intentionally do not connect to a live Redis server.
   const client = createClient({ url: 'redis://127.0.0.1:6399' });

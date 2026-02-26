@@ -3,12 +3,13 @@
  * Loads softprobe/init (REPLAY), then runWithContext with cassette; runs pg query
  * which is mocked from the cassette — no real DB connection.
  *
- * Env: SOFTPROBE_MODE=REPLAY, SOFTPROBE_CASSETTE_PATH
+ * Env: SOFTPROBE_CONFIG_PATH
  * Stdout: JSON { rows, rowCount } from replayed query.
  */
 
 import path from 'path';
 import { runSoftprobeScope } from '../../helpers/run-softprobe-scope';
+import { ConfigManager } from '../../../config/config-manager';
 
 const initPath = path.join(__dirname, '..', '..', '..', 'init.ts');
 require(initPath);
@@ -19,10 +20,15 @@ async function main() {
   const sdk = new NodeSDK({ instrumentations: getNodeAutoInstrumentations() });
   sdk.start();
 
-  const { softprobe } = require('../../../api');
-  const cassettePath = process.env.SOFTPROBE_CASSETTE_PATH;
+  const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
+  let cassettePath = '';
+  try {
+    cassettePath = new ConfigManager(configPath).get().cassettePath ?? '';
+  } catch {
+    cassettePath = '';
+  }
   if (!cassettePath) {
-    process.stderr.write('SOFTPROBE_CASSETTE_PATH required');
+    process.stderr.write('cassettePath is required in config');
     process.exit(1);
   }
 

@@ -10,9 +10,12 @@ describe('softprobe/init boot', () => {
     else delete process.env.SOFTPROBE_CONFIG_PATH;
   });
 
-  it('runs capture init when config mode is CAPTURE', () => {
-    const initCapture = jest.fn();
-
+  it('runs capture boot wiring when config mode is CAPTURE', () => {
+    const setCaptureStore = jest.fn();
+    const CassetteStore = jest.fn(() => ({ flushOnExit: jest.fn() }));
+    const applyAutoInstrumentationMutator = jest.fn();
+    const applyFrameworkMutators = jest.fn();
+    const setupHttpReplayInterceptor = jest.fn();
     jest.isolateModules(() => {
       jest.doMock('../config/config-manager', () => ({
         ConfigManager: class {
@@ -21,14 +24,21 @@ describe('softprobe/init boot', () => {
           }
         },
       }));
-      jest.doMock('../capture/init', () => ({ initCapture }));
+      jest.doMock('../capture/store-accessor', () => ({ setCaptureStore }));
+      jest.doMock('../store/cassette-store', () => ({ CassetteStore }));
+      jest.doMock('../capture/mutator', () => ({ applyAutoInstrumentationMutator }));
+      jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators }));
+      jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor }));
       require('../init');
-      expect(initCapture).toHaveBeenCalledTimes(1);
+      expect(CassetteStore).toHaveBeenCalledWith('/tmp/capture.ndjson');
+      expect(setCaptureStore).toHaveBeenCalledTimes(1);
+      expect(applyAutoInstrumentationMutator).toHaveBeenCalledTimes(1);
+      expect(applyFrameworkMutators).toHaveBeenCalledTimes(1);
+      expect((globalThis as unknown as { __softprobeApplyHttpReplay?: unknown }).__softprobeApplyHttpReplay).toBe(setupHttpReplayInterceptor);
     });
   });
 
   it('sets capture cassette store when config mode is CAPTURE and cassette path is set', () => {
-    const initCapture = jest.fn();
     const setCaptureStore = jest.fn();
     const fakeStore = { flushOnExit: jest.fn() };
     const CassetteStore = jest.fn(() => fakeStore);
@@ -41,11 +51,9 @@ describe('softprobe/init boot', () => {
           }
         },
       }));
-      jest.doMock('../capture/init', () => ({ initCapture }));
       jest.doMock('../capture/store-accessor', () => ({ setCaptureStore }));
       jest.doMock('../store/cassette-store', () => ({ CassetteStore }));
       require('../init');
-      expect(initCapture).toHaveBeenCalledTimes(1);
       expect(CassetteStore).toHaveBeenCalledWith('/tmp/capture.ndjson');
       expect(setCaptureStore).toHaveBeenCalledWith(fakeStore);
     });

@@ -19,26 +19,21 @@ describe('Import-order guard (pg)', () => {
   });
 
   it('Task 8.3: boot import throws when pg query was wrapped before softprobe init in REPLAY mode', () => {
-    const originalMode = process.env.SOFTPROBE_MODE;
-    const originalPath = process.env.SOFTPROBE_CASSETTE_PATH;
-    process.env.SOFTPROBE_MODE = 'REPLAY';
-    process.env.SOFTPROBE_CASSETTE_PATH = '';
-
-    try {
-      jest.isolateModules(() => {
-        jest.doMock('pg', () => {
-          function Client(this: unknown) {}
-          (Client as unknown as { prototype: { query: () => void } }).prototype.query = () => undefined;
-          (Client as unknown as { prototype: { query: { __wrapped?: boolean } } }).prototype.query.__wrapped = true;
-          return { Client };
-        });
-        expect(() => require('../init')).toThrow(/import .*softprobe\/init.*BEFORE OTel/i);
+    jest.isolateModules(() => {
+      jest.doMock('../config/config-manager', () => ({
+        ConfigManager: class {
+          get() {
+            return { mode: 'REPLAY', cassettePath: '' };
+          }
+        },
+      }));
+      jest.doMock('pg', () => {
+        function Client(this: unknown) {}
+        (Client as unknown as { prototype: { query: () => void } }).prototype.query = () => undefined;
+        (Client as unknown as { prototype: { query: { __wrapped?: boolean } } }).prototype.query.__wrapped = true;
+        return { Client };
       });
-    } finally {
-      if (originalMode !== undefined) process.env.SOFTPROBE_MODE = originalMode;
-      else delete process.env.SOFTPROBE_MODE;
-      if (originalPath !== undefined) process.env.SOFTPROBE_CASSETTE_PATH = originalPath;
-      else delete process.env.SOFTPROBE_CASSETTE_PATH;
-    }
+      expect(() => require('../init')).toThrow(/import .*softprobe\/init.*BEFORE OTel/i);
+    });
   });
 });
