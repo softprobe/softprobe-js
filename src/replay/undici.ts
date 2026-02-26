@@ -21,6 +21,13 @@ interface RecordedHttpPayload {
   headers?: Record<string, string>;
 }
 
+function strictNoMatchResponse(): Response {
+  return new Response(
+    JSON.stringify({ error: '[Softprobe] No recorded traces found for http request' }),
+    { status: 500, headers: { 'content-type': 'application/json' } }
+  );
+}
+
 function toTextBody(body: unknown): string {
   if (typeof body === 'string') return body;
   if (body == null) return '{}';
@@ -83,6 +90,10 @@ export function setupUndiciReplay(): void {
         return Promise.resolve(
           new Response(bodyStr, { status, headers: payload.headers })
         );
+      }
+
+      if (SoftprobeContext.getStrictReplay()) {
+        return Promise.resolve(strictNoMatchResponse());
       }
 
       return original(input, init);

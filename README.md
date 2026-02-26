@@ -20,14 +20,24 @@ import { NodeSDK } from "@opentelemetry/sdk-node";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 ```
 
-2. **Replay in tests** with `runWithContext`:
+2. **Replay in tests** with `run({ mode, storage, traceId }, fn)`:
 
 ```ts
 import { softprobe } from "softprobe";
 
 it("replays from cassette", async () => {
-  await softprobe.runWithContext(
-    { traceId: "prod-trace-345", cassettePath: "./softprobe-cassettes.ndjson" },
+  const storage = {
+    async loadTrace(traceId) {
+      // Load and return records for this traceId from your NDJSON cassette.
+      return [];
+    },
+    async saveRecord() {
+      // Replay-only example: no-op.
+    },
+  };
+
+  await softprobe.run(
+    { mode: "REPLAY", storage: storage, traceId: "prod-trace-345" },
     async () => {
       const res = await fetch("http://localhost:3000/users/1");
       expect(res.status).toBe(200);
@@ -107,4 +117,7 @@ npx softprobe diff ./softprobe-cassettes.ndjson http://localhost:3000
 ## More
 
 - **Example app:** `examples/basic-app` — capture, replay, and custom matcher.
-- **Design:** [design.md](design.md) — architecture, cassette format, and coordination headers.
+- **Design index:** [design.md](design.md) — architecture, cassette format, and coordination headers.
+- **Context design:** [design-context.md](design-context.md)
+- **Cassette design:** [design-cassette.md](design-cassette.md)
+- **Matcher design:** [design-matcher.md](design-matcher.md)

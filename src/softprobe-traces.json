@@ -1,0 +1,92 @@
+{
+  "d26a65e25f3c865acdb9bc818cb7663c": [
+    {
+      "traceId": "d26a65e25f3c865acdb9bc818cb7663c",
+      "spanId": "83666684a019cb93",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "127.0.0.1",
+        "net.peer.port": "7242"
+      }
+    }
+  ],
+  "03b14b602829630522a34a12a09d6154": [
+    {
+      "traceId": "03b14b602829630522a34a12a09d6154",
+      "spanId": "1ae69cb7a910f87e",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "127.0.0.1",
+        "net.peer.port": "7242"
+      }
+    }
+  ],
+  "2aadbabbec71bcd1a5bab8c6e9456341": [
+    {
+      "traceId": "2aadbabbec71bcd1a5bab8c6e9456341",
+      "spanId": "d91e20b6ae33fbaf",
+      "name": "tcp.connect",
+      "attributes": {
+        "net.transport": "ip_tcp",
+        "net.peer.name": "127.0.0.1",
+        "net.peer.port": "7242"
+      }
+    }
+  ],
+  "19b96b8e39330cc5f883bfb06facbf5c": [
+    {
+      "traceId": "19b96b8e39330cc5f883bfb06facbf5c",
+      "spanId": "9c90e76342677dcb",
+      "name": "POST",
+      "attributes": {
+        "http.request.method": "POST",
+        "http.request.method_original": "POST",
+        "url.full": "http://127.0.0.1:7242/ingest/abae8b62-1eb2-436b-99c9-e8e6a9718ab9",
+        "url.path": "/ingest/abae8b62-1eb2-436b-99c9-e8e6a9718ab9",
+        "url.query": "",
+        "url.scheme": "http",
+        "server.address": "127.0.0.1",
+        "server.port": 7242,
+        "user_agent.original": "undici"
+      }
+    }
+  ],
+  "943bf4cfa300924aa9da2b3df6f75ff8": [
+    {
+      "traceId": "943bf4cfa300924aa9da2b3df6f75ff8",
+      "spanId": "e1a920ed1224d938",
+      "name": "POST",
+      "attributes": {
+        "http.request.method": "POST",
+        "http.request.method_original": "POST",
+        "url.full": "http://127.0.0.1:7242/ingest/abae8b62-1eb2-436b-99c9-e8e6a9718ab9",
+        "url.path": "/ingest/abae8b62-1eb2-436b-99c9-e8e6a9718ab9",
+        "url.query": "",
+        "url.scheme": "http",
+        "server.address": "127.0.0.1",
+        "server.port": 7242,
+        "user_agent.original": "undici"
+      }
+    }
+  ],
+  "0c52e095cfc4fd422bde9fd0eae7821d": [
+    {
+      "traceId": "0c52e095cfc4fd422bde9fd0eae7821d",
+      "spanId": "247d9ef662ca2d60",
+      "name": "POST",
+      "attributes": {
+        "http.request.method": "POST",
+        "http.request.method_original": "POST",
+        "url.full": "http://127.0.0.1:7242/ingest/abae8b62-1eb2-436b-99c9-e8e6a9718ab9",
+        "url.path": "/ingest/abae8b62-1eb2-436b-99c9-e8e6a9718ab9",
+        "url.query": "",
+        "url.scheme": "http",
+        "server.address": "127.0.0.1",
+        "server.port": 7242,
+        "user_agent.original": "undici"
+      }
+    }
+  ]
+}

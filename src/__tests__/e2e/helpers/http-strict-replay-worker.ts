@@ -39,7 +39,7 @@ async function main(): Promise<void> {
 
   const matcher = new SemanticMatcher(spans as unknown as ReadableSpan[]);
   await runSoftprobeScope(
-    { traceId: 'strict-e2e-replay', matcher },
+    { traceId: 'strict-e2e-replay', matcher, strictReplay: true },
     async () => {
       const response = await fetch(unrecordedUrl);
       const body = await response.text();

@@ -174,26 +174,26 @@ Implementation rule per task:
 
 ## 9) Regression + E2E Coverage — Atomic
 
-- [ ] **Task 9.1 Capture E2E writes inbound+outbound NDJSON via cassette interface**
+- [x] **Task 9.1 Capture E2E writes inbound+outbound NDJSON via cassette interface** — `test(e2e): stabilize task 9.1 capture cassette flow with local outbound target`
   - **Test**: recorded file contains expected trace-scoped records.
 
-- [ ] **Task 9.2 Replay E2E runs with dependencies offline**
+- [x] **Task 9.2 Replay E2E runs with dependencies offline** — `test(e2e): add strict offline replay coverage across http/postgres/redis`
   - **Test**: strict replay succeeds for recorded paths without live DB/Redis/HTTP.
 
-- [ ] **Task 9.3 Strict negative E2E for unrecorded call**
+- [x] **Task 9.3 Strict negative E2E for unrecorded call** — `test(e2e): add strict negative replay coverage with network probe no-hit assertion`
   - **Test**: unrecorded outbound call fails deterministically and does not hit network.
 
 ---
 
 ## 10) Docs + Consistency Cleanup — Atomic
 
-- [ ] **Task 10.1 Update README snippets to `run({ mode, storage, traceId }, fn)`**
+- [x] **Task 10.1 Update README snippets to `run({ mode, storage, traceId }, fn)`** — `test(docs): add README API snippet guard and migrate quick-start replay example`
   - **Test**: grep/snapshot check contains no stale `cassettePath` API examples for new flow.
 
-- [ ] **Task 10.2 Remove stale legacy wording across docs/comments**
+- [x] **Task 10.2 Remove stale legacy wording across docs/comments** — `test(docs): add legacy wording grep guard and migrate example task docs to run API`
   - **Test**: grep check for removed legacy terms (e.g., deprecated context API names) in active docs.
 
-- [ ] **Task 10.3 Keep design links consistent with `design-*.md` convention**
+- [x] **Task 10.3 Keep design links consistent with `design-*.md` convention** — `test(docs): add design link checks and wire README docs to focused design specs`
   - **Test**: link check for `design.md`, `design-context.md`, `design-cassette.md`, `design-matcher.md`.
 
 ---

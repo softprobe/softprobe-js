@@ -20,8 +20,8 @@
 * **Test**: Record via capture headers → cassette has inbound; run `softprobe diff` → exit 0 and response matches recorded (or E2E asserts CLI receives expected response).
 
 * [ ] **Task 16.4.1 Example app: document or demonstrate custom matcher (optional)**
-* **User-facing**: When the server handles a replay request (from CLI or tests), custom matchers can be used via `softprobe.runWithContext` / `getActiveMatcher().use(...)` in tests or in app code.
-* **Test**: `custom-matcher.ts` (or test) uses `softprobe.runWithContext({ traceId, cassettePath }, async () => { ... })` and matcher override; verify behavior.
+* **User-facing**: When the server handles a replay request (from CLI or tests), custom matchers can be used via `softprobe.run({ mode, storage, traceId }, async () => { ... })` / `getActiveMatcher().use(...)` in tests or in app code.
+* **Test**: `custom-matcher.ts` (or test) uses `softprobe.run({ mode: 'REPLAY', storage, traceId }, async () => { ... })` and matcher override; verify behavior.
 
 ---
 
@@ -99,7 +99,7 @@
 
 - [ ] Task 20.4.2 Add “how to use custom matcher” snippet to README
   - Include a complete code sample using:
-    - `softprobe.runWithContext({ traceId, cassettePath }, async () => { ... })`
+    - `softprobe.run({ mode: 'REPLAY', storage, traceId }, async () => { ... })`
     - `softprobe.getActiveMatcher().use((span, records) => { ... })`
   - Test: docs lint (if any) or simple presence check
 

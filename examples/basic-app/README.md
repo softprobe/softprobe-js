@@ -167,4 +167,4 @@ npm run example:down
 | Record a request | Send the request with `x-softprobe-mode: CAPTURE` and `x-softprobe-cassette-path: <path>`. Call `/flush` (or your flush endpoint) so the cassette is written. |
 | Replay and compare | Run your server with `SOFTPROBE_MODE=REPLAY` and `SOFTPROBE_CASSETTE_PATH=<path>`. Run `softprobe diff <cassette.ndjson> <targetUrl>`. |
 
-See the main [Softprobe README](../../README.md) and [design.md](../../design.md) for more on the cassette format and coordination headers.
+See the main [Softprobe README](../../README.md), [design.md](../../design.md), [design-context.md](../../design-context.md), [design-cassette.md](../../design-cassette.md), and [design-matcher.md](../../design-matcher.md) for more on cassette format and coordination headers.

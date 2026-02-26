@@ -3,6 +3,8 @@
  * Mode is driven by env: SOFTPROBE_MODE=CAPTURE | REPLAY.
  * - CAPTURE: SOFTPROBE_CASSETTE_PATH required; GET /exit flushes store and exits.
  * - REPLAY: SOFTPROBE_CASSETTE_PATH required; loads cassette and sets global matcher before listen; GET /exit exits.
+ * - SOFTPROBE_E2E_OUTBOUND_URL optionally overrides default outbound URL for deterministic local tests.
+ * - SOFTPROBE_E2E_UNRECORDED_URL optionally overrides strict-negative outbound URL.
  * PORT required for both.
  */
 
@@ -21,6 +23,8 @@ const sdk = new NodeSDK({
 sdk.start();
 
 const isReplay = process.env.SOFTPROBE_MODE === 'REPLAY';
+const outboundUrl = process.env.SOFTPROBE_E2E_OUTBOUND_URL || 'https://httpbin.org/get';
+const unrecordedUrl = process.env.SOFTPROBE_E2E_UNRECORDED_URL || 'https://httpbin.org/post';
 
 // #region agent log
 function _dbg(location: string, message: string, data: Record<string, unknown>): void {
@@ -49,9 +53,17 @@ async function startServer(): Promise<void> {
   const app = express();
 
   app.get('/', async (_req: unknown, res: { status: (n: number) => { json: (body: unknown) => void }; json: (body: unknown) => void }) => {
-    const r = await fetch('https://httpbin.org/get');
+    const r = await fetch(outboundUrl, { signal: AbortSignal.timeout(15000) });
     const j = (await r.json()) as Record<string, unknown>;
     res.status(200).json({ ok: true, outbound: j });
+  });
+
+  /** Route that performs an unrecorded outbound call; in strict replay this should return softprobe 500 and never passthrough. */
+  app.get('/unrecorded', async (_req: unknown, res: { status: (n: number) => { json: (body: unknown) => void } }) => {
+    const r = await fetch(unrecordedUrl, { signal: AbortSignal.timeout(15000) });
+    const j = (await r.json()) as Record<string, unknown>;
+    if (!r.ok) return res.status(r.status).json(j);
+    return res.status(200).json({ ok: true, outbound: j });
   });
 
   app.get('/exit', (_req: unknown, res: { send: (s: string) => void }) => {

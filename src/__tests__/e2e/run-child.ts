@@ -39,7 +39,7 @@ export function runChild(
 }
 
 /** Project root (repo root when tests run from repo). */
-const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 
 // #region agent log
 function _dbg(location: string, message: string, data: Record<string, unknown>, hypothesisId: string): void {
