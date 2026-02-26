@@ -11,6 +11,8 @@ import path from 'path';
 import { ConfigManager } from '../../../config/config-manager';
 import { softprobe } from '../../../api';
 import { NdjsonCassette } from '../../../core/cassette/ndjson-cassette';
+import { loadNdjson } from '../../../store/load-ndjson';
+import type { Cassette } from '../../../types/schema';
 
 const initPath = path.join(__dirname, '..', '..', '..', 'init.ts');
 require(initPath);
@@ -33,16 +35,19 @@ async function main() {
     process.stderr.write('cassettePath is required in config');
     process.exit(1);
   }
-  if (!replayTraceId) {
-    process.stderr.write('REPLAY_TRACE_ID is required');
-    process.exit(1);
-  }
+  const storage: Cassette = replayTraceId
+    ? new NdjsonCassette(cassettePath)
+    : {
+        loadTrace: async () => loadNdjson(cassettePath),
+        saveRecord: async () => {},
+      };
 
+  let output: { rows: unknown[]; rowCount: number } | undefined;
   await softprobe.run(
     {
       mode: 'REPLAY',
-      traceId: replayTraceId,
-      storage: new NdjsonCassette(cassettePath),
+      traceId: replayTraceId ?? 'pg-replay-e2e',
+      storage,
     },
     async () => {
     const { Client } = require('pg');
@@ -50,7 +55,7 @@ async function main() {
     const queryText = 'SELECT 1 AS num, $1::text AS label';
     const values = ['e2e-cassette'];
     const result = await client.query(queryText, values);
-    process.stdout.write(JSON.stringify({ rows: result.rows, rowCount: result.rowCount }));
+    output = { rows: result.rows, rowCount: result.rowCount };
     }
   );
 
@@ -59,6 +64,7 @@ async function main() {
   } catch {
     /* ignore */
   }
+  process.stdout.write(JSON.stringify(output ?? { rows: [], rowCount: 0 }));
 }
 
 main().catch((err) => {

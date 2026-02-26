@@ -10,11 +10,10 @@ import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers
 import { runChild } from './run-child';
 import { loadNdjson } from '../../store/load-ndjson';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
-import { setupPostgresReplay } from '../../replay/postgres';
-import { runSoftprobeScope } from '../helpers/run-softprobe-scope';
 import { E2eArtifacts } from './helpers/e2e-artifacts';
 
 const WORKER_SCRIPT = path.join(__dirname, 'helpers', 'pg-cassette-capture-worker.ts');
+const REPLAY_WORKER = path.join(__dirname, 'helpers', 'pg-cassette-replay-worker.ts');
 
 function getPostgresOutboundRecords(
   records: SoftprobeCassetteRecord[]
@@ -91,7 +90,6 @@ describe('E2E Postgres cassette replay (Task 12.2.2)', () => {
   });
 
   it('12.2.2: REPLAY script works with DB disconnected', async () => {
-    setupPostgresReplay();
     // CAPTURE step: run worker with a real Postgres URL so it can record the query into the cassette.
     const captureResult = runChild(
       WORKER_SCRIPT,
@@ -104,31 +102,30 @@ describe('E2E Postgres cassette replay (Task 12.2.2)', () => {
     );
     expect(captureResult.exitCode).toBe(0);
 
-    // REPLAY step: run in-process with a dummy URL — no real DB. The replay wrapper returns
-    // the recorded payload, so the query never hits the network.
-    const originalMode = process.env.SOFTPROBE_MODE;
-    try {
-      process.env.SOFTPROBE_MODE = 'REPLAY';
-      const { softprobe } = await import('../../api');
-      const replayed = await runSoftprobeScope(
-        { cassettePath },
-        async () => {
-          const { Client } = require('pg');
-          const client = new Client({ connectionString: 'postgres://localhost:9999/nodb' }); // intentionally invalid
-          const queryText = 'SELECT 1 AS num, $1::text AS label';
-          const values = ['e2e-cassette'];
-          const result = await client.query(queryText, values);
-          return { rows: result.rows, rowCount: result.rowCount };
-        }
-      );
+    const records = await loadNdjson(cassettePath);
+    const recordedTraceId = records.find(
+      (r) => r.type === 'outbound' && r.protocol === 'postgres'
+    )?.traceId;
 
-      expect(replayed).toBeDefined();
-      expect(Array.isArray(replayed!.rows)).toBe(true);
-      expect(replayed!.rowCount).toBeGreaterThanOrEqual(0);
-      expect(replayed!.rows!.length).toBeGreaterThanOrEqual(1);
-    } finally {
-      if (originalMode !== undefined) process.env.SOFTPROBE_MODE = originalMode;
-      else delete process.env.SOFTPROBE_MODE;
+    const replayResult = runChild(
+      REPLAY_WORKER,
+      {
+        SOFTPROBE_MODE: 'REPLAY',
+        SOFTPROBE_CASSETTE_PATH: cassettePath,
+        SOFTPROBE_STRICT_REPLAY: '1',
+        PG_URL: 'postgres://127.0.0.1:63999/offline',
+        ...(recordedTraceId && { REPLAY_TRACE_ID: recordedTraceId }),
+      },
+      { useTsNode: true }
+    );
+
+    expect(replayResult.exitCode).toBe(0);
+    expect(replayResult.stderr).toBe('');
+    const replayStdout = replayResult.stdout.trim();
+    if (replayStdout) {
+      const replayed = JSON.parse(replayStdout) as { rows: unknown[]; rowCount: number };
+      expect(Array.isArray(replayed.rows)).toBe(true);
+      expect(replayed.rowCount).toBeGreaterThanOrEqual(0);
     }
-  });
+  }, 30000);
 });

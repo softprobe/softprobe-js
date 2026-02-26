@@ -215,12 +215,7 @@ export async function handleHttpReplayRequest(
     } | undefined;
     const match = matcher?.match?.bind(matcher);
     if (!match) {
-      if (SoftprobeContext.getStrictReplay()) {
-        controller.respondWith(
-          jsonErrorResponse('[Softprobe] No recorded traces found for http request')
-        );
-      }
-      return;
+      throw new Error('Softprobe replay matcher is required in REPLAY mode');
     }
     const result = match({
       attributes: {
