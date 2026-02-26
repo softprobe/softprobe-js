@@ -10,6 +10,7 @@ import { writeInboundHttpRecord } from './http-inbound';
 import { activateReplayForContext } from '../replay/express';
 import { SoftprobeContext } from '../context';
 import { softprobe } from '../api';
+import { resolveRequestStorageForContext } from '../core/cassette/context-request-storage';
 
 export type QueueInboundResponsePayload = {
   status: number;
@@ -56,7 +57,7 @@ export const CaptureEngine = {
  * x-softprobe-cassette-path, loads the cassette on demand and primes the matcher (no server REPLAY boot required).
  * In CAPTURE mode wraps res.send to record status/body via CaptureEngine.queueInboundResponse.
  * When placed after body-parser, req.body is captured in the inbound record (Task 14.3.1).
- * Task 17.3.2: Runs the request in an OTel context with softprobe traceId/mode/cassettePath so SoftprobeContext works downstream.
+ * Task 17.3.2: Runs the request in an OTel context with softprobe traceId/mode/storage so SoftprobeContext works downstream.
  */
 export function softprobeExpressMiddleware(
   req: { method: string; path: string; body?: unknown; headers?: Record<string, string | string[] | undefined> },
@@ -80,28 +81,36 @@ export function softprobeExpressMiddleware(
     process.exit(1);
   }
 
-  context.with(ctxWithSoftprobe, () => {
-    
-    const mode = SoftprobeContext.getMode();
+  const mode = SoftprobeContext.getMode(ctxWithSoftprobe);
+  const { storage, cassettePathHeader } = resolveRequestStorageForContext(req.headers, activeCtx);
+  const runOptions = { mode, traceId: ctxTraceId, storage } as const;
+  const runInRequestScope = (fn: () => void | Promise<void>): void => {
+    void Promise.resolve(
+      context.with(ctxWithSoftprobe, () => SoftprobeContext.run(runOptions, fn))
+    ).catch((err: unknown) => {
+      next(err);
+    });
+  };
 
-    if (mode === 'REPLAY') {
-      void (async () => {
+  if (mode === 'REPLAY') {
+    runInRequestScope(async () => {
         try {
-          const cassettePath = SoftprobeContext.getCassettePath();
-          await softprobe.ensureReplayLoadedForRequest(cassettePath);
-          activateReplayForContext(ctxTraceId!);
+          if (cassettePathHeader) {
+            await softprobe.ensureReplayLoadedForRequest(cassettePathHeader);
+          }
+          activateReplayForContext(ctxTraceId);
         } catch (err) {
           return next(err);
         }
-        // Run next() inside softprobe context so route handler and fetch() see getTraceId() (replay via headers).
-        context.with(ctxWithSoftprobe, () => next());
-      })();
-      return;
-    } else if (mode === 'CAPTURE') {
-      context.with(ctxWithSoftprobe, () => {
+        next();
+    });
+    return;
+  }
+  if (mode === 'CAPTURE') {
+    runInRequestScope(() => {
         const originalSend = res.send.bind(res);
         res.send = function (body?: unknown) {
-          CaptureEngine.queueInboundResponse(ctxTraceId!, {
+          CaptureEngine.queueInboundResponse(ctxTraceId, {
             status: res.statusCode,
             body,
             identifier: `${req.method} ${req.path}`,
@@ -110,9 +119,10 @@ export function softprobeExpressMiddleware(
           return originalSend.apply(res, arguments as any);
         };
         next();
-      });
-    } else {
-      next();
-    }
+    });
+    return;
+  }
+  runInRequestScope(() => {
+    next();
   });
 }

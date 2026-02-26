@@ -9,10 +9,12 @@ import { context, trace } from '@opentelemetry/api';
 import { CaptureEngine } from './express';
 import { softprobeFastifyReplayPreHandler } from '../replay/fastify';
 import { SoftprobeContext } from '../context';
+import { softprobe } from '../api';
+import { resolveRequestStorageForContext } from '../core/cassette/context-request-storage';
 
 /**
  * onRequest hook: run the rest of the request pipeline in an OTel context that has
- * softprobe traceId/mode/cassettePath so SoftprobeContext works in route handlers.
+ * softprobe traceId/mode/storage so SoftprobeContext works in route handlers.
  */
 function softprobeFastifyOnRequest(
   request: FastifyRequest,
@@ -26,7 +28,27 @@ function softprobeFastifyOnRequest(
   const softprobeValue = SoftprobeContext.fromHeaders(withTrace, request.headers as Record<string, string | string[] | undefined>);
   const activeCtx = context.active();
   const ctxWithSoftprobe = SoftprobeContext.withData(activeCtx, softprobeValue);
-  context.with(ctxWithSoftprobe, next);
+  const runMode = SoftprobeContext.getMode(ctxWithSoftprobe);
+  const runTraceId = SoftprobeContext.getTraceId(ctxWithSoftprobe);
+  const { storage, cassettePathHeader } = resolveRequestStorageForContext(
+    request.headers as Record<string, string | string[] | undefined>,
+    activeCtx
+  );
+
+  void Promise.resolve(context.with(
+    ctxWithSoftprobe,
+    () => SoftprobeContext.run(
+      { mode: runMode, traceId: runTraceId, storage },
+      async () => {
+        if (runMode === 'REPLAY' && cassettePathHeader) {
+          await softprobe.ensureReplayLoadedForRequest(cassettePathHeader);
+        }
+        next();
+      }
+    )
+  )).catch((err: unknown) => {
+    next(err as Error);
+  });
 }
 
 /**

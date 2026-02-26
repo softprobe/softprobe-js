@@ -7,6 +7,7 @@
 
 const { ConfigManager } = require('./config/config-manager');
 const { SoftprobeContext } = require('./context');
+const { NdjsonCassette } = require('./core/cassette/ndjson-cassette');
 
 let mode: string = 'PASSTHROUGH';
 let cassettePath: string = '';
@@ -22,6 +23,7 @@ try {
   SoftprobeContext.initGlobal({
     mode: g.mode,
     cassettePath: g.cassettePath,
+    storage: g.cassettePath ? new NdjsonCassette(g.cassettePath) : undefined,
     strictReplay: g.replay?.strictReplay,
     strictComparison: g.replay?.strictComparison,
   });
@@ -34,6 +36,7 @@ try {
   SoftprobeContext.initGlobal({
     mode: envMode,
     cassettePath: envPath,
+    storage: envPath ? new NdjsonCassette(envPath) : undefined,
     strictReplay: process.env.SOFTPROBE_STRICT_REPLAY === '1',
     strictComparison: process.env.SOFTPROBE_STRICT_COMPARISON === '1',
   });

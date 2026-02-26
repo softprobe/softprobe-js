@@ -113,13 +113,16 @@ Implementation rule per task:
 
 ## 5) Middleware Entry Points — Atomic
 
-- [ ] **Task 5.1 Express middleware uses `SoftprobeContext.run(options, next)`**
+- [x] **Task 5.1 Express middleware uses `SoftprobeContext.run(options, next)`** — `refactor(express): run middleware scope via SoftprobeContext.run with mode/traceId/storage`
   - **Test**: downstream handler observes active `mode`, `traceId`, `storage`.
 
-- [ ] **Task 5.2 Fastify plugin uses `SoftprobeContext.run(options, handler)`**
+- [x] **Task 5.2 Fastify plugin uses `SoftprobeContext.run(options, handler)`** — `refactor(fastify): scope onRequest via SoftprobeContext.run with mode/traceId/storage`
   - **Test**: route handler observes active `mode`, `traceId`, `storage`.
 
-- [ ] **Task 5.3 Header coordination overrides defaults via run options**
+- [x] **Task 5.3 Remove `cassettePath` from `SoftprobeContext` stored/runtime interface and public getter API** — `refactor(context): remove cassettePath API and resolve storage only from header or configured cassette`
+  - **Test**: `SoftprobeContext.active()` shape/getters expose cassette via `storage` only; `SoftprobeContext.getCassettePath()` is removed; no runtime `cassettePath` field/getter usage remains in middleware/wrappers.
+
+- [ ] **Task 5.4 Header coordination overrides defaults via run options**
   - **Test**: request `x-softprobe-*` values are reflected in active context.
 
 ---

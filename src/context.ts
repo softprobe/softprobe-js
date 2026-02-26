@@ -17,7 +17,6 @@ export const SOFTPROBE_CONTEXT_KEY = createContextKey('softprobe_context');
 /** Internal stored shape (not exported). */
 interface Stored {
   mode: 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH';
-  cassettePath: string;
   storage?: Cassette;
   traceId?: string;
   strictReplay?: boolean;
@@ -29,7 +28,6 @@ interface Stored {
 /** Partial context for run() and withData(); all fields optional. */
 interface PartialData {
   mode?: 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH';
-  cassettePath?: string;
   storage?: Cassette;
   traceId?: string;
   strictReplay?: boolean;
@@ -40,7 +38,6 @@ interface PartialData {
 
 let globalDefault: Stored = {
   mode: 'PASSTHROUGH',
-  cassettePath: '',
   strictReplay: false,
   strictComparison: false,
 };
@@ -51,7 +48,6 @@ function merge(base: Stored, partial: PartialData): Stored {
   return {
     ...base,
     ...(partial.mode !== undefined && { mode: partial.mode }),
-    ...(partial.cassettePath !== undefined && { cassettePath: partial.cassettePath }),
     ...(partial.storage !== undefined && { storage: partial.storage }),
     ...(partial.traceId !== undefined && { traceId: partial.traceId }),
     ...(partial.strictReplay !== undefined && { strictReplay: partial.strictReplay }),
@@ -84,12 +80,13 @@ function withData(otelContext: Context, data: PartialData): Context {
 function initGlobal(config: {
   mode?: string;
   cassettePath?: string;
+  storage?: Cassette;
   strictReplay?: boolean;
   strictComparison?: boolean;
 }): void {
   globalDefault = {
     mode: (config.mode as Stored['mode']) || 'PASSTHROUGH',
-    cassettePath: config.cassettePath ?? '',
+    ...(config.storage !== undefined && { storage: config.storage }),
     strictReplay: config.strictReplay ?? false,
     strictComparison: config.strictComparison ?? false,
   };
@@ -97,7 +94,6 @@ function initGlobal(config: {
 
 const HEADER_MODE = 'x-softprobe-mode';
 const HEADER_TRACE_ID = 'x-softprobe-trace-id';
-const HEADER_CASSETTE_PATH = 'x-softprobe-cassette-path';
 
 /**
  * Returns a new softprobe state by applying coordination headers over base. Used by middleware.
@@ -108,12 +104,10 @@ function fromHeaders(
 ): Stored {
   const mode = headers[HEADER_MODE];
   const traceId = headers[HEADER_TRACE_ID];
-  const cassettePath = headers[HEADER_CASSETTE_PATH];
   return {
     ...base,
     ...(typeof mode === 'string' && (mode === 'REPLAY' || mode === 'CAPTURE' || mode === 'PASSTHROUGH') && { mode: mode as Stored['mode'] }),
     ...(typeof traceId === 'string' && traceId && { traceId }),
-    ...(typeof cassettePath === 'string' && cassettePath && { cassettePath }),
   };
 }
 
@@ -132,12 +126,13 @@ function getMode(otelContext?: Context): 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH' {
   return active(otelContext).mode;
 }
 
-function getCassettePath(otelContext?: Context): string {
-  return active(otelContext).cassettePath;
-}
-
 function getCassette(otelContext?: Context): Cassette | undefined {
   return active(otelContext).storage;
+}
+
+function getScopedCassette(otelContext: Context = context.active()): Cassette | undefined {
+  const value = otelContext.getValue(SOFTPROBE_CONTEXT_KEY) as Stored | undefined;
+  return value?.storage;
 }
 
 function getStrictReplay(otelContext?: Context): boolean {
@@ -200,8 +195,8 @@ export const SoftprobeContext = {
   active,
   getTraceId,
   getMode,
-  getCassettePath,
   getCassette,
+  getScopedCassette,
   getStrictReplay,
   getStrictComparison,
   getMatcher,

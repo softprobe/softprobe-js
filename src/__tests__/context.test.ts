@@ -28,21 +28,35 @@ describe('context (SoftprobeContext)', () => {
     });
   });
 
+  describe('Task 5.3: remove cassettePath from SoftprobeContext runtime/public API', () => {
+    it('does not expose getCassettePath on the public SoftprobeContext API', () => {
+      const api = SoftprobeContext as unknown as Record<string, unknown>;
+      expect(api.getCassettePath).toBeUndefined();
+    });
+
+    it('fromHeaders does not add cassettePath to runtime context state', () => {
+      const base = { mode: 'PASSTHROUGH' as const };
+      const headers: Record<string, string | string[] | undefined> = {
+        'x-softprobe-cassette-path': '/header.ndjson',
+      };
+      const result = SoftprobeContext.fromHeaders(base as any, headers);
+      expect((result as unknown as Record<string, unknown>).cassettePath).toBeUndefined();
+    });
+  });
+
   describe('active', () => {
     it('returns value from OTel context when set', () => {
-      const data = { mode: 'REPLAY' as const, cassettePath: '/c.ndjson', traceId: 't1' };
+      const data = { mode: 'REPLAY' as const, traceId: 't1' };
       const ctx = SoftprobeContext.withData(ROOT_CONTEXT, data);
       const active = SoftprobeContext.active(ctx);
       expect(active).toBeDefined();
       expect(SoftprobeContext.getMode(ctx)).toBe('REPLAY');
-      expect(SoftprobeContext.getCassettePath(ctx)).toBe('/c.ndjson');
       expect(SoftprobeContext.getTraceId(ctx)).toBe('t1');
     });
 
     it('returns global default when context has no value', () => {
       SoftprobeContext.initGlobal({ mode: 'REPLAY', cassettePath: '/global.ndjson' });
       expect(SoftprobeContext.getMode(ROOT_CONTEXT)).toBe('REPLAY');
-      expect(SoftprobeContext.getCassettePath(ROOT_CONTEXT)).toBe('/global.ndjson');
     });
 
     it('exposes storage when provided in context', () => {
@@ -61,10 +75,9 @@ describe('context (SoftprobeContext)', () => {
   });
 
   describe('getters', () => {
-    it('getTraceId, getMode, getCassettePath, getStrictReplay, getStrictComparison return from active state', () => {
+    it('getTraceId, getMode, getStrictReplay, getStrictComparison return from active state', () => {
       const data = {
         mode: 'CAPTURE' as const,
-        cassettePath: '/cap.ndjson',
         traceId: 'trace-1',
         strictReplay: true,
         strictComparison: true,
@@ -72,7 +85,6 @@ describe('context (SoftprobeContext)', () => {
       const ctx = SoftprobeContext.withData(ROOT_CONTEXT, data);
       expect(SoftprobeContext.getTraceId(ctx)).toBe('trace-1');
       expect(SoftprobeContext.getMode(ctx)).toBe('CAPTURE');
-      expect(SoftprobeContext.getCassettePath(ctx)).toBe('/cap.ndjson');
       expect(SoftprobeContext.getStrictReplay(ctx)).toBe(true);
       expect(SoftprobeContext.getStrictComparison(ctx)).toBe(true);
     });
@@ -81,7 +93,6 @@ describe('context (SoftprobeContext)', () => {
       const matcher = {} as SoftprobeMatcher;
       const ctx = SoftprobeContext.withData(ROOT_CONTEXT, {
         mode: 'REPLAY',
-        cassettePath: '',
         matcher,
       });
       expect(SoftprobeContext.getMatcher(ctx)).toBe(matcher);
@@ -99,7 +110,6 @@ describe('context (SoftprobeContext)', () => {
       };
       const ctx = SoftprobeContext.withData(ROOT_CONTEXT, {
         mode: 'REPLAY',
-        cassettePath: '',
         inboundRecord: record,
       });
       expect(SoftprobeContext.getInboundRecord(ctx)).toEqual(record);
@@ -120,10 +130,10 @@ describe('context (SoftprobeContext)', () => {
 
   describe('withData', () => {
     it('returns new context with data and does not mutate original context', () => {
-      const value = { mode: 'REPLAY' as const, cassettePath: '/c.ndjson' };
+      const value = { mode: 'REPLAY' as const, traceId: 't1' };
       const newCtx = SoftprobeContext.withData(ROOT_CONTEXT, value);
       expect(newCtx.getValue(SOFTPROBE_CONTEXT_KEY)).toEqual(
-        expect.objectContaining({ mode: 'REPLAY', cassettePath: '/c.ndjson' })
+        expect.objectContaining({ mode: 'REPLAY', traceId: 't1' })
       );
       expect(ROOT_CONTEXT.getValue(SOFTPROBE_CONTEXT_KEY)).toBeUndefined();
     });
@@ -138,7 +148,6 @@ describe('context (SoftprobeContext)', () => {
         strictComparison: true,
       });
       expect(SoftprobeContext.getMode(ROOT_CONTEXT)).toBe('REPLAY');
-      expect(SoftprobeContext.getCassettePath(ROOT_CONTEXT)).toBe('/boot.ndjson');
       expect(SoftprobeContext.getStrictReplay(ROOT_CONTEXT)).toBe(true);
       expect(SoftprobeContext.getStrictComparison(ROOT_CONTEXT)).toBe(true);
     });
@@ -146,7 +155,7 @@ describe('context (SoftprobeContext)', () => {
 
   describe('fromHeaders', () => {
     it('applies coordination header overrides over base', () => {
-      const base = { mode: 'PASSTHROUGH' as const, cassettePath: '/base.ndjson' };
+      const base = { mode: 'PASSTHROUGH' as const };
       const headers: Record<string, string | string[] | undefined> = {
         'x-softprobe-mode': 'REPLAY',
         'x-softprobe-trace-id': 'header-trace',
@@ -155,7 +164,7 @@ describe('context (SoftprobeContext)', () => {
       const result = SoftprobeContext.fromHeaders(base, headers);
       expect(result.mode).toBe('REPLAY');
       expect(result.traceId).toBe('header-trace');
-      expect(result.cassettePath).toBe('/header.ndjson');
+      expect((result as unknown as Record<string, unknown>).cassettePath).toBeUndefined();
     });
   });
 
@@ -164,7 +173,7 @@ describe('context (SoftprobeContext)', () => {
       const globalMatcher = {} as SoftprobeMatcher;
       SoftprobeContext.setGlobalReplayMatcher(globalMatcher);
       SoftprobeContext.initGlobal({ mode: 'REPLAY', cassettePath: '' });
-      const ctx = SoftprobeContext.withData(ROOT_CONTEXT, { mode: 'REPLAY', cassettePath: '' });
+      const ctx = SoftprobeContext.withData(ROOT_CONTEXT, { mode: 'REPLAY' });
       expect(SoftprobeContext.getMatcher(ctx)).toBe(globalMatcher);
     });
 
@@ -174,7 +183,6 @@ describe('context (SoftprobeContext)', () => {
       SoftprobeContext.setGlobalReplayMatcher(globalMatcher);
       const ctx = SoftprobeContext.withData(ROOT_CONTEXT, {
         mode: 'REPLAY',
-        cassettePath: '',
         matcher: contextMatcher,
       });
       expect(SoftprobeContext.getMatcher(ctx)).toBe(contextMatcher);
