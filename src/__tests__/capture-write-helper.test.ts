@@ -21,7 +21,7 @@ describe('saveCaptureRecordFromContext', () => {
     });
   });
 
-  it('in CAPTURE mode calls getCassette().saveRecord(getTraceId(), record)', async () => {
+  it('in CAPTURE mode calls getCassette().saveRecord(record) with one arg (Task 13.3)', async () => {
     const saveRecord = jest.fn(async () => {});
     const cassette: Cassette = {
       loadTrace: async () => [],
@@ -29,7 +29,7 @@ describe('saveCaptureRecordFromContext', () => {
     };
     const record: SoftprobeCassetteRecord = {
       version: '4.1',
-      traceId: 'will-be-overridden',
+      traceId: 'trace-capture-helper',
       spanId: 'span-write',
       timestamp: '2025-01-01T00:00:00.000Z',
       type: 'outbound',
@@ -47,6 +47,6 @@ describe('saveCaptureRecordFromContext', () => {
     );
 
     expect(saveRecord).toHaveBeenCalledTimes(1);
-    expect(saveRecord).toHaveBeenCalledWith('trace-capture-helper', record);
+    expect(saveRecord).toHaveBeenCalledWith(record);
   });
 });

@@ -106,8 +106,7 @@ describe('Undici outbound capture (Task 10.3)', () => {
 
     expect(saveRecord).toHaveBeenCalledTimes(1);
     expect(saveRecord).toHaveBeenCalledWith(
-      'context-trace-http-6-5',
-      expect.objectContaining({ type: 'outbound', protocol: 'http' })
+      expect.objectContaining({ traceId: 'context-trace-http-6-5', type: 'outbound', protocol: 'http' })
     );
   });
 });

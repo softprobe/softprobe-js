@@ -23,7 +23,7 @@ export const contextRoutingCaptureStore: {
     const traceId = SoftprobeContext.getTraceId();
     if (!cassette || !traceId) return;
     seenCassettes.add(cassette);
-    void cassette.saveRecord(traceId, record).catch(() => {
+    void cassette.saveRecord(record).catch(() => {
       // best-effort
     });
   },

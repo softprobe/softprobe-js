@@ -33,7 +33,9 @@ async function main() {
     process.stderr.write('cassettePath is required in config');
     process.exit(1);
   }
-  const storage = new NdjsonCassette(cassettePath);
+  const cassetteDir = path.dirname(cassettePath);
+  const traceId = path.basename(cassettePath, '.ndjson');
+  const storage = new NdjsonCassette(cassetteDir, traceId);
 
   let output: { rows: unknown[]; rowCount: number } | undefined;
   await softprobe.run(

@@ -89,8 +89,7 @@ describe('Postgres capture (Task 10.4)', () => {
 
     expect(saveRecord).toHaveBeenCalledTimes(1);
     expect(saveRecord).toHaveBeenCalledWith(
-      'context-trace-postgres-6-5',
-      expect.objectContaining({ type: 'outbound', protocol: 'postgres' })
+      expect.objectContaining({ traceId: 'context-trace-postgres-6-5', type: 'outbound', protocol: 'postgres' })
     );
   });
 });

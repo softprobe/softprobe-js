@@ -6,6 +6,7 @@
  * Stdout: JSON { value }
  */
 
+import path from 'path';
 import '../../../init';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
@@ -34,7 +35,9 @@ async function main() {
   }
   if (!key) throw new Error('REDIS_KEY is required');
   if (!cassettePath) throw new Error('cassettePath is required in config');
-  const storage = new NdjsonCassette(cassettePath);
+  const cassetteDir = path.dirname(cassettePath);
+  const traceId = path.basename(cassettePath, '.ndjson');
+  const storage = new NdjsonCassette(cassetteDir, traceId);
 
   // Intentionally do not connect to a live Redis server.
   const client = createClient({ url: 'redis://127.0.0.1:6399' });

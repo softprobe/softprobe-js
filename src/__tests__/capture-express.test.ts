@@ -166,7 +166,7 @@ describe('Task 14.3.1: inbound request record contains parsed JSON body when mid
     res.send({ ok: true });
 
     expect(saveRecord).toHaveBeenCalledTimes(1);
-    const record = saveRecord.mock.calls[0][1];
+    const record = saveRecord.mock.calls[0][0];
     expect(record.type).toBe('inbound');
     expect(record.requestPayload).toBeDefined();
     expect((record.requestPayload as { body?: unknown })?.body).toEqual(parsedBody);
@@ -350,8 +350,7 @@ describe('Task 6.5 inbound capture path writes through context cassette helper',
 
     expect(saveRecord).toHaveBeenCalledTimes(1);
     expect(saveRecord).toHaveBeenCalledWith(
-      'context-trace-inbound-6-5',
-      expect.objectContaining({ type: 'inbound', protocol: 'http' })
+      expect.objectContaining({ traceId: 'context-trace-inbound-6-5', type: 'inbound', protocol: 'http' })
     );
   });
 });

@@ -70,8 +70,7 @@ describe('Redis capture (Task 10.5)', () => {
 
     expect(saveRecord).toHaveBeenCalledTimes(1);
     expect(saveRecord).toHaveBeenCalledWith(
-      'context-trace-redis-6-5',
-      expect.objectContaining({ type: 'outbound', protocol: 'redis' })
+      expect.objectContaining({ traceId: 'context-trace-redis-6-5', type: 'outbound', protocol: 'redis' })
     );
   });
 });

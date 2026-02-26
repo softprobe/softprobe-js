@@ -88,8 +88,8 @@ describe('schema.types (V4.1)', () => {
     });
   });
 
-  describe('Cassette interface', () => {
-    it('requires loadTrace/saveRecord and accepts optional flush', async () => {
+  describe('Cassette interface (Task 13.3: no traceId in load/save)', () => {
+    it('requires loadTrace() and saveRecord(record) and accepts optional flush', async () => {
       const traceId = 'trace-1';
       const recorded: SoftprobeCassetteRecord = {
         version: '4.1',
@@ -104,12 +104,8 @@ describe('schema.types (V4.1)', () => {
       let savedRecord: SoftprobeCassetteRecord | undefined;
 
       const baseCassette: Cassette = {
-        loadTrace: async (incomingTraceId: string) => {
-          expect(incomingTraceId).toBe(traceId);
-          return savedRecord ? [savedRecord] : [];
-        },
-        saveRecord: async (incomingTraceId: string, record: SoftprobeCassetteRecord) => {
-          expect(incomingTraceId).toBe(traceId);
+        loadTrace: async () => (savedRecord ? [savedRecord] : []),
+        saveRecord: async (record: SoftprobeCassetteRecord) => {
           savedRecord = record;
         },
       };
@@ -121,8 +117,8 @@ describe('schema.types (V4.1)', () => {
         },
       };
 
-      await extendedCassette.saveRecord(traceId, recorded);
-      const loaded = await extendedCassette.loadTrace(traceId);
+      await extendedCassette.saveRecord(recorded);
+      const loaded = await extendedCassette.loadTrace();
       expect(loaded).toEqual([recorded]);
       await extendedCassette.flush?.();
       expect(savedRecord).toBeUndefined();

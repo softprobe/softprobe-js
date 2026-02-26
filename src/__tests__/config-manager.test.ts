@@ -30,6 +30,13 @@ describe('ConfigManager', () => {
     expect(cfg.cassettePath).toBe('./softprobe-cassettes.ndjson');
   });
 
+  it('Task 13.1: exposes cassetteDirectory from YAML at get().cassetteDirectory', () => {
+    const dirFixture = path.join(__dirname, 'fixtures', 'softprobe-config-cassette-directory.yml');
+    const manager = new ConfigManager(dirFixture);
+    const cfg = manager.get();
+    expect(cfg.cassetteDirectory).toBe('./.softprobe/cassettes');
+  });
+
   it('get().mode defaults to PASSTHROUGH when missing in YAML', () => {
     const manager = new ConfigManager(FIXTURE_PATH);
     const cfg = manager.get();

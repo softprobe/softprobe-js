@@ -49,10 +49,13 @@ export interface SoftprobeAttributes {
 /** Runtime execution mode for Softprobe context. */
 export type SoftprobeMode = 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH';
 
-/** Generic cassette storage interface for trace records. */
+/**
+ * Generic cassette storage interface for trace records.
+ * Task 13.3: Cassette is bound to one traceId at creation; load/save do not take traceId.
+ */
 export interface Cassette {
-  loadTrace(traceId: string): Promise<SoftprobeCassetteRecord[]>;
-  saveRecord(traceId: string, record: SoftprobeCassetteRecord): Promise<void>;
+  loadTrace(): Promise<SoftprobeCassetteRecord[]>;
+  saveRecord(record: SoftprobeCassetteRecord): Promise<void>;
   flush?(): Promise<void>;
 }
 

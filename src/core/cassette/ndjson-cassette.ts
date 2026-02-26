@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import path from 'path';
 import type { SoftprobeCassetteRecord } from '../../types/schema';
 import { loadNdjson } from '../../store/load-ndjson';
 
@@ -8,29 +9,32 @@ type NdjsonCassetteWriter = {
 };
 
 /**
- * NDJSON-backed cassette adapter for replay trace loading.
+ * NDJSON-backed cassette adapter. One file per trace: path = {cassetteDirectory}/{traceId}.ndjson.
+ * Task 13.4: constructed with cassetteDirectory and traceId; internal path is derived.
  */
 export class NdjsonCassette {
+  private readonly path: string;
+
   constructor(
-    private readonly path: string,
+    cassetteDirectory: string,
+    traceId: string,
     private readonly writer: NdjsonCassetteWriter = {}
-  ) {}
+  ) {
+    this.path = path.join(cassetteDirectory, `${traceId}.ndjson`);
+  }
 
   /**
-   * Loads only records that belong to the provided trace id.
+   * Loads all records from this cassette file (cassette is bound to one trace; one file per trace).
    */
-  async loadTrace(traceId: string): Promise<SoftprobeCassetteRecord[]> {
-    return loadNdjson(this.path, traceId);
+  async loadTrace(): Promise<SoftprobeCassetteRecord[]> {
+    return loadNdjson(this.path);
   }
 
   /**
    * Appends a single record as one NDJSON line.
    */
-  async saveRecord(
-    traceId: string,
-    record: SoftprobeCassetteRecord
-  ): Promise<void> {
-    const serialized = JSON.stringify({ ...record, traceId }) + '\n';
+  async saveRecord(record: SoftprobeCassetteRecord): Promise<void> {
+    const serialized = JSON.stringify(record) + '\n';
     if (this.writer.appendLine) {
       await this.writer.appendLine(serialized);
       return;

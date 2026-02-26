@@ -238,7 +238,7 @@ describe('context (SoftprobeContext)', () => {
       expect(seen).toBe(cassette);
     });
 
-    it('in REPLAY mode, run calls storage.loadTrace(traceId) once per run', async () => {
+    it('Task 13.3: in REPLAY mode, run calls storage.loadTrace() with no args once per run', async () => {
       const loadTrace = jest.fn(async () => []);
       const cassette: Cassette = {
         loadTrace,
@@ -251,7 +251,7 @@ describe('context (SoftprobeContext)', () => {
       );
 
       expect(loadTrace).toHaveBeenCalledTimes(1);
-      expect(loadTrace).toHaveBeenCalledWith('trace-replay-load');
+      expect(loadTrace).toHaveBeenCalledWith();
     });
 
     it('in REPLAY mode, active matcher is seeded with loaded records before callback', async () => {

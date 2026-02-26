@@ -1,3 +1,4 @@
+import path from 'path';
 import { NdjsonCassette } from './ndjson-cassette';
 import type { Cassette } from '../../types/schema';
 
@@ -26,7 +27,11 @@ export function resolveRequestStorage(input: {
   configuredCassette?: Cassette;
 }): { storage: Cassette; cassettePathHeader?: string } {
   const cassettePathHeader = readCassettePathHeader(input.headers);
-  if (cassettePathHeader) return { storage: new NdjsonCassette(cassettePathHeader), cassettePathHeader };
+  if (cassettePathHeader) {
+    const dir = path.dirname(cassettePathHeader);
+    const traceId = path.basename(cassettePathHeader, '.ndjson');
+    return { storage: new NdjsonCassette(dir, traceId), cassettePathHeader };
+  }
   if (input.existingCassette) return { storage: input.existingCassette, cassettePathHeader };
   if (input.configuredCassette) return { storage: input.configuredCassette, cassettePathHeader };
   throw new Error('Softprobe cassette storage is not configured. Provide x-softprobe-cassette-path or configured storage.');

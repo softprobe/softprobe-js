@@ -62,7 +62,7 @@ describe('softprobeFastifyPlugin capture path (Task 14.2.1)', () => {
       })
     );
     expect(saveRecord).toHaveBeenCalledTimes(1);
-    const record = saveRecord.mock.calls[0][1];
+    const record = saveRecord.mock.calls[0][0];
     expect(record.type).toBe('inbound');
     expect(record.protocol).toBe('http');
     expect(record.traceId).toBe('trace-fastify-1');

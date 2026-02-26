@@ -18,6 +18,7 @@ export const SOFTPROBE_CONTEXT_KEY = createContextKey('softprobe_context');
 interface Stored {
   mode: 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH';
   storage?: Cassette;
+  cassetteDirectory?: string;
   traceId?: string;
   strictReplay?: boolean;
   strictComparison?: boolean;
@@ -29,6 +30,7 @@ interface Stored {
 interface PartialData {
   mode?: 'CAPTURE' | 'REPLAY' | 'PASSTHROUGH';
   storage?: Cassette;
+  cassetteDirectory?: string;
   traceId?: string;
   strictReplay?: boolean;
   strictComparison?: boolean;
@@ -49,6 +51,7 @@ function merge(base: Stored, partial: PartialData): Stored {
     ...base,
     ...(partial.mode !== undefined && { mode: partial.mode }),
     ...(partial.storage !== undefined && { storage: partial.storage }),
+    ...(partial.cassetteDirectory !== undefined && { cassetteDirectory: partial.cassetteDirectory }),
     ...(partial.traceId !== undefined && { traceId: partial.traceId }),
     ...(partial.strictReplay !== undefined && { strictReplay: partial.strictReplay }),
     ...(partial.strictComparison !== undefined && { strictComparison: partial.strictComparison }),
@@ -76,10 +79,12 @@ function withData(otelContext: Context, data: PartialData): Context {
 
 /**
  * Seeds the global default from config. Call at boot.
+ * Task 13.1: accepts cassetteDirectory; when set, runtime cassette paths are derived as {cassetteDirectory}/{traceId}.ndjson.
  */
 function initGlobal(config: {
   mode?: string;
   cassettePath?: string;
+  cassetteDirectory?: string;
   storage?: Cassette;
   strictReplay?: boolean;
   strictComparison?: boolean;
@@ -87,6 +92,7 @@ function initGlobal(config: {
   globalDefault = {
     mode: (config.mode as Stored['mode']) || 'PASSTHROUGH',
     ...(config.storage !== undefined && { storage: config.storage }),
+    ...(config.cassetteDirectory !== undefined && { cassetteDirectory: config.cassetteDirectory }),
     strictReplay: config.strictReplay ?? false,
     strictComparison: config.strictComparison ?? false,
   };
@@ -140,6 +146,11 @@ function getCassette(otelContext?: Context): Cassette | undefined {
   return active(otelContext).storage;
 }
 
+/** Task 13.1: directory for per-trace cassette files; paths are {cassetteDirectory}/{traceId}.ndjson. */
+function getCassetteDirectory(otelContext?: Context): string | undefined {
+  return active(otelContext).cassetteDirectory;
+}
+
 function getScopedCassette(otelContext: Context = context.active()): Cassette | undefined {
   const value = otelContext.getValue(SOFTPROBE_CONTEXT_KEY) as Stored | undefined;
   return value?.storage;
@@ -180,7 +191,7 @@ function run<T>(options: SoftprobeRunOptions, fn: () => T | Promise<T>): T | Pro
         ? options.traceId
         : mergedBase.traceId || base.traceId || defaultTraceId();
     return (async () => {
-      const records = await options.storage.loadTrace(traceId);
+      const records = await options.storage.loadTrace();
       const matcher = new SoftprobeMatcher();
       matcher._setRecords(records);
       matcher.use(options.matcher ?? createDefaultMatcher());
@@ -201,6 +212,7 @@ export const SoftprobeContext = {
   getTraceId,
   getMode,
   getCassette,
+  getCassetteDirectory,
   getScopedCassette,
   getStrictReplay,
   getStrictComparison,

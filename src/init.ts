@@ -2,15 +2,14 @@
  * Boot entry: softprobe/init.
  * Must be imported first (before OTel). Reads config from .softprobe/config.yml
  * (or SOFTPROBE_CONFIG_PATH) and runs CAPTURE or REPLAY init accordingly; design §4.1, §11.
- * Mode and cassettePath come from config only (no env fallback for runtime mode/path).
+ * Mode and cassette location come from config only (cassetteDirectory or cassettePath; no env fallback).
+ * Task 13.1: when cassetteDirectory is set, init does not create or pass a single-file cassette.
  */
 
 const { ConfigManager } = require('./config/config-manager');
 const { SoftprobeContext } = require('./context');
-const { NdjsonCassette } = require('./core/cassette/ndjson-cassette');
 
 let mode: string = 'PASSTHROUGH';
-let cassettePath: string = '';
 
 const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
 try {
@@ -18,41 +17,36 @@ try {
   const g = mgr.get() as {
     mode?: string;
     cassettePath?: string;
+    cassetteDirectory?: string;
     replay?: { strictReplay?: boolean; strictComparison?: boolean };
   };
+  // Task 13.2: init never creates a Cassette or sets global storage; only mode, cassetteDirectory, strict flags.
   SoftprobeContext.initGlobal({
     mode: g.mode,
     cassettePath: g.cassettePath,
-    storage: g.cassettePath ? new NdjsonCassette(g.cassettePath) : undefined,
+    cassetteDirectory: g.cassetteDirectory,
+    storage: undefined,
     strictReplay: g.replay?.strictReplay,
     strictComparison: g.replay?.strictComparison,
   });
   mode = (g.mode as string) ?? 'PASSTHROUGH';
-  cassettePath = (g.cassettePath as string) ?? '';
 } catch {
   // No config file: default to PASSTHROUGH with no cassette path.
   SoftprobeContext.initGlobal({
     mode: 'PASSTHROUGH',
     cassettePath: '',
+    cassetteDirectory: undefined,
     storage: undefined,
     strictReplay: false,
     strictComparison: false,
   });
   mode = 'PASSTHROUGH';
-  cassettePath = '';
 }
 
 if (mode === 'CAPTURE') {
-  const { setCaptureStore } = require('./capture/store-accessor');
-  const { CassetteStore } = require('./store/cassette-store');
   const { applyAutoInstrumentationMutator } = require('./capture/mutator');
   const { applyFrameworkMutators } = require('./capture/framework-mutator');
   const { setupHttpReplayInterceptor } = require('./replay/http');
-
-  const outPath = cassettePath || './softprobe-cassettes.ndjson';
-  const store = new CassetteStore(outPath);
-  setCaptureStore(store);
-  process.on('beforeExit', () => store.flushOnExit());
 
   applyAutoInstrumentationMutator();
   applyFrameworkMutators();
@@ -63,9 +57,8 @@ if (mode === 'CAPTURE') {
 // Task 16.2.1: When PASSTHROUGH, enable capture via headers (x-softprobe-mode: CAPTURE + x-softprobe-cassette-path).
 // Also apply replay patches (undici, pg, redis) so replay works via headers (x-softprobe-mode: REPLAY + x-softprobe-cassette-path);
 // middleware loads cassette on demand; no SOFTPROBE_MODE=REPLAY required at boot.
+// Task 13.2: no global cassette or setCaptureStore; capture/replay use context-created cassettes per request.
 if (mode === 'PASSTHROUGH') {
-  const { setCaptureStore } = require('./capture/store-accessor');
-  const { contextRoutingCaptureStore } = require('./store/context-routing-capture-store');
   const { applyAutoInstrumentationMutator } = require('./capture/mutator');
   const { applyFrameworkMutators } = require('./capture/framework-mutator');
   const { setupHttpReplayInterceptor } = require('./replay/http');
@@ -73,12 +66,8 @@ if (mode === 'PASSTHROUGH') {
   const { setupRedisReplay } = require('./replay/redis');
   const { setupUndiciReplay } = require('./replay/undici');
 
-  setCaptureStore(contextRoutingCaptureStore);
-  process.on('beforeExit', () => contextRoutingCaptureStore.flushOnExit());
-
   applyAutoInstrumentationMutator();
   applyFrameworkMutators();
-  // Replay patches so requests with REPLAY headers get mocked (middleware loads cassette on demand).
   setupPostgresReplay();
   setupRedisReplay();
   setupUndiciReplay();
@@ -86,10 +75,7 @@ if (mode === 'PASSTHROUGH') {
 }
 
 if (mode === 'REPLAY') {
-  if (cassettePath) {
-    const { loadNdjson } = require('./store/load-ndjson');
-    loadNdjson(cassettePath); // eager load, called exactly once (task 11.1.2)
-  }
+  // Task 13.2: no eager load of cassette file; replay loads per request via SoftprobeContext.
   // Patch pg/redis when first required by any module so example app and E2E use the same patched instance (Task 16.3.1).
   const { applyPostgresReplay } = require('./replay/postgres');
   const Module = require('module');

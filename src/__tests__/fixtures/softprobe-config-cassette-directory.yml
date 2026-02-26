@@ -1,0 +1,11 @@
+# Task 13.1: config with cassetteDirectory (no single cassette file path)
+mode: PASSTHROUGH
+cassetteDirectory: "./.softprobe/cassettes"
+
+capture:
+  maxPayloadSize: 1048576
+
+replay:
+  ignoreUrls:
+    - "localhost:431[78]"
+    - "/v1/traces"

@@ -245,10 +245,10 @@ Implementation rule per task:
 
 - [ ] **Task 11.6 Remove legacy env->YAML compatibility bridge in E2E launcher**
   - **Problem**: `run-child` currently translates legacy `SOFTPROBE_*` env vars into generated YAML, which hides non-YAML call sites and weakens strict YAML-only enforcement.
-  - **Test**: all E2E entry points pass `SOFTPROBE_CONFIG_PATH` explicitly; `run-child` no longer accepts/rewrites `SOFTPROBE_MODE`/`SOFTPROBE_CASSETTE_PATH`/strict env flags.
+  - **Test**: all E2E entry points pass `SOFTPROBE_CONFIG_PATH` explicitly; `run-child` no longer accepts/rewrites `SOFTPROBE_MODE`/`SOFTPROBE_CASSETTE_PATH`/`SOFTPROBE_CASSETTE_DIRECTORY`/strict env flags (align with section 13: config uses cassetteDirectory).
   - **Solution**:
     - remove legacy env translation logic from `run-child.ts`.
-    - update each E2E test setup to create and pass explicit YAML config files.
+    - update each E2E test setup to create and pass explicit YAML config files (with `cassetteDirectory` when section 13 is in effect).
     - fail fast in helpers when `SOFTPROBE_CONFIG_PATH` is missing.
 
 - [ ] **Task 11.7 Define and enforce an E2E coverage matrix to reduce duplication**
@@ -258,6 +258,7 @@ Implementation rule per task:
     - add a concise matrix in `tasks.md` or dedicated test README.
     - merge/remove duplicate scenarios once matrix coverage is confirmed.
     - keep only one canonical test per guarantee plus minimal parity checks.
+  - **Note**: After section 13 (Cassette V2), E2E setup uses `cassetteDirectory` and per-trace files `{cassetteDirectory}/{traceId}.ndjson`; matrix and scenarios should reflect that.
 
 - [ ] **Task 11.8 Introduce shared E2E assertions/helpers across Express/Fastify parity flows**
   - **Problem**: similar assertions are duplicated between Express and Fastify E2E files, making drift/regressions more likely.
@@ -266,6 +267,7 @@ Implementation rule per task:
     - extract shared assertion utilities under `src/__tests__/e2e/helpers/`.
     - keep framework-specific setup isolated, but centralize validation logic.
     - ensure behavior parity is asserted consistently across both frameworks.
+  - **Note**: After section 13 (Cassette V2), cassette assertions read from `{cassetteDirectory}/{traceId}.ndjson` or via context’s cassette; shared helpers should align with that (no standalone loadNdjson).
 
 ---
 
@@ -278,6 +280,8 @@ Implementation rule per task:
 - Matchers remain pure selection logic; strict/dev behavior remains in wrappers.
 - Docs and examples use `design-*.md` naming and new API shape.
 
+**Section 13 (Cassette V2)** adds: config uses `cassetteDirectory` only; init does not create a global cassette; cassette created only in SoftprobeContext per traceId; one file per trace; Cassette interface without traceId parameters; cassette is mode-agnostic. Open tasks in sections 11 and 12 are written to align with section 13 when implemented.
+
 ---
 
 ## 12) Basic Example Simplification + YAML/Header Replay Demo (User-Directed, No TDD) — Atomic
@@ -289,18 +293,18 @@ Implementation rule per task:
   - **Problem**: current example documents mixed flows (env REPLAY boot, runners, multiple scripts), making the intended replay mechanism unclear.
   - **Acceptance**:
     - one canonical flow is documented:
-      1) app starts with YAML `mode: CAPTURE`
-      2) capture request writes cassette
+      1) app starts with YAML `mode: CAPTURE` and `cassetteDirectory` (per design-cassette.md; after section 13 no single cassette path in config).
+      2) capture request writes cassette (one file per trace under the directory).
       3) replay test uses `softprobe diff` which switches request to REPLAY via headers.
-    - docs explicitly state that mode/path come from YAML config, not `SOFTPROBE_MODE`/`SOFTPROBE_CASSETTE_PATH`.
+    - docs explicitly state that mode and cassetteDirectory come from YAML config, not `SOFTPROBE_MODE`/`SOFTPROBE_CASSETTE_PATH`/`SOFTPROBE_CASSETTE_DIRECTORY`.
   - **Solution**:
-    - add/update example YAML config files for the canonical flow.
+    - add/update example YAML config files for the canonical flow (use cassetteDirectory when section 13 is in effect).
     - remove contradictory wording from `examples/basic-app/README.md`.
 
 - [ ] **Task 12.2 Remove legacy replay bootstrapping from basic app runtime**
   - **Problem**: `examples/basic-app/run.ts` manually primes replay cache/matcher globals, adding complexity and diverging from context-driven runtime flow.
   - **Acceptance**:
-    - no manual replay priming in `run.ts` (no direct `loadNdjson`, `setReplayRecordsCache`, `setGlobalReplayMatcher`).
+    - no manual replay priming in `run.ts` (no direct `loadNdjson`, `setReplayRecordsCache`, `setGlobalReplayMatcher`); cassette is created only in SoftprobeContext (see Task 13.6 / 13.10).
     - app runtime still supports capture and header-driven replay test requests through existing middleware/context flow.
   - **Solution**:
     - delete manual replay setup block and related imports.
@@ -310,10 +314,10 @@ Implementation rule per task:
   - **Problem**: overlapping scripts/runners obscure how users should run the example.
   - **Acceptance**:
     - `test-with-capture-replay.sh` becomes canonical:
-      - starts app via `SOFTPROBE_CONFIG_PATH` (capture YAML),
+      - starts app via `SOFTPROBE_CONFIG_PATH` (capture YAML with `cassetteDirectory` per section 13),
       - sends capture request with trace headers (`traceparent`, `x-softprobe-trace-id`),
       - flushes capture output,
-      - runs `softprobe diff` for replay validation (header mode switching).
+      - runs `softprobe diff` for replay validation (header mode switching; diff uses cassette directory + traceId when section 13 is in effect).
     - `package.json` example scripts point to canonical flow.
   - **Solution**:
     - refactor shell script to YAML-only startup.
@@ -331,12 +335,12 @@ Implementation rule per task:
 - [ ] **Task 12.5 Remove checked-in example NDJSON artifacts**
   - **Problem**: committed cassette artifacts create stale replay inputs and hide whether capture actually ran.
   - **Acceptance**:
-    - remove checked-in NDJSON files under `examples/basic-app/`.
-    - example flow reuses the freshly captured file for replay in the same run.
-    - README/scripts clearly indicate cassette is generated by capture step.
+    - remove checked-in NDJSON files (or cassette directory contents) under `examples/basic-app/`.
+    - example flow reuses the freshly captured output for replay in the same run (after section 13: per-trace files under cassetteDirectory).
+    - README/scripts clearly indicate cassette output is generated by capture step.
   - **Solution**:
-    - delete existing example NDJSON files.
-    - ensure script creates/verifies cassette before replay step.
+    - delete existing example NDJSON files / cassette artifacts.
+    - ensure script creates/verifies cassette output before replay step.
 
 - [ ] **Task 12.6 Reduce example surface area in docs**
   - **Problem**: too many entry points (`capture-runner`, `replay-runner`, replay-only shell) increase cognitive load for basic onboarding.
@@ -346,3 +350,69 @@ Implementation rule per task:
   - **Solution**:
     - trim file table and command list to canonical scripts.
     - align wording with YAML-only + header-driven replay approach.
+
+---
+
+## 13) Cassette Design V2 (directory, per-request, mode-agnostic) — Atomic
+
+> Implements [design-cassette.md](design-cassette.md) as updated: cassette directory (not file), no global cassette in init, cassette created only inside SoftprobeContext per request/traceId, one file per trace, Cassette interface without traceId parameters, cassette is pure read/write (no mode awareness).
+
+- [x] **Task 13.1 Config: cassette directory instead of file path** — `feat(config): add cassetteDirectory to config and context; init uses it and does not pass single file path when set`
+  - **Goal**: Configure a cassette directory; no single global cassette file path in config.
+  - **Test**: Config schema/type exposes `cassetteDirectory` (or equivalent); init reads and stores `cassetteDirectory`; no `cassettePath` used for determining where to read/write cassette files. Unit test or init-boot test asserts init does not receive or pass a single file path for the default cassette store.
+  - **Solution**: Add `cassetteDirectory` to config type and ConfigManager; init calls `SoftprobeContext.initGlobal({ ..., cassetteDirectory })` (or equivalent); remove or repurpose `cassettePath` in config so that runtime cassette file paths are always derived as `{cassetteDirectory}/{traceId}.ndjson`.
+
+- [x] **Task 13.2 Init does not create or set a global cassette** — `refactor(init): remove all cassette construction, setCaptureStore, and REPLAY eager load; init only sets mode, cassetteDirectory, strict flags`
+  - **Goal**: Init never instantiates a Cassette or sets global storage; init only sets mode, cassetteDirectory, and strict flags.
+  - **Test**: In CAPTURE, REPLAY, and PASSTHROUGH modes, init does not call `new NdjsonCassette(...)` (or any cassette constructor) and does not set a global `storage`/cassette on the context. Init-boot test mocks or asserts no cassette instance is created at boot; only directory and mode are stored for use when SoftprobeContext is created per request.
+  - **Solution**: Remove from init all cassette construction and `setCaptureStore`/global storage assignment; remove REPLAY eager load of cassette file. Init only sets config-derived values (mode, cassetteDirectory, strictReplay, strictComparison) on the global default or config holder used by SoftprobeContext.
+  - **Note**: E2E capture/replay tests fail until Task 13.5 (get-or-create cassette per traceId) and middleware use context-provided storage.
+
+- [x] **Task 13.3 Cassette interface: loadTrace() and saveRecord(record) without traceId** — `feat(cassette): Cassette.loadTrace() and saveRecord(record) with no traceId param; cassette bound to one trace`
+  - **Goal**: Cassette is bound to one traceId at creation; interface does not take traceId in load or save.
+  - **Test**: Type or compile-time assertion: `Cassette` has `loadTrace(): Promise<SoftprobeCassetteRecord[]>` and `saveRecord(record: SoftprobeCassetteRecord): Promise<void>` (no traceId parameter). Unit test that a mock cassette is called with these signatures (e.g. context.run in REPLAY calls `cassette.loadTrace()` with no args; capture helper calls `cassette.saveRecord(record)` with one arg).
+  - **Solution**: Update `Cassette` in types/schema to the new signatures; update NdjsonCassette, context.run, saveCaptureRecordFromContext, and any other call sites to use `loadTrace()` and `saveRecord(record)`; remove traceId from Cassette method parameters.
+
+- [x] **Task 13.4 One file per trace: NdjsonCassette path = {cassetteDirectory}/{traceId}.ndjson** — `feat(cassette): NdjsonCassette(cassetteDirectory, traceId); path = {dir}/{traceId}.ndjson`
+  - **Goal**: Each cassette instance is backed by a single file path derived from directory and traceId; one NDJSON file per trace.
+  - **Test**: Unit test: given a temp directory and traceId, NdjsonCassette (or the factory that creates it) uses the path `{dir}/{traceId}.ndjson` for both read and write; writing a record and calling loadTrace() returns that record; a different traceId produces a different file path and does not see the first trace's data.
+  - **Solution**: NdjsonCassette (or internal factory) is constructed with cassetteDirectory and traceId; internal path is path.join(cassetteDirectory, traceId + '.ndjson') or equivalent; loadTrace() reads that file; saveRecord(record) appends to that file.
+
+- [ ] **Task 13.5 SoftprobeContext get-or-create cassette per traceId**
+  - **Goal**: When SoftprobeContext is created for a request/session (e.g. in run() or middleware), the cassette for that traceId is get-or-created; the same instance is reused for the same traceId (e.g. on withData/fromHeaders updates).
+  - **Test**: In a test, create or run context twice for the same traceId (and same cassetteDirectory); assert the cassette instance returned by getCassette() is the same (reference equality). Run with a different traceId and assert a different cassette instance (or different backing file). No new cassette instance when only other context fields (e.g. strictReplay) are updated for the same traceId.
+  - **Solution**: In the SoftprobeContext creation/run path, maintain a cache keyed by (cassetteDirectory, traceId) or equivalent; when building run options or request context, get or create the cassette for that traceId and attach it to the context; reuse from cache when traceId and directory are unchanged.
+
+- [ ] **Task 13.6 Only SoftprobeContext creates cassette instances**
+  - **Goal**: No code path outside SoftprobeContext (or its designated internal factory) instantiates the concrete cassette type (e.g. NdjsonCassette). Init, middleware, and request-storage do not call the cassette constructor.
+  - **Test**: Grep or code check: no `new NdjsonCassette` (or cassette factory call) in init.ts, capture/express.ts, capture/fastify.ts, core/cassette/request-storage.ts, or replay helpers; only the context module (or a private factory it uses) creates cassettes. Tests that need a cassette do so via SoftprobeContext.run(..., fn) and getCassette() inside fn, or via a documented test-only helper that creates context/cassette for (directory, traceId) for assertion purposes only.
+  - **Solution**: Move all cassette construction into the context layer (or a single factory called only from context); refactor request-storage and middleware to obtain storage from SoftprobeContext (get-or-create by traceId) instead of constructing NdjsonCassette from header path; refactor tests to use run-scoped getCassette() or a test helper; remove store/load-ndjson and store/context-routing-capture-store as needed so that only the context path creates and uses cassettes.
+
+- [ ] **Task 13.7 Cassette and NdjsonCassette have no mode awareness**
+  - **Goal**: Cassette interface and implementation are pure read/write storage; no references to CAPTURE, REPLAY, or mode.
+  - **Test**: Grep or comment check: in the Cassette type definition and in NdjsonCassette (and any cassette adapter), no string literal or reference to "CAPTURE", "REPLAY", or "mode". Documentation for Cassette describes only load/save/flush semantics.
+  - **Solution**: Remove any mode-based logic or comments from Cassette interface and NdjsonCassette; ensure all mode decisions (when to load vs save) live in SoftprobeContext and call sites (e.g. run(), capture helpers).
+
+- [ ] **Task 13.8 Update context-capture and capture hooks to use saveRecord(record) only**
+  - **Goal**: Capture write path uses the new Cassette signature; no traceId passed to saveRecord.
+  - **Test**: saveCaptureRecordFromContext (and any direct cassette.saveRecord caller) calls `getCassette().saveRecord(record)` with one argument. Unit tests for capture hooks (postgres, redis, undici, http) run inside a context with a mock cassette and assert saveRecord(record) is called with the expected record (no traceId argument).
+  - **Solution**: Change saveCaptureRecordFromContext to call `cassette.saveRecord(record)`; update capture hooks that call the cassette to use the same signature; ensure record still contains traceId for the single-trace file.
+
+- [ ] **Task 13.9 Update context.run REPLAY branch to use loadTrace() only**
+  - **Goal**: REPLAY path in SoftprobeContext.run() calls cassette.loadTrace() with no arguments.
+  - **Test**: In REPLAY run, the cassette attached to options is invoked with loadTrace() (no args) once before the callback; matcher is seeded with the returned records. Unit test spies on the cassette's loadTrace and asserts it was called with zero arguments.
+  - **Solution**: In context.ts run() for REPLAY, replace loadTrace(traceId) with loadTrace(); ensure the cassette instance is already bound to the run's traceId so the correct file is read.
+
+- [ ] **Task 13.10 Remove store/load-ndjson and store/context-routing-capture-store; use only Cassette**
+  - **Goal**: No standalone loadNdjson or context-routing capture store; all read/write goes through the Cassette interface and SoftprobeContext-created cassettes.
+  - **Test**: No imports of load-ndjson or context-routing-capture-store from production code (init, middleware, replay store-accessor, api, etc.); E2E and unit tests that need to read cassette files do so via getCassette() in scope or a test helper that reads `{cassetteDirectory}/{traceId}.ndjson` for assertions. Replay store-accessor (if still needed) obtains records via context's cassette or a single internal path that uses the cassette factory for the given path/directory+traceId.
+  - **Solution**: Delete store/load-ndjson.ts and store/context-routing-capture-store.ts. Move any necessary stream-read logic into the cassette layer (internal to NdjsonCassette or its factory). Refactor loadReplayRecordsFromPath, CLI diff, E2E assertions, and examples to use SoftprobeContext.run + getCassette().loadTrace() or a test-only file read for `{dir}/{traceId}.ndjson`. Remove getCaptureStore/setCaptureStore and all capture store fallbacks; capture uses only saveCaptureRecordFromContext with context's cassette.
+
+- [ ] **Task 13.11 Restore E2E capture/replay tests broken by Task 13.2**
+  - **Problem**: After Task 13.2 (init does not create or set a global cassette), 15 E2E tests fail because they assume a global capture store and/or REPLAY eager load. Capture does not write; replay has no storage; workers and middleware have no cassette.
+  - **Prerequisite**: Tasks 13.5 (get-or-create cassette per traceId) and 13.6 (only SoftprobeContext creates cassettes) must be done so middleware receives storage from context.
+  - **Goal**: All E2E capture/replay tests pass again. Tests use cassetteDirectory and per-trace files `{cassetteDirectory}/{traceId}.ndjson`; no reliance on global setCaptureStore or loadNdjson at boot.
+  - **Test**: Full test suite passes. Affected E2E (e.g. task-9-2-replay-offline, http-cassette, redis-cassette, postgres-cassette-capture, express-inbound-capture, express-inbound-replay, fastify-inbound-cassette, server-inbound-strict-negative, task-9-3-strict-negative) pass with YAML config using cassetteDirectory; capture writes to per-trace files; replay loads from context cassette.
+  - **Solution**: Ensure middleware and E2E workers build run options with storage from SoftprobeContext get-or-create (cassetteDirectory + traceId). Update E2E test setup to use cassetteDirectory in config and assert files at `{cassetteDirectory}/{traceId}.ndjson`. Remove or replace any E2E use of cassettePath, getCaptureStore, or loadNdjson for production code paths.
+
+**Done criteria (Cassette V2):** Config uses cassetteDirectory only; init does not create a global cassette; Cassette has loadTrace() and saveRecord(record) with no traceId; one file per trace; only SoftprobeContext creates cassette instances; cassette is mode-agnostic; no store/load-ndjson or context-routing-capture-store in production paths.

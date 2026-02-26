@@ -4,6 +4,7 @@
  * Stdout: JSON { status, body }
  */
 
+import path from 'path';
 import '../../../init';
 import { ConfigManager } from '../../../config/config-manager';
 import { NdjsonCassette } from '../../../core/cassette/ndjson-cassette';
@@ -25,7 +26,9 @@ async function main(): Promise<void> {
   }
   if (!replayUrl) throw new Error('REPLAY_URL is required');
   if (!cassettePath) throw new Error('cassettePath is required in config');
-  const storage = new NdjsonCassette(cassettePath);
+  const cassetteDir = path.dirname(cassettePath);
+  const traceId = path.basename(cassettePath, '.ndjson');
+  const storage = new NdjsonCassette(cassetteDir, traceId);
 
   const sdk = new NodeSDK({
     instrumentations: [getNodeAutoInstrumentations()],

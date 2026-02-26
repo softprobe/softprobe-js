@@ -31,11 +31,11 @@ export function runSoftprobeScope<T>(
   const hasExplicitTraceId = Boolean(scope.traceId);
   const replayStorage: Cassette | undefined = scope.cassettePath
     ? {
-        loadTrace: async (traceId: string) => {
+        loadTrace: async () => {
           const records = await loadReplayRecordsFromPath(scope.cassettePath as string);
           loadedRecords =
-            hasExplicitTraceId && traceId
-              ? records.filter((r) => r.traceId === traceId)
+            hasExplicitTraceId && scope.traceId
+              ? records.filter((r) => r.traceId === scope.traceId)
               : records;
           return loadedRecords;
         },

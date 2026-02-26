@@ -10,7 +10,7 @@ describe('softprobe/init boot', () => {
     else delete process.env.SOFTPROBE_CONFIG_PATH;
   });
 
-  it('runs capture boot wiring when config mode is CAPTURE', () => {
+  it('runs capture boot wiring when config mode is CAPTURE (Task 13.2: no global cassette)', () => {
     const setCaptureStore = jest.fn();
     const CassetteStore = jest.fn(() => ({ flushOnExit: jest.fn() }));
     const applyAutoInstrumentationMutator = jest.fn();
@@ -30,18 +30,17 @@ describe('softprobe/init boot', () => {
       jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators }));
       jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor }));
       require('../init');
-      expect(CassetteStore).toHaveBeenCalledWith('/tmp/capture.ndjson');
-      expect(setCaptureStore).toHaveBeenCalledTimes(1);
+      expect(CassetteStore).not.toHaveBeenCalled();
+      expect(setCaptureStore).not.toHaveBeenCalled();
       expect(applyAutoInstrumentationMutator).toHaveBeenCalledTimes(1);
       expect(applyFrameworkMutators).toHaveBeenCalledTimes(1);
       expect((globalThis as unknown as { __softprobeApplyHttpReplay?: unknown }).__softprobeApplyHttpReplay).toBe(setupHttpReplayInterceptor);
     });
   });
 
-  it('sets capture cassette store when config mode is CAPTURE and cassette path is set', () => {
+  it('does not set global capture store when config mode is CAPTURE (Task 13.2)', () => {
     const setCaptureStore = jest.fn();
-    const fakeStore = { flushOnExit: jest.fn() };
-    const CassetteStore = jest.fn(() => fakeStore);
+    const CassetteStore = jest.fn(() => ({ flushOnExit: jest.fn() }));
 
     jest.isolateModules(() => {
       jest.doMock('../config/config-manager', () => ({
@@ -53,9 +52,12 @@ describe('softprobe/init boot', () => {
       }));
       jest.doMock('../capture/store-accessor', () => ({ setCaptureStore }));
       jest.doMock('../store/cassette-store', () => ({ CassetteStore }));
+      jest.doMock('../capture/mutator', () => ({ applyAutoInstrumentationMutator: jest.fn() }));
+      jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
+      jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
       require('../init');
-      expect(CassetteStore).toHaveBeenCalledWith('/tmp/capture.ndjson');
-      expect(setCaptureStore).toHaveBeenCalledWith(fakeStore);
+      expect(CassetteStore).not.toHaveBeenCalled();
+      expect(setCaptureStore).not.toHaveBeenCalled();
     });
   });
 
@@ -72,7 +74,7 @@ describe('softprobe/init boot', () => {
     });
   });
 
-  it('calls load exactly once when config mode is REPLAY and cassette path is set', () => {
+  it('does not eager-load cassette when config mode is REPLAY (Task 13.2: no global cassette)', () => {
     const loadNdjson = jest.fn().mockResolvedValue([]);
 
     jest.isolateModules(() => {
@@ -84,9 +86,13 @@ describe('softprobe/init boot', () => {
         },
       }));
       jest.doMock('../store/load-ndjson', () => ({ loadNdjson }));
+      jest.doMock('../replay/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
+      jest.doMock('../replay/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
+      jest.doMock('../replay/undici', () => ({ setupUndiciReplay: jest.fn() }));
+      jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
+      jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
       require('../init');
-      expect(loadNdjson).toHaveBeenCalledTimes(1);
-      expect(loadNdjson).toHaveBeenCalledWith('/tmp/cassette.ndjson');
+      expect(loadNdjson).not.toHaveBeenCalled();
     });
   });
 
@@ -117,11 +123,9 @@ describe('softprobe/init boot', () => {
     });
   });
 
-  it('Task 8.1: constructs NdjsonCassette from configured NDJSON path at boot', () => {
+  it('Task 13.2: init does not construct NdjsonCassette at boot (was Task 8.1)', () => {
     const initGlobal = jest.fn();
-    const cassetteInstance = { loadTrace: jest.fn(), saveRecord: jest.fn() };
-    const NdjsonCassette = jest.fn(() => cassetteInstance);
-    const loadNdjson = jest.fn().mockResolvedValue([]);
+    const NdjsonCassette = jest.fn(() => ({ loadTrace: jest.fn(), saveRecord: jest.fn() }));
 
     jest.isolateModules(() => {
       jest.doMock('../config/config-manager', () => ({
@@ -138,7 +142,7 @@ describe('softprobe/init boot', () => {
         SoftprobeContext: { initGlobal },
       }));
       jest.doMock('../core/cassette/ndjson-cassette', () => ({ NdjsonCassette }));
-      jest.doMock('../store/load-ndjson', () => ({ loadNdjson }));
+      jest.doMock('../store/load-ndjson', () => ({ loadNdjson: jest.fn().mockResolvedValue([]) }));
       jest.doMock('../replay/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
       jest.doMock('../replay/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
       jest.doMock('../replay/undici', () => ({ setupUndiciReplay: jest.fn() }));
@@ -146,12 +150,100 @@ describe('softprobe/init boot', () => {
       jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
 
       require('../init');
-      expect(NdjsonCassette).toHaveBeenCalledWith('/tmp/configured-cassette.ndjson');
+      expect(NdjsonCassette).not.toHaveBeenCalled();
       expect(initGlobal).toHaveBeenCalledWith(expect.objectContaining({
         mode: 'REPLAY',
         cassettePath: '/tmp/configured-cassette.ndjson',
-        storage: cassetteInstance,
       }));
+      expect(initGlobal.mock.calls[0][0].storage).toBeUndefined();
     });
+  });
+
+  it('Task 13.1: init with cassetteDirectory does not pass single file path for default cassette store', () => {
+    const initGlobal = jest.fn();
+    const NdjsonCassette = jest.fn();
+
+    jest.isolateModules(() => {
+      jest.doMock('../config/config-manager', () => ({
+        ConfigManager: class {
+          get() {
+            return {
+              mode: 'REPLAY',
+              cassetteDirectory: '/var/cassettes',
+              replay: { strictReplay: false, strictComparison: false },
+            };
+          }
+        },
+      }));
+      jest.doMock('../context', () => ({
+        SoftprobeContext: { initGlobal },
+      }));
+      jest.doMock('../core/cassette/ndjson-cassette', () => ({ NdjsonCassette }));
+      jest.doMock('../store/load-ndjson', () => ({ loadNdjson: jest.fn().mockResolvedValue([]) }));
+      jest.doMock('../replay/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
+      jest.doMock('../replay/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
+      jest.doMock('../replay/undici', () => ({ setupUndiciReplay: jest.fn() }));
+      jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
+      jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
+
+      require('../init');
+      expect(NdjsonCassette).not.toHaveBeenCalled();
+      expect(initGlobal).toHaveBeenCalledWith(expect.objectContaining({
+        mode: 'REPLAY',
+        cassetteDirectory: '/var/cassettes',
+      }));
+      expect(initGlobal.mock.calls[0][0].storage).toBeUndefined();
+    });
+  });
+
+  it('Task 13.2: in CAPTURE, REPLAY, and PASSTHROUGH init does not create cassette or set global storage', () => {
+    const NdjsonCassette = jest.fn();
+    const setCaptureStore = jest.fn();
+    const CassetteStore = jest.fn();
+    const loadNdjson = jest.fn();
+
+    const runInitForMode = (mode: string, cassetteDirectory?: string, cassettePath?: string) => {
+      NdjsonCassette.mockClear();
+      setCaptureStore.mockClear();
+      loadNdjson.mockClear();
+      jest.isolateModules(() => {
+        jest.doMock('../config/config-manager', () => ({
+          ConfigManager: class {
+            get() {
+              return {
+                mode,
+                cassetteDirectory: cassetteDirectory ?? '',
+                cassettePath: cassettePath ?? '',
+                replay: { strictReplay: false, strictComparison: false },
+              };
+            }
+          },
+        }));
+        jest.doMock('../core/cassette/ndjson-cassette', () => ({ NdjsonCassette }));
+        jest.doMock('../capture/store-accessor', () => ({ setCaptureStore }));
+        jest.doMock('../store/cassette-store', () => ({ CassetteStore }));
+        jest.doMock('../store/load-ndjson', () => ({ loadNdjson }));
+        jest.doMock('../capture/mutator', () => ({ applyAutoInstrumentationMutator: jest.fn() }));
+        jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
+        jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
+        jest.doMock('../replay/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
+        jest.doMock('../replay/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
+        jest.doMock('../replay/undici', () => ({ setupUndiciReplay: jest.fn() }));
+        require('../init');
+      });
+    };
+
+    runInitForMode('CAPTURE', '/var/cassettes');
+    expect(NdjsonCassette).not.toHaveBeenCalled();
+    expect(setCaptureStore).not.toHaveBeenCalled();
+    expect(CassetteStore).not.toHaveBeenCalled();
+
+    runInitForMode('REPLAY', '/var/cassettes');
+    expect(NdjsonCassette).not.toHaveBeenCalled();
+    expect(loadNdjson).not.toHaveBeenCalled();
+
+    runInitForMode('PASSTHROUGH', '/var/cassettes');
+    expect(NdjsonCassette).not.toHaveBeenCalled();
+    expect(setCaptureStore).not.toHaveBeenCalled();
   });
 });

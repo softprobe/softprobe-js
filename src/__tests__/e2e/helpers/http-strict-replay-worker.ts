@@ -5,6 +5,7 @@
  * Stdout: JSON { status, body }
  */
 
+import path from 'path';
 import '../../../init';
 import { softprobe } from '../../../api';
 import { ConfigManager } from '../../../config/config-manager';
@@ -24,6 +25,9 @@ async function main(): Promise<void> {
   if (!unrecordedUrl) throw new Error('UNRECORDED_URL is required');
   if (!cassettePath) throw new Error('cassettePath is required in config');
 
+  const cassetteDir = path.dirname(cassettePath);
+  const traceId = path.basename(cassettePath, '.ndjson');
+
   const sdk = new NodeSDK({
     instrumentations: [getNodeAutoInstrumentations()],
   });
@@ -33,7 +37,7 @@ async function main(): Promise<void> {
     {
       mode: 'REPLAY',
       traceId: process.env.REPLAY_TRACE_ID ?? 'strict-e2e-replay',
-      storage: new NdjsonCassette(cassettePath),
+      storage: new NdjsonCassette(cassetteDir, traceId),
     },
     async () => {
       const undici = require('undici') as { fetch: typeof fetch };

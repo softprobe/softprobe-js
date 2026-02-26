@@ -3,6 +3,7 @@ import type { SoftprobeCassetteRecord } from '../../types/schema';
 
 /**
  * Writes one capture record through the active cassette using active trace context.
+ * When context has a traceId, record.traceId is normalized to it (one file per trace).
  */
 export async function saveCaptureRecordFromContext(
   record: SoftprobeCassetteRecord
@@ -10,8 +11,9 @@ export async function saveCaptureRecordFromContext(
   if (SoftprobeContext.getMode() !== 'CAPTURE') return;
   const cassette = SoftprobeContext.getCassette();
   if (!cassette) return;
-  const traceId = SoftprobeContext.getTraceId();
-  await cassette.saveRecord(traceId, record);
+  const ctxTraceId = SoftprobeContext.getTraceId();
+  const toSave = ctxTraceId ? { ...record, traceId: ctxTraceId } : record;
+  await cassette.saveRecord(toSave);
 }
 
 /**
