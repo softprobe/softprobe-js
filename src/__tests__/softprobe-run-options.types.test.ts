@@ -14,7 +14,7 @@ describe('SoftprobeRunOptions', () => {
     saveRecord: async () => {},
   };
 
-  it('requires mode, storage, and traceId', () => {
+  it('requires mode and traceId; storage is optional (get-or-create when cassetteDirectory set)', () => {
     const baseOptions: SoftprobeRunOptions = {
       mode: 'CAPTURE',
       storage: cassette,
@@ -31,12 +31,12 @@ describe('SoftprobeRunOptions', () => {
     };
     expect(missingMode.traceId).toBe('t1');
 
-    // @ts-expect-error missing storage
-    const missingStorage: SoftprobeRunOptions = {
+    // storage optional (Task 13.5: get-or-create from cassetteDirectory + traceId)
+    const optsWithoutStorage: SoftprobeRunOptions = {
       mode: 'REPLAY',
       traceId: 't2',
     };
-    expect(missingStorage.mode).toBe('REPLAY');
+    expect(optsWithoutStorage.mode).toBe('REPLAY');
 
     // @ts-expect-error missing traceId
     const missingTraceId: SoftprobeRunOptions = {

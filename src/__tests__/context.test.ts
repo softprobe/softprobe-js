@@ -3,6 +3,10 @@
  * Getters, withData, initGlobal, fromHeaders, setGlobalReplayMatcher, run.
  */
 
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
 import * as otelApi from '@opentelemetry/api';
 import { ROOT_CONTEXT, context } from '@opentelemetry/api';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
@@ -302,6 +306,106 @@ describe('context (SoftprobeContext)', () => {
       );
 
       expect(loadTrace).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Task 13.5: get-or-create cassette per traceId; same instance reused for same (cassetteDirectory, traceId).
+     */
+    describe('Task 13.5: get-or-create cassette per traceId', () => {
+      it('returns the same cassette instance for the same traceId and cassetteDirectory across two runs', async () => {
+        const cassetteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'softprobe-13-5-'));
+        try {
+          SoftprobeContext.initGlobal({ mode: 'CAPTURE', cassetteDirectory: cassetteDir });
+
+          let ref1: Cassette | undefined;
+          let ref2: Cassette | undefined;
+          await SoftprobeContext.run(
+            { mode: 'CAPTURE', traceId: 'trace-same' },
+            () => {
+              ref1 = SoftprobeContext.getCassette();
+            }
+          );
+          await SoftprobeContext.run(
+            { mode: 'CAPTURE', traceId: 'trace-same' },
+            () => {
+              ref2 = SoftprobeContext.getCassette();
+            }
+          );
+
+          expect(ref1).toBeDefined();
+          expect(ref2).toBeDefined();
+          expect(ref2).toBe(ref1);
+        } finally {
+          try {
+            fs.rmSync(cassetteDir, { recursive: true });
+          } catch {
+            /* ignore */
+          }
+        }
+      });
+
+      it('returns a different cassette instance for a different traceId', async () => {
+        const cassetteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'softprobe-13-5-'));
+        try {
+          SoftprobeContext.initGlobal({ mode: 'CAPTURE', cassetteDirectory: cassetteDir });
+
+          let refA: Cassette | undefined;
+          let refB: Cassette | undefined;
+          await SoftprobeContext.run(
+            { mode: 'CAPTURE', traceId: 'trace-a' },
+            () => {
+              refA = SoftprobeContext.getCassette();
+            }
+          );
+          await SoftprobeContext.run(
+            { mode: 'CAPTURE', traceId: 'trace-b' },
+            () => {
+              refB = SoftprobeContext.getCassette();
+            }
+          );
+
+          expect(refA).toBeDefined();
+          expect(refB).toBeDefined();
+          expect(refB).not.toBe(refA);
+        } finally {
+          try {
+            fs.rmSync(cassetteDir, { recursive: true });
+          } catch {
+            /* ignore */
+          }
+        }
+      });
+
+      it('reuses same cassette when only other context fields (e.g. strictReplay) are updated for same traceId', async () => {
+        const cassetteDir = fs.mkdtempSync(path.join(os.tmpdir(), 'softprobe-13-5-'));
+        try {
+          SoftprobeContext.initGlobal({ mode: 'CAPTURE', cassetteDirectory: cassetteDir });
+
+          let ref1: Cassette | undefined;
+          let ref2: Cassette | undefined;
+          await SoftprobeContext.run(
+            { mode: 'CAPTURE', traceId: 'trace-same' },
+            () => {
+              ref1 = SoftprobeContext.getCassette();
+            }
+          );
+          await SoftprobeContext.run(
+            { mode: 'CAPTURE', traceId: 'trace-same', strictReplay: true },
+            () => {
+              ref2 = SoftprobeContext.getCassette();
+            }
+          );
+
+          expect(ref1).toBeDefined();
+          expect(ref2).toBe(ref1);
+        } finally {
+          try {
+            fs.rmSync(cassetteDir, { recursive: true });
+          } catch {
+            /* ignore */
+          }
+        }
+      });
     });
   });
 });

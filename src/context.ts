@@ -10,6 +10,7 @@ import type { Cassette, SoftprobeCassetteRecord, SoftprobeRunOptions } from './t
 import type { SemanticMatcher } from './replay/matcher';
 import { SoftprobeMatcher } from './replay/softprobe-matcher';
 import { createDefaultMatcher } from './replay/extract-key';
+import { NdjsonCassette } from './core/cassette/ndjson-cassette';
 
 /** Context key under which softprobe state is stored in OTel Context. Exported for tests. */
 export const SOFTPROBE_CONTEXT_KEY = createContextKey('softprobe_context');
@@ -45,6 +46,26 @@ let globalDefault: Stored = {
 };
 
 let globalReplayMatcher: SoftprobeMatcher | undefined;
+
+/** Task 13.5: cache keyed by (cassetteDirectory, traceId) for get-or-create cassette per trace. */
+const cassetteCache = new Map<string, Cassette>();
+
+function cacheKey(cassetteDirectory: string, traceId: string): string {
+  return `${cassetteDirectory}\0${traceId}`;
+}
+
+/**
+ * Task 13.5: Get or create a cassette for the given directory and traceId. Reuses same instance for same key.
+ */
+function getOrCreateCassette(cassetteDirectory: string, traceId: string): Cassette {
+  const key = cacheKey(cassetteDirectory, traceId);
+  let cassette = cassetteCache.get(key);
+  if (!cassette) {
+    cassette = new NdjsonCassette(cassetteDirectory, traceId);
+    cassetteCache.set(key, cassette);
+  }
+  return cassette;
+}
 
 function merge(base: Stored, partial: PartialData): Stored {
   return {
@@ -180,6 +201,13 @@ function ensureTraceId(stored: Stored, fallback: string): Stored {
   return stored.traceId ? stored : { ...stored, traceId: fallback };
 }
 
+function resolveStorage(merged: Stored, traceId: string): Cassette | undefined {
+  if (merged.storage) return merged.storage;
+  const dir = merged.cassetteDirectory;
+  if (dir && traceId) return getOrCreateCassette(dir, traceId);
+  return undefined;
+}
+
 function run<T>(options: SoftprobeRunOptions, fn: () => T | Promise<T>): T | Promise<T> {
   const base = active(context.active());
   const mergedBase = merge(base, options);
@@ -190,12 +218,14 @@ function run<T>(options: SoftprobeRunOptions, fn: () => T | Promise<T>): T | Pro
       options.traceId !== undefined && options.traceId !== null
         ? options.traceId
         : mergedBase.traceId || base.traceId || defaultTraceId();
+    const storage = resolveStorage(mergedBase, traceId);
     return (async () => {
-      const records = await options.storage.loadTrace();
+      if (!storage) throw new Error('Softprobe REPLAY requires storage or cassetteDirectory + traceId');
+      const records = await storage.loadTrace();
       const matcher = new SoftprobeMatcher();
       matcher._setRecords(records);
       matcher.use(options.matcher ?? createDefaultMatcher());
-      const withReplayData = merge(mergedBase, { matcher });
+      const withReplayData = merge(mergedBase, { matcher, storage });
       const withTraceId = ensureTraceId(withReplayData, traceId);
       const ctxWith = withData(context.active(), withTraceId);
       return context.with(ctxWith, fn) as Promise<T>;
@@ -203,7 +233,9 @@ function run<T>(options: SoftprobeRunOptions, fn: () => T | Promise<T>): T | Pro
   }
 
   const withTraceId = ensureTraceId(mergedBase, mergedBase.traceId || base.traceId || defaultTraceId());
-  const ctxWith = withData(context.active(), withTraceId);
+  const storage = resolveStorage(mergedBase, withTraceId.traceId!);
+  const finalStored = storage ? merge(withTraceId, { storage }) : withTraceId;
+  const ctxWith = withData(context.active(), finalStored);
   return context.with(ctxWith, fn) as T | Promise<T>;
 }
 

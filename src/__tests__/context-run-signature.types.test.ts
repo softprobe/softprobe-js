@@ -13,7 +13,7 @@ describe('SoftprobeContext.run signature', () => {
       async () => {}
     );
 
-    // @ts-expect-error missing storage
+    // storage optional (Task 13.5: get-or-create from cassetteDirectory + traceId when set)
     await SoftprobeContext.run({ mode: 'CAPTURE', traceId: 'trace-1' }, async () => {});
 
     // @ts-expect-error missing traceId

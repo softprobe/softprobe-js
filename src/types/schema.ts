@@ -59,10 +59,19 @@ export interface Cassette {
   flush?(): Promise<void>;
 }
 
+/**
+ * Options for SoftprobeContext.run().
+ * When storage is omitted, cassetteDirectory (from options or global) and traceId are used to get-or-create a cassette (Task 13.5).
+ */
 export interface SoftprobeRunOptions {
   mode: SoftprobeMode;
-  storage: Cassette;
+  /** Optional; when omitted and cassetteDirectory + traceId are set, context get-or-creates a cassette per traceId. */
+  storage?: Cassette;
   traceId: string;
+  /** Optional directory for per-trace cassette files; when not set, global default from init is used. */
+  cassetteDirectory?: string;
+  strictReplay?: boolean;
+  strictComparison?: boolean;
   matcher?: MatcherFn;
 }
 
