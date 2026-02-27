@@ -95,5 +95,5 @@ This keeps matcher logic pure and reusable.
 
 Matcher is context-scoped:
 - active matcher is read from `SoftprobeContext`
-- replay run seeds matcher records from `cassette.loadTrace(traceId)`
+- replay run seeds matcher records from `cassette.loadTrace()`
 - wrappers use current context only; avoid global mutable fallback

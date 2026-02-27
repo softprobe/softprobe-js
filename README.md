@@ -27,12 +27,12 @@ import { softprobe } from "softprobe";
 
 it("replays from cassette", async () => {
   const storage = {
-    async loadTrace(traceId) {
-      // Load and return records for this traceId from your NDJSON cassette.
+    async loadTrace() {
+      // Load and return records for the trace bound to this cassette.
       return [];
     },
-    async saveRecord() {
-      // Replay-only example: no-op.
+    async saveRecord(_record) {
+      // Replay-only example: no-op for writes.
     },
   };
 
@@ -45,6 +45,14 @@ it("replays from cassette", async () => {
   );
 });
 ```
+
+3. **Run the end-to-end example flow** (capture -> replay -> diff):
+
+```bash
+npm run example:test
+```
+
+For a step-by-step walkthrough, see [examples/basic-app/README.md](examples/basic-app/README.md).
 
 ## CLI — `softprobe diff`
 
@@ -116,6 +124,7 @@ npx softprobe diff ./softprobe-cassettes.ndjson http://localhost:3000
 ## More
 
 - **Example app:** `examples/basic-app` — capture, replay, and custom matcher.
+- **Example walkthrough:** [examples/basic-app/README.md](examples/basic-app/README.md)
 - **Design index:** [design.md](design.md) — architecture, cassette format, and coordination headers.
 - **Context design:** [design-context.md](design-context.md)
 - **Cassette design:** [design-cassette.md](design-cassette.md)

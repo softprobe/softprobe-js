@@ -33,7 +33,7 @@ Out of scope:
 ## 2) Architectural Units
 
 1. `Context`: holds request/test scoped Softprobe state (`mode`, `traceId`, cassette handle, matcher).
-2. `Cassette`: reads/writes trace records through a stable interface.
+2. `Cassette`: reads/writes trace records through a stable interface (`loadTrace()`, `saveRecord(record)`, optional `flush()`).
 3. `Matcher`: resolves outbound calls to recorded payloads.
 4. `Wrappers/Interceptors`: protocol integrations (HTTP/Postgres/Redis).
 
@@ -56,7 +56,7 @@ Detailed specs are in:
 ### 3.2 Replay
 
 1. Entry middleware/hook builds replay run options and calls `SoftprobeContext.run(options, fn)`.
-2. `run()` loads trace records from cassette and seeds matcher state.
+2. `run()` loads trace records from cassette once per run and seeds matcher state.
 3. Wrappers/interceptors call matcher:
    - `MOCK`: return recorded payload
    - `PASSTHROUGH`: call original
@@ -68,11 +68,16 @@ Detailed specs are in:
 
 - `softprobe/init` must run before OTel auto-instrumentation wraps dependency modules.
 - Softprobe stores data under a dedicated OTel context key.
-- Header coordination (e.g. `x-softprobe-*`) may override global defaults per request.
+- Header coordination may override per-request runtime with:
+  - `x-softprobe-mode`
+  - `x-softprobe-trace-id`
+- Cassette layout is one file per trace: `{cassetteDirectory}/{traceId}.ndjson`.
 
 ### 4.1 One-line init
 
-Init loads and patches pg, redis, undici, and the HTTP interceptor so they are patched before OTel runs. The app loads `softprobe/init` once (e.g. first in instrumentation or `node -r softprobe/init`). When OTel later runs `sdk.start()`, it gets cached modules and wraps on top of our layer. No post-`sdk.start()` calls are required.
+Init loads config from `SOFTPROBE_CONFIG_PATH` or default `./.softprobe/config.yml`, seeds global defaults (`mode`, `cassetteDirectory`, strict flags), then patches pg, redis, undici, and the HTTP interceptor before OTel runs.
+
+The app loads `softprobe/init` once (e.g. first in instrumentation or `node -r softprobe/init`). When OTel later runs `sdk.start()`, it gets cached modules and wraps on top of our layer. No post-`sdk.start()` calls are required.
 
 ---
 
