@@ -68,7 +68,7 @@ export function softprobeExpressMiddleware(
   req: { method: string; path: string; body?: unknown; headers?: Record<string, string | string[] | undefined> },
   res: { statusCode: number; send: (body?: unknown) => unknown },
   next: (err?: unknown) => void
-): void {
+): void | Promise<void> {
   const span = trace.getActiveSpan();
   const spanTraceId = span?.spanContext().traceId;
   const base = SoftprobeContext.active();
@@ -98,15 +98,33 @@ export function softprobeExpressMiddleware(
   };
 
   if (mode === 'REPLAY') {
-    runInRequestScope(async () => {
-      try {
-        activateReplayForContext(ctxTraceId);
-      } catch (err) {
-        return next(err);
-      }
-      next();
-    });
-    return;
+    // Return the promise so Express waits; run() callback awaits res.end(), so REPLAY context
+    // stays active for the whole request and async route handlers see getMode() === 'REPLAY'.
+    type ResWithEnd = { end?: (chunk?: unknown, encoding?: string, cb?: () => void) => unknown };
+    const promise = context.with(ctxWithSoftprobe, () =>
+      SoftprobeContext.run(runOptions, async () => {
+        try {
+          activateReplayForContext(ctxTraceId);
+        } catch (err) {
+          throw err;
+        }
+        await new Promise<void>((resolve) => {
+          const origEnd = (res as ResWithEnd).end?.bind(res);
+          if (typeof origEnd === 'function') {
+            (res as ResWithEnd).end = function (this: ResWithEnd, chunk?: unknown, encoding?: string, cb?: () => void) {
+              (res as ResWithEnd).end = origEnd;
+              const result = origEnd!.call(this, chunk, encoding, cb);
+              resolve();
+              return result;
+            };
+          } else {
+            resolve();
+          }
+          next();
+        });
+      })
+    );
+    return Promise.resolve(promise).catch((err: unknown) => next(err));
   }
   if (mode === 'CAPTURE') {
     runInRequestScope(() => {

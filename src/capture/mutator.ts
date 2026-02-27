@@ -1,8 +1,7 @@
 /**
  * Auto-instrumentation mutator: wraps getNodeAutoInstrumentations to inject
- * Softprobe responseHooks per protocol (postgres, undici, redis). Each protocol
- * is implemented in its own module (capture/postgres.ts, undici.ts, redis.ts);
- * this module only applies the wrap and delegates to injectResponseHook.
+ * Softprobe responseHooks per protocol (postgres, redis). HTTP capture/replay
+ * is done solely via the MSW interceptor (replay/http.ts), not undici instrumentation.
  * Design §5.2, §5.3.
  */
 
@@ -13,10 +12,6 @@ import {
   buildPostgresRequestHook,
   buildPostgresResponseHook,
 } from './postgres';
-import {
-  UNDICI_INSTRUMENTATION_NAME,
-  buildUndiciResponseHook,
-} from './undici';
 import {
   REDIS_INSTRUMENTATION_NAME,
   buildRedisResponseHook,
@@ -58,10 +53,6 @@ export function applyAutoInstrumentationMutator(
           requestHook: buildPostgresRequestHook(),
           responseHook: buildPostgresResponseHook(),
         };
-        merged[UNDICI_INSTRUMENTATION_NAME] = {
-          ...((input[UNDICI_INSTRUMENTATION_NAME] as object) ?? {}),
-          responseHook: buildUndiciResponseHook(),
-        };
         merged[REDIS_INSTRUMENTATION_NAME] = {
           ...((input[REDIS_INSTRUMENTATION_NAME] as object) ?? {}),
           responseHook: buildRedisResponseHook(),
@@ -72,7 +63,6 @@ export function applyAutoInstrumentationMutator(
         const arr = Array.isArray(result) ? result : [];
         injectHook(arr, PG_INSTRUMENTATION_NAME, 'requestHook', buildPostgresRequestHook());
         injectResponseHook(arr, PG_INSTRUMENTATION_NAME, buildPostgresResponseHook());
-        injectResponseHook(arr, UNDICI_INSTRUMENTATION_NAME, buildUndiciResponseHook());
         injectResponseHook(arr, REDIS_INSTRUMENTATION_NAME, buildRedisResponseHook());
         return arr;
       };

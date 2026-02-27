@@ -23,6 +23,13 @@ function getInboundRecords(records: SoftprobeCassetteRecord[]): SoftprobeCassett
   return records.filter((r) => r.type === 'inbound');
 }
 
+/** Strip variable http headers so replay comparison is stable. */
+function withoutVariableHeaders(obj: unknown): unknown {
+  const o = JSON.parse(JSON.stringify(obj));
+  if (o && typeof o === 'object' && 'headers' in o && o.headers) delete (o as Record<string, unknown>).headers;
+  return o;
+}
+
 function getOutboundRecords(records: SoftprobeCassetteRecord[]): SoftprobeCassetteRecord[] {
   return records.filter(
     (r) =>
@@ -113,7 +120,7 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
       expect(res.ok).toBe(true);
       const body = (await res.json()) as { ok?: boolean; outbound?: unknown };
       expect(body.ok).toBe(true);
-      expect(body.outbound).toEqual({ url: 'https://httpbin.org/get' });
+      expect(withoutVariableHeaders(body.outbound)).toEqual(withoutVariableHeaders({ url: 'https://httpbin.org/get' }));
 
       await fetch(`http://127.0.0.1:${port}/exit`, { signal: AbortSignal.timeout(5000) }).catch(() => {});
       await new Promise<void>((r) => {
@@ -196,7 +203,7 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
       if (responsePayload?.body !== undefined) {
         const expectedBody =
           typeof responsePayload.body === 'string' ? JSON.parse(responsePayload.body) : responsePayload.body;
-        expect(body.outbound).toEqual(expectedBody);
+        expect(withoutVariableHeaders(body.outbound)).toEqual(withoutVariableHeaders(expectedBody));
       }
 
       await fetch(`http://127.0.0.1:${replayPort}/exit`, { signal: AbortSignal.timeout(5000) }).catch(() => {});

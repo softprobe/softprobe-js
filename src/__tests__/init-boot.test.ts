@@ -34,7 +34,7 @@ describe('softprobe/init boot', () => {
       expect(setCaptureStore).not.toHaveBeenCalled();
       expect(applyAutoInstrumentationMutator).toHaveBeenCalledTimes(1);
       expect(applyFrameworkMutators).toHaveBeenCalledTimes(1);
-      expect((globalThis as unknown as { __softprobeApplyHttpReplay?: unknown }).__softprobeApplyHttpReplay).toBe(setupHttpReplayInterceptor);
+      expect(setupHttpReplayInterceptor).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -83,20 +83,20 @@ describe('softprobe/init boot', () => {
           }
         },
       }));
+      jest.doMock('../capture/mutator', () => ({ applyAutoInstrumentationMutator: jest.fn() }));
       jest.doMock('../replay/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
       jest.doMock('../replay/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
-      jest.doMock('../replay/undici', () => ({ setupUndiciReplay: jest.fn() }));
       jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
       jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
       require('../init');
     });
   });
 
-  it('calls replay adapter patch fns during import when config mode is REPLAY', () => {
+  it('applies all replay patches during init (one-line init; HTTP via MSW only)', () => {
+    const setupHttpReplayInterceptor = jest.fn();
     const setupPostgresReplay = jest.fn();
     const setupRedisReplay = jest.fn();
-    const setupUndiciReplay = jest.fn();
-    const setupHttpReplayInterceptor = jest.fn();
+    const applyRedisReplay = jest.fn();
 
     jest.isolateModules(() => {
       jest.doMock('../config/config-manager', () => ({
@@ -106,16 +106,16 @@ describe('softprobe/init boot', () => {
           }
         },
       }));
+      jest.doMock('../capture/mutator', () => ({ applyAutoInstrumentationMutator: jest.fn() }));
       jest.doMock('../replay/postgres', () => ({ setupPostgresReplay, applyPostgresReplay: jest.fn() }));
-      jest.doMock('../replay/redis', () => ({ setupRedisReplay, applyRedisReplay: jest.fn() }));
-      jest.doMock('../replay/undici', () => ({ setupUndiciReplay }));
+      jest.doMock('../replay/redis', () => ({ setupRedisReplay, applyRedisReplay }));
       jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor }));
       jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
       require('../init');
+      expect(setupHttpReplayInterceptor).toHaveBeenCalledTimes(1);
       expect(setupPostgresReplay).toHaveBeenCalledTimes(1);
       expect(setupRedisReplay).toHaveBeenCalledTimes(1);
-      expect(setupUndiciReplay).toHaveBeenCalledTimes(1);
-      expect((globalThis as unknown as { __softprobeApplyHttpReplay?: unknown }).__softprobeApplyHttpReplay).toBe(setupHttpReplayInterceptor);
+      expect(applyRedisReplay).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -140,7 +140,6 @@ describe('softprobe/init boot', () => {
       jest.doMock('../core/cassette/ndjson-cassette', () => ({ NdjsonCassette }));
       jest.doMock('../replay/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
       jest.doMock('../replay/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
-      jest.doMock('../replay/undici', () => ({ setupUndiciReplay: jest.fn() }));
       jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
       jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
 
@@ -177,7 +176,6 @@ describe('softprobe/init boot', () => {
       jest.doMock('../core/cassette/ndjson-cassette', () => ({ NdjsonCassette }));
       jest.doMock('../replay/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
       jest.doMock('../replay/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
-      jest.doMock('../replay/undici', () => ({ setupUndiciReplay: jest.fn() }));
       jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
       jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
 
@@ -219,7 +217,6 @@ describe('softprobe/init boot', () => {
         jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
         jest.doMock('../replay/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
         jest.doMock('../replay/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
-        jest.doMock('../replay/undici', () => ({ setupUndiciReplay: jest.fn() }));
         require('../init');
       });
     };

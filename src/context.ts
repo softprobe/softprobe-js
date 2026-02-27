@@ -197,7 +197,8 @@ function resolveStorage(merged: Stored, traceId: string): Cassette | undefined {
 }
 
 function run<T>(options: SoftprobeRunOptions, fn: () => T | Promise<T>): T | Promise<T> {
-  const base = active(context.active());
+  const otelContextAtCall = context.active();
+  const base = active(otelContextAtCall);
   const mergedBase = merge(base, options);
   const defaultTraceId = (): string => randomBytes(16).toString('hex');
 
@@ -215,7 +216,9 @@ function run<T>(options: SoftprobeRunOptions, fn: () => T | Promise<T>): T | Pro
       matcher.use(options.matcher ?? createDefaultMatcher());
       const withReplayData = merge(mergedBase, { matcher, storage });
       const withTraceId = ensureTraceId(withReplayData, traceId);
-      const ctxWith = withData(context.active(), withTraceId);
+      // Use context captured when run() was called (e.g. from middleware) so REPLAY scope
+      // is attached to the right parent; context.active() here would be wrong after await.
+      const ctxWith = withData(otelContextAtCall, withTraceId);
       return context.with(ctxWith, fn) as Promise<T>;
     })();
   }

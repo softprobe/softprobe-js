@@ -15,7 +15,6 @@ const PRODUCTION_PATHS = [
   path.join(SRC, 'capture', 'fastify.ts'),
   path.join(SRC, 'capture', 'postgres.ts'),
   path.join(SRC, 'capture', 'redis.ts'),
-  path.join(SRC, 'capture', 'undici.ts'),
   path.join(SRC, 'replay', 'store-accessor.ts'),
   path.join(SRC, 'cli', 'diff.ts'),
 ];

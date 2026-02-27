@@ -56,6 +56,11 @@ export function setupRedisReplay(): void {
             if (mode === 'REPLAY' && !matcher && strictReplay) {
               return Promise.reject(new Error('Softprobe replay: no match for redis command'));
             }
+            const { args: redisArgs } = transformCommandArguments(command, args);
+            const cmd = (redisArgs[0] != null ? String(redisArgs[0]) : 'UNKNOWN').toUpperCase();
+            if (mode === 'REPLAY' && (cmd === 'QUIT' || cmd === 'DISCONNECT')) {
+              return Promise.resolve('OK');
+            }
             if (!matcher) {
               return (originalExecutor as (this: unknown, c: unknown, a: unknown[], n: string) => unknown).call(
                 this,
@@ -64,8 +69,6 @@ export function setupRedisReplay(): void {
                 _name
               );
             }
-            const { args: redisArgs } = transformCommandArguments(command, args);
-            const cmd = (redisArgs[0] != null ? String(redisArgs[0]) : 'UNKNOWN');
             const cmdArgs = redisArgs.slice(1).map((a: unknown) => (a != null ? String(a) : ''));
             RedisSpan.tagCommand(cmd, cmdArgs, trace.getActiveSpan() ?? undefined);
             const identifier = buildIdentifier(redisArgs);
@@ -163,30 +166,43 @@ export function applyRedisReplay(redis: Record<string, unknown>): void {
   const createClient =
     (redis.createClient as (() => unknown) | undefined) ??
     (redis.default as { createClient?: () => unknown } | undefined)?.createClient;
-  const stub = createClient?.();
-  if (!stub?.constructor?.prototype || typeof (stub as { connect?: unknown }).connect !== 'function') return;
-  const proto = stub.constructor.prototype as {
-    connect?: (...args: unknown[]) => unknown;
-    quit?: (...args: unknown[]) => unknown;
-    _connectReplayNoop?: boolean;
-    _quitReplayNoop?: boolean;
-  };
-  if (proto._connectReplayNoop) return;
-  shimmer.wrap(proto, 'connect', (original: (...args: unknown[]) => unknown) =>
+  // Use same shape as typical app (url) so we get the same client class and prototype chain.
+  const stub = (createClient as (opts?: { url?: string }) => unknown)?.({ url: 'redis://localhost:6379' });
+  if (!stub) return;
+  // Patch connect and quit/QUIT on every prototype in the chain so REPLAY never touches the socket.
+  const noopQuit = (original: (...args: unknown[]) => unknown) =>
     function (this: unknown, ...args: unknown[]): unknown {
-      if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve();
+      if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve('OK');
       return (original as (...a: unknown[]) => unknown).apply(this, args);
+    };
+  let proto: Record<string, unknown> | null = Object.getPrototypeOf(stub);
+  const seen = new WeakSet<object>();
+  while (proto && !seen.has(proto)) {
+    seen.add(proto);
+    const protoTyped = proto as {
+      connect?: (...args: unknown[]) => unknown;
+      quit?: (...args: unknown[]) => unknown;
+      QUIT?: (...args: unknown[]) => unknown;
+      _connectReplayNoop?: boolean;
+      _quitReplayNoop?: boolean;
+    };
+    if (typeof protoTyped.connect === 'function' && !protoTyped._connectReplayNoop) {
+      shimmer.wrap(protoTyped, 'connect', (original: (...args: unknown[]) => unknown) =>
+        function (this: unknown, ...args: unknown[]): unknown {
+          if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve();
+          return (original as (...a: unknown[]) => unknown).apply(this, args);
+        }
+      );
+      protoTyped._connectReplayNoop = true;
     }
-  );
-  // quit() can trigger connect internally when client was never connected (Task 16.3.1).
-  if (typeof proto.quit === 'function' && !proto._quitReplayNoop) {
-    shimmer.wrap(proto, 'quit', (original: (...args: unknown[]) => unknown) =>
-      function (this: unknown, ...args: unknown[]): unknown {
-        if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve('OK');
-        return (original as (...a: unknown[]) => unknown).apply(this, args);
-      }
-    );
-    proto._quitReplayNoop = true;
+    if (typeof protoTyped.quit === 'function' && !protoTyped._quitReplayNoop) {
+      shimmer.wrap(protoTyped, 'quit', noopQuit);
+      protoTyped._quitReplayNoop = true;
+    }
+    if (typeof protoTyped.QUIT === 'function' && !(protoTyped as { _QUITReplayNoop?: boolean })._QUITReplayNoop) {
+      shimmer.wrap(protoTyped, 'QUIT', noopQuit);
+      (protoTyped as { _QUITReplayNoop?: boolean })._QUITReplayNoop = true;
+    }
+    proto = Object.getPrototypeOf(proto);
   }
-  proto._connectReplayNoop = true;
 }

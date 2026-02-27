@@ -1,11 +1,11 @@
 /**
- * Task 4.2 / 4.4 / 4.5: Auto-Instrumentation Mutator.
- * Asserts that wrapping getNodeAutoInstrumentations injects our responseHook for Postgres, Undici, Redis.
+ * Task 4.2 / 4.5: Auto-Instrumentation Mutator.
+ * Asserts that wrapping getNodeAutoInstrumentations injects our responseHook for Postgres and Redis.
+ * HTTP capture/replay is via MSW interceptor only (no undici instrumentation).
  * Design §5.3: unit tests use contract-shaped mocks and assert softprobe.* attributes.
  */
 import { applyAutoInstrumentationMutator } from '../capture/mutator';
 import { PG_INSTRUMENTATION_NAME } from '../capture/postgres';
-import { UNDICI_INSTRUMENTATION_NAME } from '../capture/undici';
 import { REDIS_INSTRUMENTATION_NAME } from '../capture/redis';
 
 describe('applyAutoInstrumentationMutator', () => {
@@ -32,103 +32,6 @@ describe('applyAutoInstrumentationMutator', () => {
     );
     expect(pgInstrumentation).toBeDefined();
     expect(typeof (pgInstrumentation as any).responseHook).toBe('function');
-  });
-
-  describe('HTTP/Undici responseHook (Task 4.4)', () => {
-    it('injects responseHook for @opentelemetry/instrumentation-undici in returned config', () => {
-      const undiciEntry = { instrumentationName: UNDICI_INSTRUMENTATION_NAME };
-      const mockGetNodeAutoInstrumentations = jest.fn(() => [undiciEntry]);
-
-      const mockModule = {
-        getNodeAutoInstrumentations: mockGetNodeAutoInstrumentations,
-      };
-
-      applyAutoInstrumentationMutator(mockModule as any);
-
-      const result = mockModule.getNodeAutoInstrumentations();
-
-      const undiciInstrumentation = result.find(
-        (item: { instrumentationName?: string }) =>
-          item.instrumentationName === UNDICI_INSTRUMENTATION_NAME
-      );
-      expect(undiciInstrumentation).toBeDefined();
-      expect(typeof (undiciInstrumentation as any).responseHook).toBe(
-        'function'
-      );
-    });
-
-    it('responseHook sets softprobe.protocol and softprobe.identifier on span', () => {
-      const attributes: Record<string, unknown> = {};
-      const mockSpan = {
-        setAttribute(key: string, value: unknown) {
-          attributes[key] = value;
-        },
-      };
-      const undiciEntry = { instrumentationName: UNDICI_INSTRUMENTATION_NAME };
-      const mockGetNodeAutoInstrumentations = jest.fn(() => [undiciEntry]);
-      const mockModule = {
-        getNodeAutoInstrumentations: mockGetNodeAutoInstrumentations,
-      };
-
-      applyAutoInstrumentationMutator(mockModule as any);
-      const result = mockModule.getNodeAutoInstrumentations();
-      const undiciInstrumentation = result.find(
-        (item: { instrumentationName?: string }) =>
-          item.instrumentationName === UNDICI_INSTRUMENTATION_NAME
-      );
-      const responseHook = (undiciInstrumentation as any).responseHook as (
-        span: unknown,
-        result: unknown
-      ) => void;
-
-      // Simulate what undici instrumentation might pass: span + result with request/response info
-      const mockResult = {
-        request: { method: 'GET', origin: 'https://api.example.com', path: '/users' },
-        response: { statusCode: 200 },
-      };
-      responseHook(mockSpan, mockResult);
-
-      expect(attributes['softprobe.protocol']).toBe('http');
-      expect(attributes['softprobe.identifier']).toBe(
-        'GET https://api.example.com/users'
-      );
-    });
-
-    it('responseHook sets softprobe.request.body and softprobe.response.body when present', () => {
-      const attributes: Record<string, unknown> = {};
-      const mockSpan = {
-        setAttribute(key: string, value: unknown) {
-          attributes[key] = value;
-        },
-      };
-      const undiciEntry = { instrumentationName: UNDICI_INSTRUMENTATION_NAME };
-      const mockGetNodeAutoInstrumentations = jest.fn(() => [undiciEntry]);
-      const mockModule = {
-        getNodeAutoInstrumentations: mockGetNodeAutoInstrumentations,
-      };
-
-      applyAutoInstrumentationMutator(mockModule as any);
-      const result = mockModule.getNodeAutoInstrumentations();
-      const undiciInstrumentation = result.find(
-        (item: { instrumentationName?: string }) =>
-          item.instrumentationName === UNDICI_INSTRUMENTATION_NAME
-      );
-      const responseHook = (undiciInstrumentation as any).responseHook as (
-        span: unknown,
-        result: unknown
-      ) => void;
-
-      const mockResult = {
-        request: { method: 'POST', url: 'https://api.example.com/echo', body: { foo: 'bar' } },
-        response: { statusCode: 201, body: { id: '123', created: true } },
-      };
-      responseHook(mockSpan, mockResult);
-
-      expect(attributes['softprobe.request.body']).toBe(JSON.stringify({ foo: 'bar' }));
-      expect(attributes['softprobe.response.body']).toBe(
-        JSON.stringify({ statusCode: 201, body: { id: '123', created: true } })
-      );
-    });
   });
 
   describe('Redis responseHook (Task 4.5)', () => {

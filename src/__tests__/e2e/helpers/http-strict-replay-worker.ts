@@ -53,8 +53,7 @@ async function main(): Promise<void> {
       cassetteDirectory,
     },
     async () => {
-      const undici = require('undici') as { fetch: typeof fetch };
-      const response = await undici.fetch(unrecordedUrl);
+      const response = await fetch(unrecordedUrl);
       const body = await response.text();
       process.stdout.write(JSON.stringify({ status: response.status, body }));
     }

@@ -46,12 +46,6 @@ async function main(): Promise<void> {
   const sdk = new NodeSDK({ instrumentations: getNodeAutoInstrumentations() });
   sdk.start();
 
-  const applyHttpReplay = (globalThis as unknown as { __softprobeApplyHttpReplay?: () => unknown })
-    .__softprobeApplyHttpReplay;
-  if (typeof applyHttpReplay === 'function') {
-    applyHttpReplay();
-  }
-
   const result = await softprobe.run(
     { mode: 'CAPTURE', traceId, cassetteDirectory },
     async () => {

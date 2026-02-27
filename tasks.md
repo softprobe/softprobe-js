@@ -301,7 +301,7 @@ Implementation rule per task:
     - add/update example YAML config files for the canonical flow (use cassetteDirectory when section 13 is in effect).
     - remove contradictory wording from `examples/basic-app/README.md`.
 
-- [ ] **Task 12.2 Remove legacy replay bootstrapping from basic app runtime**
+- [x] **Task 12.2 Remove legacy replay bootstrapping from basic app runtime** — run.ts already had no replay priming; doc + /exit simplified
   - **Problem**: `examples/basic-app/run.ts` manually primes replay cache/matcher globals, adding complexity and diverging from context-driven runtime flow.
   - **Acceptance**:
     - no manual replay priming in `run.ts` (no direct `loadNdjson`, `setReplayRecordsCache`, `setGlobalReplayMatcher`); cassette is created only in SoftprobeContext (see Task 13.6 / 13.10).
@@ -310,7 +310,7 @@ Implementation rule per task:
     - delete manual replay setup block and related imports.
     - keep route logic focused on business behavior only.
 
-- [ ] **Task 12.3 Consolidate scripts to one canonical capture+replay test path**
+- [x] **Task 12.3 Consolidate scripts to one canonical capture+replay test path** — YAML-only test-with-capture-replay.sh + replay-and-diff.sh
   - **Problem**: overlapping scripts/runners obscure how users should run the example.
   - **Acceptance**:
     - `test-with-capture-replay.sh` becomes canonical:
@@ -323,7 +323,7 @@ Implementation rule per task:
     - refactor shell script to YAML-only startup.
     - update script comments and package script wiring for clarity.
 
-- [ ] **Task 12.4 Add business-regression demonstration (not mocking-focused)**
+- [x] **Task 12.4 Add business-regression demonstration (not mocking-focused)** — SOFTPROBE_DEMO_BUG toggle + README workflow
   - **Problem**: current mismatch explanations center on tracing/header nondeterminism rather than real business output changes.
   - **Acceptance**:
     - example includes an optional business bug toggle path (for demo) where response semantics change and `softprobe diff` fails deterministically.
@@ -332,7 +332,7 @@ Implementation rule per task:
     - add a small, explicit business-field toggle in `run.ts` (example-only).
     - document “capture baseline -> enable bug -> diff fails” workflow.
 
-- [ ] **Task 12.5 Remove checked-in example NDJSON artifacts**
+- [x] **Task 12.5 Remove checked-in example NDJSON artifacts** — deleted NDJSON, .gitignore, README note
   - **Problem**: committed cassette artifacts create stale replay inputs and hide whether capture actually ran.
   - **Acceptance**:
     - remove checked-in NDJSON files (or cassette directory contents) under `examples/basic-app/`.
@@ -342,7 +342,7 @@ Implementation rule per task:
     - delete existing example NDJSON files / cassette artifacts.
     - ensure script creates/verifies cassette output before replay step.
 
-- [ ] **Task 12.6 Reduce example surface area in docs**
+- [x] **Task 12.6 Reduce example surface area in docs** — one primary path, one optional regression demo; runners marked internal
   - **Problem**: too many entry points (`capture-runner`, `replay-runner`, replay-only shell) increase cognitive load for basic onboarding.
   - **Acceptance**:
     - README presents one primary path and one optional “regression demo” path only.

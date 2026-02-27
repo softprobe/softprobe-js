@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
-# Example test: capture via curl (mode headers) then replay via softprobe diff.
-# 1. Start the app (no mode = header-driven); curl GET / with capture headers; curl /flush.
-# 2. Start the app in REPLAY with the cassette; run softprobe diff; exit with CLI exit code.
+# Canonical example flow (Task 12.3): YAML CAPTURE boot, then softprobe diff (replay via headers).
+# 1. Start app via SOFTPROBE_CONFIG_PATH (capture YAML with cassetteDirectory).
+# 2. Send capture request with trace headers (x-softprobe-mode, x-softprobe-trace-id), then /flush.
+# 3. Start app with replay-capable YAML (PASSTHROUGH + cassetteDirectory); run softprobe diff.
+# Exit code = diff result (0 = pass).
 #
 # Run from repo root: npm run example:test
-# Prerequisites: docker compose up (Postgres + Redis) for the capture phase.
+# Starts Postgres + Redis for capture, then stops them before replay so replay uses only the cassette.
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PORT="${PORT:-3010}"
-CASSETTE="$SCRIPT_DIR/softprobe-test.ndjson"
-CASSETTE_REL="./softprobe-test.ndjson"
+TRACE_ID="softprobe-test"
+CASSETTE="$SCRIPT_DIR/$TRACE_ID.ndjson"
+# Path from repo root for the diff CLI
+CASSETTE_FROM_ROOT="examples/basic-app/$TRACE_ID.ndjson"
 
 cleanup() {
   if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
@@ -20,13 +24,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Phase 1: capture — start server, one request with capture headers, flush
+# Start Postgres + Redis for capture phase
+cd "$REPO_ROOT"
+docker compose -f examples/basic-app/docker-compose.yml up -d
+cd "$SCRIPT_DIR"
+
+# Phase 1: capture — start app with capture YAML, one request with capture headers, flush
 cd "$SCRIPT_DIR"
 export PORT="$PORT"
+export SOFTPROBE_CONFIG_PATH="$SCRIPT_DIR/.softprobe/config.yml"
 npx ts-node --transpile-only -r ./instrumentation.ts run.ts &
 SERVER_PID=$!
 
-# wait for server
 for i in $(seq 1 30); do
   if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/ping" | grep -q 200; then
     break
@@ -35,10 +44,8 @@ for i in $(seq 1 30); do
   sleep 0.5
 done
 
-# Trace id must match the cassette filename (without .ndjson) so server writes to cassette path
-CASSETTE_TRACE_ID=$(basename "$CASSETTE_REL" .ndjson)
 curl -s -H "x-softprobe-mode: CAPTURE" \
-     -H "x-softprobe-trace-id: $CASSETTE_TRACE_ID" \
+     -H "x-softprobe-trace-id: $TRACE_ID" \
      "http://127.0.0.1:$PORT/" > /dev/null
 curl -s "http://127.0.0.1:$PORT/flush" > /dev/null
 kill $SERVER_PID 2>/dev/null || true
@@ -48,13 +55,18 @@ sleep 1
 
 [ ! -f "$CASSETTE" ] && { echo "Cassette not created: $CASSETTE"; exit 1; }
 
-# Phase 2: replay — start server in REPLAY, run softprobe diff
-# Free port so the replay server (not a stale one) handles the diff request
+# Stop Postgres and Redis so replay runs with no external services (proves replay uses only the cassette)
+cd "$REPO_ROOT"
+docker compose -f examples/basic-app/docker-compose.yml down 2>/dev/null || true
+cd "$SCRIPT_DIR"
+
+# Phase 2: replay — start app with replay-capable YAML (PASSTHROUGH + cassetteDirectory), run softprobe diff
 lsof -ti ":$PORT" 2>/dev/null | xargs kill -9 2>/dev/null || true
 sleep 1
 
-SOFTPROBE_MODE=REPLAY SOFTPROBE_STRICT_REPLAY=1 SOFTPROBE_CASSETTE_PATH="$CASSETTE" \
-  npx ts-node --transpile-only -r ./instrumentation.ts run.ts &
+export SOFTPROBE_CONFIG_PATH="$SCRIPT_DIR/.softprobe/config-passthrough.yml"
+export SOFTPROBE_DEBUG_REPLAY="${SOFTPROBE_DEBUG_REPLAY:-}"
+npx ts-node --transpile-only -r ./instrumentation.ts run.ts &
 SERVER_PID=$!
 
 for i in $(seq 1 30); do
@@ -65,7 +77,7 @@ for i in $(seq 1 30); do
   sleep 0.5
 done
 
-# Run softprobe CLI diff (from repo root)
 cd "$REPO_ROOT"
-"$REPO_ROOT/bin/softprobe" diff "$CASSETTE" "http://127.0.0.1:$PORT"
+# Ignore http.headers so upstream (httpbin) header variance does not fail the test
+"$REPO_ROOT/bin/softprobe" diff --ignore-paths "http.headers" "$CASSETTE_FROM_ROOT" "http://127.0.0.1:$PORT"
 exit $?

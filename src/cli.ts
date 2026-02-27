@@ -9,12 +9,22 @@ import { reportDiff } from './cli/diff-reporter';
 
 const args = process.argv.slice(2);
 const command = args[0];
-const file = args[1];
-const target = args[2];
+const ignoreBodyPaths: string[] = [];
+const positional: string[] = [];
+for (let i = 1; i < args.length; i++) {
+  if (args[i] === '--ignore-paths' && args[i + 1]) {
+    ignoreBodyPaths.push(args[++i]!);
+  } else {
+    positional.push(args[i]!);
+  }
+}
+const file = positional[0];
+const target = positional[1];
 
 function usage(): void {
-  console.error('Usage: softprobe diff <cassette.ndjson> <targetUrl>');
+  console.error('Usage: softprobe diff [--ignore-paths <path> ...] <cassette.ndjson> <targetUrl>');
   console.error('  Replays the recorded inbound request to the target with coordination headers.');
+  console.error('  --ignore-paths  JSON path to omit from body comparison (e.g. http.headers for upstream variance).');
 }
 
 /** Extracts recorded status and body from cassette inbound (responsePayload or top-level). */
@@ -41,7 +51,7 @@ async function main(): Promise<number> {
     const match = reportDiff(
       recorded,
       { status: response.status, body: liveBody },
-      {}
+      { ignoreBodyPaths: ignoreBodyPaths.length ? ignoreBodyPaths : undefined }
     );
     if (!match) return 1;
     process.stderr.write('softprobe diff: PASS (response matches recording)\n');

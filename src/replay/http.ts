@@ -8,9 +8,7 @@ import { ConfigManager } from '../config/config-manager';
 import { httpIdentifier } from '../identifier';
 import type { MatcherAction } from '../types/schema';
 import { HttpSpan } from '../bindings/http-span';
-import { setCaptureUsesInterceptor } from '../capture/store-accessor';
 import { tapReadableStream } from '../capture/stream-tap';
-import { applyUndiciFetchAsGlobal } from './undici';
 
 type RequestController = { respondWith: (response: Response) => void };
 type RequestEvent = { request: Request; controller: RequestController };
@@ -289,14 +287,6 @@ export function setupHttpReplayInterceptor(options: HttpReplayOptions = {}) {
     );
   });
 
-  // REPLAY: do not apply MSW; re-apply undici fetch as global so replay returns exact recorded response (Node 18+ uses undici).
-  if (SoftprobeContext.getMode() === 'REPLAY') {
-    setCaptureUsesInterceptor(true);
-    applyUndiciFetchAsGlobal();
-    return interceptor;
-  }
-
-  setCaptureUsesInterceptor(true);
   interceptor.apply();
   return interceptor;
 }

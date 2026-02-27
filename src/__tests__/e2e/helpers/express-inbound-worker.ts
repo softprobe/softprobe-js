@@ -22,7 +22,6 @@ const sdk = new NodeSDK({
   instrumentations: [getNodeAutoInstrumentations()],
 });
 sdk.start();
-(globalThis as unknown as { __softprobeApplyHttpReplay?: () => void }).__softprobeApplyHttpReplay?.();
 
 const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
 let softprobeMode = 'PASSTHROUGH';

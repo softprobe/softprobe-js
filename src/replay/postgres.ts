@@ -20,28 +20,28 @@ const SOFTPROBE_WRAPPED_MARKER = '__softprobeWrapped';
  * Exported so init can call it from a require hook and patch whichever module first requires 'pg' (Task 16.3.1).
  */
 export function applyPostgresReplay(pg: { Client: { prototype: Record<string, unknown> } }): void {
-  if ((pg.Client.prototype.query as { __wrapped?: boolean }).__wrapped) {
-    return;
-  }
+  const existingQuery = pg.Client.prototype.query as { [SOFTPROBE_WRAPPED_MARKER]?: boolean };
+  if (existingQuery[SOFTPROBE_WRAPPED_MARKER]) return;
 
   const connectKey = 'connect' as const;
-  if (
-    typeof pg.Client.prototype[connectKey] === 'function' &&
-    !(pg.Client.prototype[connectKey] as { __wrapped?: boolean })?.__wrapped
-  ) {
+  const existingConnect = pg.Client.prototype[connectKey] as { __softprobeConnect?: boolean };
+  if (typeof pg.Client.prototype[connectKey] === 'function' && !existingConnect?.__softprobeConnect) {
     shimmer.wrap(
       pg.Client.prototype,
       connectKey,
       (originalConnect: (...args: unknown[]) => unknown) =>
         function wrappedConnect(this: unknown, ...args: unknown[]): unknown {
-          if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve();
+          const mode = SoftprobeContext.getMode();
+          if (mode === 'REPLAY') return Promise.resolve();
           return (originalConnect as (...a: unknown[]) => unknown).apply(this, args);
         }
     );
+    (pg.Client.prototype[connectKey] as { __softprobeConnect?: boolean }).__softprobeConnect = true;
   }
-  // end() must not touch the network when we never connected (Task 16.3.1).
+  // end() must not touch the network when we never connected (Task 16.3.1). Wrap on top of OTel when applied after sdk.start().
   const endKey = 'end' as const;
-  if (typeof pg.Client.prototype[endKey] === 'function' && !(pg.Client.prototype[endKey] as { __wrapped?: boolean })?.__wrapped) {
+  const existingEnd = pg.Client.prototype[endKey] as { __softprobeEndNoop?: boolean };
+  if (typeof pg.Client.prototype[endKey] === 'function' && !existingEnd?.__softprobeEndNoop) {
     shimmer.wrap(
       pg.Client.prototype,
       endKey,
@@ -51,6 +51,7 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
           return (originalEnd as (...a: unknown[]) => unknown).apply(this, args);
         }
     );
+    (pg.Client.prototype[endKey] as { __softprobeEndNoop?: boolean }).__softprobeEndNoop = true;
   }
 
   shimmer.wrap(
@@ -148,8 +149,8 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
 }
 
 /**
- * Sets up Postgres replay. Triggers require('pg') so the init require hook runs and patches pg.
- * If the hook already patched (REPLAY), applyPostgresReplay is no-op; otherwise throw if OTel wrapped first.
+ * Sets up Postgres replay. Called from init so patches are in place before OTel.
+ * Idempotent when already applied. OTel may wrap on top when sdk.start() runs.
  */
 export function setupPostgresReplay(): void {
   const pg = require('pg');
@@ -157,8 +158,6 @@ export function setupPostgresReplay(): void {
     __wrapped?: boolean;
     [SOFTPROBE_WRAPPED_MARKER]?: boolean;
   };
-  if (existingQuery.__wrapped && !existingQuery[SOFTPROBE_WRAPPED_MARKER]) {
-    throw new Error(FATAL_IMPORT_ORDER);
-  }
+  if (existingQuery[SOFTPROBE_WRAPPED_MARKER]) return;
   applyPostgresReplay(pg);
 }

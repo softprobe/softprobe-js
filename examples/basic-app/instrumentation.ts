@@ -9,5 +9,3 @@ import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentation
 
 const sdk = new NodeSDK({ instrumentations: getNodeAutoInstrumentations() });
 sdk.start();
-// So our HTTP replay interceptor patches fetch after OTel (e.g. undici) and stays on top.
-(globalThis as unknown as { __softprobeApplyHttpReplay?: () => void }).__softprobeApplyHttpReplay?.();

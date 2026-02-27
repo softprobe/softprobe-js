@@ -9,11 +9,14 @@
  * This app demonstrates:
  * - Capture: request with x-softprobe-mode: CAPTURE + x-softprobe-trace-id
  *   records inbound GET / and outbound Postgres, Redis, and HTTP to {cassetteDirectory}/{traceId}.ndjson.
- * - Replay: run with SOFTPROBE_MODE=REPLAY and config (cassetteDirectory + traceId, or legacy SOFTPROBE_CASSETTE_PATH); GET / is
- *   served from the cassette (Postgres, Redis, and httpbin.org are mocked, no live deps).
+ * - Replay: run with YAML config (mode PASSTHROUGH or REPLAY and cassetteDirectory); GET / is
+ *   served from the cassette when the request has replay headers (e.g. from softprobe diff).
  *
  * Use require('express') so the framework mutator injects Softprobe middleware.
  * Env: PG_URL, REDIS_URL (defaults match docker-compose), PORT (default 3000), HTTPBIN_URL.
+ *
+ * Optional regression demo (Task 12.4): SOFTPROBE_DEMO_BUG=1 changes a business field so
+ * softprobe diff fails deterministically (capture baseline -> enable bug -> diff fails).
  */
 
 import { Client } from 'pg';
@@ -26,6 +29,9 @@ const PORT = parseInt(process.env.PORT ?? '3000', 10);
 
 const pgUrl = process.env.PG_URL ?? DEFAULT_PG_URL;
 const redisUrl = process.env.REDIS_URL ?? DEFAULT_REDIS_URL;
+
+/** Example-only: when set, response changes so softprobe diff fails (business regression demo). */
+const demoBugEnabled = process.env.SOFTPROBE_DEMO_BUG === '1' || process.env.SOFTPROBE_DEMO_BUG === 'true';
 
 async function start(): Promise<void> {
   // REPLAY: init (from instrumentation) sets mode and cassetteDirectory; middleware creates matcher per request via SoftprobeContext.run(REPLAY). No user-created matcher or global cache.
@@ -58,15 +64,15 @@ async function start(): Promise<void> {
       postgres: { rows: pgResult.rows, rowCount: pgResult.rowCount },
       redis: { key, value: redisValue },
       http: httpBody,
+      /** Example-only: changes when SOFTPROBE_DEMO_BUG=1 so diff fails (regression demo). */
+      businessRegressionDemo: demoBugEnabled ? 'buggy' : 'baseline',
     });
   });
 
-  /** In CAPTURE mode, exit (writes are direct; no flush needed). Used by example:capture. */
+  /** Exit after responding; used by example:capture so the process exits after flush. */
   app.get('/exit', (_req, res) => {
     res.send('ok');
-    if (process.env.SOFTPROBE_MODE === 'CAPTURE') {
-      setImmediate(() => process.exit(0));
-    }
+    setImmediate(() => process.exit(0));
   });
 
   app.listen(PORT, () => {

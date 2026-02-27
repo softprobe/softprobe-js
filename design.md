@@ -70,6 +70,10 @@ Detailed specs are in:
 - Softprobe stores data under a dedicated OTel context key.
 - Header coordination (e.g. `x-softprobe-*`) may override global defaults per request.
 
+### 4.1 One-line init
+
+Init loads and patches pg, redis, undici, and the HTTP interceptor so they are patched before OTel runs. The app loads `softprobe/init` once (e.g. first in instrumentation or `node -r softprobe/init`). When OTel later runs `sdk.start()`, it gets cached modules and wraps on top of our layer. No post-`sdk.start()` calls are required.
+
 ---
 
 ## 5) Design Doc Convention

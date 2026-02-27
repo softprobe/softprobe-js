@@ -21,6 +21,13 @@ function getInboundRecords(records: SoftprobeCassetteRecord[]): SoftprobeCassett
   return records.filter((r) => r.type === 'inbound');
 }
 
+/** Strip variable http headers (Traceparent, X-Amzn-Trace-Id) so replay comparison is stable. */
+function withoutVariableHeaders(obj: unknown): unknown {
+  const o = JSON.parse(JSON.stringify(obj));
+  if (o && typeof o === 'object' && 'headers' in o && o.headers) delete (o as Record<string, unknown>).headers;
+  return o;
+}
+
 describe('E2E Express inbound replay (Task 14.4.2)', () => {
   let artifacts: E2eArtifacts;
   let cassettePath: string;
@@ -95,7 +102,7 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
       expect(res.ok).toBe(true);
       const body = (await res.json()) as { ok?: boolean; outbound?: unknown };
       expect(body.ok).toBe(true);
-      expect(body.outbound).toEqual({ url: 'https://httpbin.org/get' });
+      expect(withoutVariableHeaders(body.outbound)).toEqual(withoutVariableHeaders({ url: 'https://httpbin.org/get' }));
 
       await fetch(`http://127.0.0.1:${port}/exit`).catch(() => {});
       await new Promise<void>((r) => {
@@ -152,7 +159,7 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
       if (responsePayload?.body !== undefined) {
         const expectedBody =
           typeof responsePayload.body === 'string' ? JSON.parse(responsePayload.body) : responsePayload.body;
-        expect(body.outbound).toEqual(expectedBody);
+        expect(withoutVariableHeaders(body.outbound)).toEqual(withoutVariableHeaders(expectedBody));
       }
 
       await fetch(`http://127.0.0.1:${port}/exit`).catch(() => {});

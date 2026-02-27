@@ -37,8 +37,8 @@ export class SoftprobeMatcher {
 
   /**
    * Returns the records for this replay context (context-scoped).
-   * Used by getRecordsForTrace when the active context has a matcher, so replay code
-   * (e.g. undici) reads from context instead of a global cache.
+   * Used by getRecordsForTrace when the active context has a matcher, so HTTP replay
+   * (MSW interceptor) reads from context instead of a global cache.
    */
   _getRecords(): SoftprobeCassetteRecord[] {
     return this.records;
@@ -54,7 +54,7 @@ export class SoftprobeMatcher {
 
   /**
    * Returns the inbound record's responsePayload.body, with .http extracted when present.
-   * Used by undici replay so the mock response body matches the recorded inbound and diff passes.
+   * Used by HTTP replay (MSW interceptor) so the mock response body matches the recorded inbound and diff passes.
    */
   _getInboundHttpBody(): unknown {
     const inbound = this.records.find((r) => r.type === 'inbound');

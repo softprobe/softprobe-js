@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# Start the app in REPLAY with the cassette, run softprobe diff, exit with diff exit code.
+# Start the app with replay-capable YAML (PASSTHROUGH + cassetteDirectory), run softprobe diff, exit with diff code.
 # Run from repo root after you have a cassette: npm run example:replay-then-diff
-# Cassette: examples/basic-app/softprobe-cassettes.ndjson (create with npm run example:capture).
+# Cassette: examples/basic-app/softprobe-cassettes.ndjson (create with npm run example:capture or use canonical flow).
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PORT="${PORT:-3000}"
 CASSETTE="$SCRIPT_DIR/softprobe-cassettes.ndjson"
+CASSETTE_FROM_ROOT="examples/basic-app/$(basename "$CASSETTE")"
 
-[ ! -f "$CASSETTE" ] && { echo "Cassette not found: $CASSETTE. Run: npm run example:capture"; exit 1; }
+[ ! -f "$CASSETTE" ] && { echo "Cassette not found: $CASSETTE. Run: npm run example:capture or npm run example:test"; exit 1; }
 
 cleanup() {
   if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
@@ -20,8 +21,8 @@ trap cleanup EXIT
 
 cd "$SCRIPT_DIR"
 export PORT="$PORT"
-SOFTPROBE_MODE=REPLAY SOFTPROBE_CASSETTE_PATH="$CASSETTE" \
-  npx ts-node --transpile-only -r ./instrumentation.ts run.ts &
+export SOFTPROBE_CONFIG_PATH="$SCRIPT_DIR/.softprobe/config-passthrough.yml"
+npx ts-node --transpile-only -r ./instrumentation.ts run.ts &
 SERVER_PID=$!
 
 for i in $(seq 1 30); do
@@ -33,5 +34,5 @@ for i in $(seq 1 30); do
 done
 
 cd "$REPO_ROOT"
-"$REPO_ROOT/bin/softprobe" diff "$CASSETTE" "http://127.0.0.1:$PORT"
+"$REPO_ROOT/bin/softprobe" diff "$CASSETTE_FROM_ROOT" "http://127.0.0.1:$PORT"
 exit $?

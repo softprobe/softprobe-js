@@ -10,7 +10,6 @@ import { ConfigManager } from '../../../config/config-manager';
 import { softprobe } from '../../../api';
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-import { applyUndiciFetchAsGlobal } from '../../../replay/undici';
 
 async function main(): Promise<void> {
   const replayUrl = process.env.REPLAY_URL;
@@ -46,7 +45,6 @@ async function main(): Promise<void> {
     instrumentations: [getNodeAutoInstrumentations()],
   });
   sdk.start();
-  applyUndiciFetchAsGlobal();
 
   await softprobe.run(
     {
@@ -55,8 +53,7 @@ async function main(): Promise<void> {
       cassetteDirectory,
     },
     async () => {
-      const undici = require('undici') as { fetch: typeof fetch };
-      const response = await undici.fetch(replayUrl);
+      const response = await fetch(replayUrl);
       const body = await response.text();
       const hasLegacyModeEnv =
         typeof process.env.SOFTPROBE_MODE === 'string' && process.env.SOFTPROBE_MODE.length > 0;

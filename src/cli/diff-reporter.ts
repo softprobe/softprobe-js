@@ -38,19 +38,44 @@ function parseBody(raw: string): unknown {
 }
 
 /**
+ * Removes a path (e.g. "http.headers") from a nested object for comparison.
+ */
+function omitPath(obj: unknown, path: string): unknown {
+  if (obj === null || typeof obj !== 'object') return obj;
+  const parts = path.split('.');
+  const key = parts[0]!;
+  if (parts.length === 1) {
+    const o = { ...(obj as Record<string, unknown>) };
+    delete o[key];
+    return o;
+  }
+  const rest = parts.slice(1).join('.');
+  const o = obj as Record<string, unknown>;
+  if (!(key in o)) return obj;
+  const sub = omitPath(o[key], rest);
+  if (sub === o[key]) return obj;
+  return { ...o, [key]: sub };
+}
+
+/**
  * Compares recorded vs live response. If they differ, prints a colored diff to stderr.
+ * @param opts.ignoreBodyPaths - JSON paths to omit from body before comparing (e.g. ["http.headers"] for upstream variance).
  * @returns true when recorded and live match, false when they differ.
  */
 export function reportDiff(
   recorded: RecordedResponse,
   live: LiveResponse,
-  opts: { write?: (s: string) => void } = {}
+  opts: { write?: (s: string) => void; ignoreBodyPaths?: string[] } = {}
 ): boolean {
   const write = opts.write ?? ((s: string) => process.stderr.write(s));
 
   const recStatus = recorded.statusCode;
-  const recBody = typeof recorded.body === 'string' ? parseBody(recorded.body) : recorded.body;
-  const liveBody = typeof live.body === 'string' ? parseBody(live.body) : live.body;
+  let recBody = typeof recorded.body === 'string' ? parseBody(recorded.body) : recorded.body;
+  let liveBody = typeof live.body === 'string' ? parseBody(live.body) : live.body;
+  for (const p of opts.ignoreBodyPaths ?? []) {
+    recBody = omitPath(recBody, p);
+    liveBody = omitPath(liveBody, p);
+  }
 
   const statusMatch = recStatus === undefined || recStatus === live.status;
   const bodyMatch = deepEqual(recBody, liveBody);
