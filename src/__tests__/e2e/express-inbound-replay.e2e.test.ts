@@ -51,6 +51,7 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
       await waitForServer(port, 20000);
       const traceId = path.basename(cassettePath, '.ndjson');
       await fetch(`http://127.0.0.1:${port}/`, { headers: { 'x-softprobe-trace-id': traceId } });
+      await new Promise((r) => setTimeout(r, 800));
       await fetch(`http://127.0.0.1:${port}/exit`).catch(() => {});
       await new Promise<void>((resolve) => {
         child.on('exit', () => resolve());

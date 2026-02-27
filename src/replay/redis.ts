@@ -79,6 +79,7 @@ export function setupRedisReplay(): void {
                 attributes: {
                   'softprobe.protocol': 'redis',
                   'softprobe.identifier': identifier,
+                  'softprobe.redis.cmd': cmd,
                   'softprobe.request.body': JSON.stringify(redisArgs),
                 },
               }) as MatcherAction;
@@ -158,51 +159,57 @@ export function setupRedisReplay(): void {
   }
 }
 
+type RedisClientLike = Record<string, unknown> & {
+  connect?: (...args: unknown[]) => unknown;
+  quit?: (...args: unknown[]) => unknown;
+  QUIT?: (...args: unknown[]) => unknown;
+};
+
 /**
- * Patches redis module so connect is no-op in REPLAY. Idempotent.
- * Exported so init can call it from a require hook (Task 16.3.1).
+ * Wraps connect/quit/QUIT on a single Redis client instance as own properties.
+ * Own-property wrappers shadow the prototype and survive any prototype-chain reshuffling
+ * caused by OTel's module re-patching at sdk.start().
  */
-export function applyRedisReplay(redis: Record<string, unknown>): void {
-  const createClient =
-    (redis.createClient as (() => unknown) | undefined) ??
-    (redis.default as { createClient?: () => unknown } | undefined)?.createClient;
-  // Use same shape as typical app (url) so we get the same client class and prototype chain.
-  const stub = (createClient as (opts?: { url?: string }) => unknown)?.({ url: 'redis://localhost:6379' });
-  if (!stub) return;
-  // Patch connect and quit/QUIT on every prototype in the chain so REPLAY never touches the socket.
-  const noopQuit = (original: (...args: unknown[]) => unknown) =>
+function applyInstanceNoops(client: RedisClientLike): void {
+  if (typeof client.connect === 'function') {
+    const orig = client.connect;
+    client.connect = function (this: unknown, ...args: unknown[]): unknown {
+      if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve();
+      return orig.apply(this, args);
+    };
+  }
+  const noopQuitFn = (orig: (...args: unknown[]) => unknown) =>
     function (this: unknown, ...args: unknown[]): unknown {
       if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve('OK');
-      return (original as (...a: unknown[]) => unknown).apply(this, args);
+      return orig.apply(this, args);
     };
-  let proto: Record<string, unknown> | null = Object.getPrototypeOf(stub);
-  const seen = new WeakSet<object>();
-  while (proto && !seen.has(proto)) {
-    seen.add(proto);
-    const protoTyped = proto as {
-      connect?: (...args: unknown[]) => unknown;
-      quit?: (...args: unknown[]) => unknown;
-      QUIT?: (...args: unknown[]) => unknown;
-      _connectReplayNoop?: boolean;
-      _quitReplayNoop?: boolean;
-    };
-    if (typeof protoTyped.connect === 'function' && !protoTyped._connectReplayNoop) {
-      shimmer.wrap(protoTyped, 'connect', (original: (...args: unknown[]) => unknown) =>
-        function (this: unknown, ...args: unknown[]): unknown {
-          if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve();
-          return (original as (...a: unknown[]) => unknown).apply(this, args);
-        }
-      );
-      protoTyped._connectReplayNoop = true;
-    }
-    if (typeof protoTyped.quit === 'function' && !protoTyped._quitReplayNoop) {
-      shimmer.wrap(protoTyped, 'quit', noopQuit);
-      protoTyped._quitReplayNoop = true;
-    }
-    if (typeof protoTyped.QUIT === 'function' && !(protoTyped as { _QUITReplayNoop?: boolean })._QUITReplayNoop) {
-      shimmer.wrap(protoTyped, 'QUIT', noopQuit);
-      (protoTyped as { _QUITReplayNoop?: boolean })._QUITReplayNoop = true;
-    }
-    proto = Object.getPrototypeOf(proto);
-  }
+  if (typeof client.quit === 'function') client.quit = noopQuitFn(client.quit);
+  if (typeof client.QUIT === 'function') client.QUIT = noopQuitFn(client.QUIT);
+}
+
+const SOFTPROBE_CREATE_CLIENT_WRAPPED = '__softprobeCreateClientWrapped';
+
+/**
+ * Wraps createClient so every new client gets connect/quit no-ops as instance own-properties.
+ * Using instance-level patching (not prototype) makes it immune to OTel re-patching the redis
+ * module at sdk.start(), which creates new Commander prototype objects that would bypass a
+ * prototype-level patch applied before sdk.start().
+ * Idempotent. Exported so init can call it from a require hook (Task 16.3.1).
+ */
+export function applyRedisReplay(redis: Record<string, unknown>): void {
+  const target = redis.createClient != null ? redis : (redis.default as Record<string, unknown> | undefined);
+  if (!target) return;
+  if ((target.createClient as { [SOFTPROBE_CREATE_CLIENT_WRAPPED]?: boolean })?.[SOFTPROBE_CREATE_CLIENT_WRAPPED]) return;
+
+  shimmer.wrap(
+    target,
+    'createClient',
+    (original: (...args: unknown[]) => unknown) =>
+      function (this: unknown, ...args: unknown[]): unknown {
+        const client = (original as (...a: unknown[]) => RedisClientLike).apply(this, args);
+        applyInstanceNoops(client);
+        return client;
+      }
+  );
+  (target.createClient as { [SOFTPROBE_CREATE_CLIENT_WRAPPED]?: boolean })[SOFTPROBE_CREATE_CLIENT_WRAPPED] = true;
 }

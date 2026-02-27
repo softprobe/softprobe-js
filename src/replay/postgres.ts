@@ -11,8 +11,6 @@ import type { SoftprobeMatcher } from './softprobe-matcher';
 import { SoftprobeContext } from '../context';
 import { PostgresSpan } from '../bindings/postgres-span';
 
-const FATAL_IMPORT_ORDER =
-  "[Softprobe FATAL] OTel already wrapped pg. Import 'softprobe/init' BEFORE OTel initialization.";
 const SOFTPROBE_WRAPPED_MARKER = '__softprobeWrapped';
 
 /**
@@ -26,19 +24,23 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
   const connectKey = 'connect' as const;
   const existingConnect = pg.Client.prototype[connectKey] as { __softprobeConnect?: boolean };
   if (typeof pg.Client.prototype[connectKey] === 'function' && !existingConnect?.__softprobeConnect) {
-    shimmer.wrap(
-      pg.Client.prototype,
-      connectKey,
-      (originalConnect: (...args: unknown[]) => unknown) =>
-        function wrappedConnect(this: unknown, ...args: unknown[]): unknown {
-          const mode = SoftprobeContext.getMode();
-          if (mode === 'REPLAY') return Promise.resolve();
-          return (originalConnect as (...a: unknown[]) => unknown).apply(this, args);
-        }
-    );
-    (pg.Client.prototype[connectKey] as { __softprobeConnect?: boolean }).__softprobeConnect = true;
+    const origConnect = pg.Client.prototype[connectKey] as (...args: unknown[]) => unknown;
+    // Use Object.defineProperty (NOT shimmer.wrap) so OTel does NOT detect __wrapped and strip us.
+    // OTel's isWrapped() checks __wrapped; without it, OTel wraps our function instead of
+    // replacing it. Call chain: OTel wrapper → our wrapper → original connect.
+    const patchedConnect = function wrappedConnect(this: unknown, ...args: unknown[]): unknown {
+      if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve();
+      return origConnect.apply(this, args);
+    };
+    (patchedConnect as unknown as { __softprobeConnect: boolean }).__softprobeConnect = true;
+    Object.defineProperty(pg.Client.prototype, connectKey, {
+      configurable: true,
+      writable: true,
+      value: patchedConnect,
+    });
   }
-  // end() must not touch the network when we never connected (Task 16.3.1). Wrap on top of OTel when applied after sdk.start().
+  // end() must not touch the network when we never connected (Task 16.3.1). OTel does not wrap
+  // end(), so shimmer is safe here.
   const endKey = 'end' as const;
   const existingEnd = pg.Client.prototype[endKey] as { __softprobeEndNoop?: boolean };
   if (typeof pg.Client.prototype[endKey] === 'function' && !existingEnd?.__softprobeEndNoop) {
@@ -54,11 +56,11 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
     (pg.Client.prototype[endKey] as { __softprobeEndNoop?: boolean }).__softprobeEndNoop = true;
   }
 
-  shimmer.wrap(
-    pg.Client.prototype,
-    'query',
-    (originalQuery: (...args: unknown[]) => unknown) =>
-      function wrappedQuery(this: unknown, ...args: unknown[]): unknown {
+  // Use Object.defineProperty (NOT shimmer.wrap) so OTel does NOT detect __wrapped and strip us.
+  // OTel wraps our patchedQuery with its span-creating wrapper; our wrapper stays in the chain.
+  // Call chain: OTel query wrapper → our patchedQuery → original query.
+  const origQuery = pg.Client.prototype.query as (...args: unknown[]) => unknown;
+  const patchedQuery = function wrappedQuery(this: unknown, ...args: unknown[]): unknown {
         const matcher = SoftprobeContext.active().matcher;
         const mode = SoftprobeContext.getMode();
         const strictReplay = SoftprobeContext.getStrictReplay();
@@ -73,13 +75,13 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
             }
             return Promise.reject(replayErr);
           }
-          return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
+          return origQuery.apply(this, args);
         }
 
         const config = args[0];
         const queryString = typeof config === 'string' ? config : (config as { text?: string })?.text;
         if (typeof queryString !== 'string') {
-          return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
+          return origQuery.apply(this, args);
         }
 
         // Support both promise and callback style (design §9.1: callback is last arg).
@@ -102,7 +104,7 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
           if (r.action === 'MOCK') {
             payload = r.payload;
           } else if (r.action === 'PASSTHROUGH') {
-            return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
+            return origQuery.apply(this, args);
           } else {
             if (strictReplay) {
               const strictErr = new Error('Softprobe replay: no match for pg.query');
@@ -112,7 +114,7 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
               }
               return Promise.reject(strictErr);
             }
-            return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
+            return origQuery.apply(this, args);
           }
         } else {
           try {
@@ -130,7 +132,7 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
               }
               return Promise.reject(strictErr);
             }
-            return (originalQuery as (...a: unknown[]) => unknown).apply(this, args);
+            return origQuery.apply(this, args);
           }
         }
 
@@ -143,9 +145,13 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
           return undefined;
         }
         return Promise.resolve(mockedResult);
-      }
-  );
-  (pg.Client.prototype.query as { [SOFTPROBE_WRAPPED_MARKER]?: boolean })[SOFTPROBE_WRAPPED_MARKER] = true;
+  };
+  (patchedQuery as unknown as Record<string, unknown>)[SOFTPROBE_WRAPPED_MARKER] = true;
+  Object.defineProperty(pg.Client.prototype, 'query', {
+    configurable: true,
+    writable: true,
+    value: patchedQuery,
+  });
 }
 
 /**

@@ -62,7 +62,8 @@ export const CaptureEngine = {
  * storage is resolved per request and SoftprobeContext.run loads the cassette in REPLAY mode.
  * In CAPTURE mode wraps res.send to record status/body via CaptureEngine.queueInboundResponse.
  * When placed after body-parser, req.body is captured in the inbound record (Task 14.3.1).
- * Task 17.3.2: Runs the request in an OTel context with softprobe traceId/mode/storage so SoftprobeContext works downstream.
+ * Task 17.3.2: Runs the whole request inside OTel context and does not return until res.end() so
+ * downstream code (route handlers, MSW fetch listener) sees the same SoftprobeContext state.
  */
 export function softprobeExpressMiddleware(
   req: { method: string; path: string; body?: unknown; headers?: Record<string, string | string[] | undefined> },
@@ -89,45 +90,32 @@ export function softprobeExpressMiddleware(
   const mode = SoftprobeContext.getMode(ctxWithSoftprobe);
   const { storage } = resolveRequestStorageForContext(req.headers, activeCtx, ctxTraceId);
   const runOptions = { mode, traceId: ctxTraceId, storage } as const;
-  const runInRequestScope = (fn: () => void | Promise<void>): void => {
-    void Promise.resolve(
-      context.with(ctxWithSoftprobe, () => SoftprobeContext.run(runOptions, fn))
-    ).catch((err: unknown) => {
-      next(err);
-    });
-  };
 
-  if (mode === 'REPLAY') {
-    // Return the promise so Express waits; run() callback awaits res.end(), so REPLAY context
-    // stays active for the whole request and async route handlers see getMode() === 'REPLAY'.
-    type ResWithEnd = { end?: (chunk?: unknown, encoding?: string, cb?: () => void) => unknown };
-    const promise = context.with(ctxWithSoftprobe, () =>
-      SoftprobeContext.run(runOptions, async () => {
-        try {
-          activateReplayForContext(ctxTraceId);
-        } catch (err) {
-          throw err;
-        }
-        await new Promise<void>((resolve) => {
-          const origEnd = (res as ResWithEnd).end?.bind(res);
-          if (typeof origEnd === 'function') {
-            (res as ResWithEnd).end = function (this: ResWithEnd, chunk?: unknown, encoding?: string, cb?: () => void) {
-              (res as ResWithEnd).end = origEnd;
-              const result = origEnd!.call(this, chunk, encoding, cb);
-              resolve();
-              return result;
-            };
-          } else {
-            resolve();
-          }
-          next();
-        });
-      })
-    );
-    return Promise.resolve(promise).catch((err: unknown) => next(err));
-  }
-  if (mode === 'CAPTURE') {
-    runInRequestScope(() => {
+  // Run the whole request inside OTel context and do not return until res.end() so that
+  // downstream (e.g. MSW fetch listener) sees the same context (design: OTel context only).
+  type ResWithEnd = { end?: (chunk?: unknown, encoding?: string, cb?: () => void) => unknown };
+  const waitForResponseThenNext = (): Promise<void> =>
+    new Promise<void>((resolve) => {
+      const origEnd = (res as ResWithEnd).end?.bind(res);
+      if (typeof origEnd === 'function') {
+        (res as ResWithEnd).end = function (this: ResWithEnd, chunk?: unknown, encoding?: string, cb?: () => void) {
+          (res as ResWithEnd).end = origEnd;
+          const result = origEnd!.call(this, chunk, encoding, cb);
+          resolve();
+          return result;
+        };
+      } else {
+        resolve();
+      }
+      next();
+    });
+
+  const promise = context.with(ctxWithSoftprobe, () =>
+    SoftprobeContext.run(runOptions, async () => {
+      if (mode === 'REPLAY') {
+        activateReplayForContext(ctxTraceId);
+      }
+      if (mode === 'CAPTURE') {
         const originalSend = res.send.bind(res);
         res.send = function (body?: unknown) {
           CaptureEngine.queueInboundResponse(ctxTraceId, {
@@ -138,11 +126,9 @@ export function softprobeExpressMiddleware(
           });
           return originalSend.apply(res, arguments as any);
         };
-        next();
-    });
-    return;
-  }
-  runInRequestScope(() => {
-    next();
-  });
+      }
+      await waitForResponseThenNext();
+    })
+  );
+  return Promise.resolve(promise).catch((err: unknown) => next(err));
 }

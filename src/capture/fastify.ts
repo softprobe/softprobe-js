@@ -14,10 +14,11 @@ import { resolveRequestStorageForContext } from '../core/cassette/context-reques
 /**
  * onRequest hook: run the rest of the request pipeline in an OTel context that has
  * softprobe traceId/mode/storage so SoftprobeContext works in route handlers.
+ * Does not return until the response is finished so OTel context stays active for MSW/fetch.
  */
 function softprobeFastifyOnRequest(
   request: FastifyRequest,
-  _reply: FastifyReply,
+  reply: FastifyReply,
   next: (err?: Error) => void
 ): void {
   const span = trace.getActiveSpan();
@@ -35,15 +36,18 @@ function softprobeFastifyOnRequest(
     runTraceId
   );
 
-  void Promise.resolve(context.with(
-    ctxWithSoftprobe,
-    () => SoftprobeContext.run(
+  const promise = context.with(ctxWithSoftprobe, () =>
+    SoftprobeContext.run(
       { mode: runMode, traceId: runTraceId, storage },
-      () => {
+      async () => {
         next();
+        await new Promise<void>((resolve) => {
+          reply.raw.once('finish', resolve);
+        });
       }
     )
-  )).catch((err: unknown) => {
+  );
+  void Promise.resolve(promise).catch((err: unknown) => {
     next(err as Error);
   });
 }
