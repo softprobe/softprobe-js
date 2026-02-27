@@ -67,19 +67,34 @@ describe('Task 9.2 - replay succeeds with dependencies offline', () => {
   });
 
   it('strict replay succeeds for recorded HTTP/Postgres/Redis without live dependencies', async () => {
-    const fixtureDir = path.join(path.dirname(EXPRESS_FIXTURE), `task-9-2-http-${Date.now()}`);
-    fs.mkdirSync(fixtureDir, { recursive: true });
+    const fixtureDir = artifacts.createTempDir('task-9-2-http');
     const expressFixtureCopy = path.join(fixtureDir, `${FIXTURE_TRACE_ID}.ndjson`);
     fs.copyFileSync(EXPRESS_FIXTURE, expressFixtureCopy);
+    const httpReplayConfigPath = artifacts.createSoftprobeConfig('task-9-2-http-replay', {
+      mode: 'REPLAY',
+      cassetteDirectory: fixtureDir,
+      traceId: FIXTURE_TRACE_ID,
+      strictReplay: true,
+    });
+    const pgReplayConfigPath = artifacts.createSoftprobeConfig('task-9-2-pg-replay', {
+      mode: 'REPLAY',
+      cassetteDirectory: path.dirname(pgCassettePath),
+      traceId: path.basename(pgCassettePath, '.ndjson'),
+      strictReplay: true,
+    });
+    const redisReplayConfigPath = artifacts.createSoftprobeConfig('task-9-2-redis-replay', {
+      mode: 'REPLAY',
+      cassetteDirectory: path.dirname(redisCassettePath),
+      traceId: path.basename(redisCassettePath, '.ndjson'),
+      strictReplay: true,
+    });
 
     const httpPort = 30400 + (Date.now() % 10000);
     const httpChild = runServer(
       EXPRESS_WORKER,
       {
         PORT: String(httpPort),
-        SOFTPROBE_MODE: 'REPLAY',
-        SOFTPROBE_STRICT_REPLAY: '1',
-        SOFTPROBE_CASSETTE_PATH: expressFixtureCopy,
+        SOFTPROBE_CONFIG_PATH: httpReplayConfigPath,
       },
       { useTsNode: true }
     );
@@ -111,9 +126,7 @@ describe('Task 9.2 - replay succeeds with dependencies offline', () => {
     const pgReplay = runChild(
       PG_REPLAY_WORKER,
       {
-        SOFTPROBE_MODE: 'REPLAY',
-        SOFTPROBE_STRICT_REPLAY: '1',
-        SOFTPROBE_CASSETTE_PATH: pgCassettePath,
+        SOFTPROBE_CONFIG_PATH: pgReplayConfigPath,
         PG_URL: 'postgres://127.0.0.1:63999/offline',
         REPLAY_TRACE_ID: PG_TRACE_ID,
       },
@@ -125,9 +138,7 @@ describe('Task 9.2 - replay succeeds with dependencies offline', () => {
     const redisReplay = runChild(
       REDIS_REPLAY_WORKER,
       {
-        SOFTPROBE_MODE: 'REPLAY',
-        SOFTPROBE_STRICT_REPLAY: '1',
-        SOFTPROBE_CASSETTE_PATH: redisCassettePath,
+        SOFTPROBE_CONFIG_PATH: redisReplayConfigPath,
         REDIS_KEY: redisKey,
         REPLAY_TRACE_ID: REDIS_TRACE_ID,
       },

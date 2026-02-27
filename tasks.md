@@ -243,7 +243,7 @@ Implementation rule per task:
     - disallow direct calls to `loadNdjson` + synthetic span conversion in those workers.
     - keep assertions focused on behavior parity with runtime boot flow.
 
-- [ ] **Task 11.6 Remove legacy env->YAML compatibility bridge in E2E launcher**
+- [x] **Task 11.6 Remove legacy env->YAML compatibility bridge in E2E launcher** — `refactor(e2e): require explicit SOFTPROBE_CONFIG_PATH in run-child helpers and migrate E2E callers to YAML configs`
   - **Problem**: `run-child` currently translates legacy `SOFTPROBE_*` env vars into generated YAML, which hides non-YAML call sites and weakens strict YAML-only enforcement.
   - **Test**: all E2E entry points pass `SOFTPROBE_CONFIG_PATH` explicitly; `run-child` no longer accepts/rewrites `SOFTPROBE_MODE`/`SOFTPROBE_CASSETTE_PATH`/`SOFTPROBE_CASSETTE_DIRECTORY`/strict env flags (align with section 13: config uses cassetteDirectory).
   - **Solution**:

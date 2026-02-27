@@ -46,14 +46,19 @@ let globalDefault: Stored = {
 };
 
 let globalReplayMatcher: SoftprobeMatcher | undefined;
+const cassetteByPath = new Map<string, Cassette>();
 
 /**
- * Create a cassette for the given directory and traceId. No cache; each call returns a new instance.
- * Task 13.6: Only this module creates NdjsonCassette; request-storage and middleware use this instead of constructing.
- * Warning: Do not use directly. Use SoftprobeContext.run() instead.
+ * Returns a cached cassette for a given (cassetteDirectory, traceId) pair.
+ * Task 13.5/13.6: only this module creates NdjsonCassette; request-storage and middleware call this.
  */
 function getOrCreateCassette(cassetteDirectory: string, traceId: string): Cassette {
-  return getCassette() ?? new NdjsonCassette(cassetteDirectory, traceId);
+  const key = `${cassetteDirectory}::${traceId}`;
+  const existing = cassetteByPath.get(key);
+  if (existing) return existing;
+  const created = new NdjsonCassette(cassetteDirectory, traceId);
+  cassetteByPath.set(key, created);
+  return created;
 }
 
 function merge(base: Stored, partial: PartialData): Stored {

@@ -28,12 +28,19 @@ function buildMinimalCassetteLine(identifier: string): string {
 describe('E2E strict mode (Task 13.1)', () => {
   let artifacts: E2eArtifacts;
   let cassettePath: string;
+  let replayConfigPath: string;
   const RECORDED_IDENTIFIER = 'GET http://example.com/recorded';
   const UNRECORDED_URL = 'http://example.com/unrecorded';
 
   beforeAll(() => {
     artifacts = new E2eArtifacts();
     cassettePath = artifacts.createTempFile('softprobe-e2e-strict', '.ndjson');
+    replayConfigPath = artifacts.createSoftprobeConfig('softprobe-e2e-strict-replay', {
+      mode: 'REPLAY',
+      cassetteDirectory: path.dirname(cassettePath),
+      traceId: path.basename(cassettePath, '.ndjson'),
+      strictReplay: true,
+    });
     fs.writeFileSync(cassettePath, buildMinimalCassetteLine(RECORDED_IDENTIFIER), 'utf8');
   });
 
@@ -45,9 +52,7 @@ describe('E2E strict mode (Task 13.1)', () => {
     const result = runChild(
       STRICT_REPLAY_WORKER,
       {
-        SOFTPROBE_MODE: 'REPLAY',
-        SOFTPROBE_STRICT_REPLAY: '1',
-        SOFTPROBE_CASSETTE_PATH: cassettePath,
+        SOFTPROBE_CONFIG_PATH: replayConfigPath,
         UNRECORDED_URL,
         REPLAY_TRACE_ID: 'strict-e2e-replay',
       },

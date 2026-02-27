@@ -31,19 +31,33 @@ function withoutVariableHeaders(obj: unknown): unknown {
 describe('E2E Express inbound replay (Task 14.4.2)', () => {
   let artifacts: E2eArtifacts;
   let cassettePath: string;
+  let captureConfigPath: string;
+  let replayConfigPath: string;
   let capturedTraceId: string;
 
   beforeAll(async () => {
     artifacts = new E2eArtifacts();
     cassettePath = artifacts.createTempFile('express-replay-e2e', '.ndjson');
+    const cassetteDirectory = path.dirname(cassettePath);
+    const traceId = path.basename(cassettePath, '.ndjson');
+    captureConfigPath = artifacts.createSoftprobeConfig('express-inbound-replay-capture', {
+      mode: 'CAPTURE',
+      cassetteDirectory,
+      traceId,
+    });
+    replayConfigPath = artifacts.createSoftprobeConfig('express-inbound-replay', {
+      mode: 'REPLAY',
+      cassetteDirectory,
+      traceId,
+      strictReplay: true,
+    });
 
     const port = 30000 + (Date.now() % 10000);
     const child = runServer(
       WORKER_SCRIPT,
       {
         PORT: String(port),
-        SOFTPROBE_MODE: 'CAPTURE',
-        SOFTPROBE_CASSETTE_PATH: cassettePath,
+        SOFTPROBE_CONFIG_PATH: captureConfigPath,
       },
       { useTsNode: true }
     );
@@ -74,19 +88,22 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
   });
 
   it('REPLAY + strict with fixture cassette succeeds (propagation + matcher)', async () => {
-    const fixtureDir = path.join(path.dirname(FIXTURE_CASSETTE), `express-replay-fixture-${Date.now()}`);
-    fs.mkdirSync(fixtureDir, { recursive: true });
+    const fixtureDir = artifacts.createTempDir('express-replay-fixture');
     const fixtureCopyPath = path.join(fixtureDir, `${FIXTURE_TRACE_ID}.ndjson`);
     fs.copyFileSync(FIXTURE_CASSETTE, fixtureCopyPath);
+    const fixtureReplayConfigPath = artifacts.createSoftprobeConfig('express-replay-fixture-config', {
+      mode: 'REPLAY',
+      cassetteDirectory: fixtureDir,
+      traceId: FIXTURE_TRACE_ID,
+      strictReplay: true,
+    });
 
     const port = 30010 + (Date.now() % 10000);
     const child = runServer(
       WORKER_SCRIPT,
       {
         PORT: String(port),
-        SOFTPROBE_MODE: 'REPLAY',
-        SOFTPROBE_STRICT_REPLAY: '1',
-        SOFTPROBE_CASSETTE_PATH: fixtureCopyPath,
+        SOFTPROBE_CONFIG_PATH: fixtureReplayConfigPath,
       },
       { useTsNode: true }
     );
@@ -112,12 +129,6 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
       });
     } finally {
       await closeServer(child);
-      try {
-        fs.unlinkSync(fixtureCopyPath);
-        fs.rmdirSync(fixtureDir);
-      } catch {
-        // ignore cleanup
-      }
     }
   }, 30000);
 
@@ -127,9 +138,7 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
       WORKER_SCRIPT,
       {
         PORT: String(port),
-        SOFTPROBE_MODE: 'REPLAY',
-        SOFTPROBE_STRICT_REPLAY: '1',
-        SOFTPROBE_CASSETTE_PATH: cassettePath,
+        SOFTPROBE_CONFIG_PATH: replayConfigPath,
       },
       { useTsNode: true }
     );

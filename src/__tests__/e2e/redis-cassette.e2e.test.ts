@@ -23,6 +23,8 @@ describe('E2E Redis cassette capture/replay (Task 12.3)', () => {
   let artifacts: E2eArtifacts;
   let redisContainer: StartedRedisContainer;
   let cassettePath: string;
+  let captureConfigPath: string;
+  let replayConfigPath: string;
   let redisKey: string;
   let redisValue: string;
   let replayTraceId = '';
@@ -31,6 +33,19 @@ describe('E2E Redis cassette capture/replay (Task 12.3)', () => {
     artifacts = new E2eArtifacts();
     redisContainer = await new RedisContainer('redis:7').start();
     cassettePath = artifacts.createTempFile('softprobe-e2e-cassette-redis', '.ndjson');
+    const cassetteDirectory = path.dirname(cassettePath);
+    const traceId = path.basename(cassettePath, '.ndjson');
+    captureConfigPath = artifacts.createSoftprobeConfig('softprobe-e2e-redis-capture', {
+      mode: 'CAPTURE',
+      cassetteDirectory,
+      traceId,
+    });
+    replayConfigPath = artifacts.createSoftprobeConfig('softprobe-e2e-redis-replay', {
+      mode: 'REPLAY',
+      cassetteDirectory,
+      traceId,
+      strictReplay: true,
+    });
     redisKey = `softprobe:e2e:${Date.now()}`;
     redisValue = 'redis-e2e-value';
   }, 60000);
@@ -44,8 +59,7 @@ describe('E2E Redis cassette capture/replay (Task 12.3)', () => {
     const result = runChild(
       CAPTURE_WORKER,
       {
-        SOFTPROBE_MODE: 'CAPTURE',
-        SOFTPROBE_CASSETTE_PATH: cassettePath,
+        SOFTPROBE_CONFIG_PATH: captureConfigPath,
         REDIS_URL: redisContainer.getConnectionUrl(),
         REDIS_KEY: redisKey,
         REDIS_VALUE: redisValue,
@@ -73,9 +87,7 @@ describe('E2E Redis cassette capture/replay (Task 12.3)', () => {
     const result = runChild(
       REPLAY_WORKER,
       {
-        SOFTPROBE_MODE: 'REPLAY',
-        SOFTPROBE_CASSETTE_PATH: cassettePath,
-        SOFTPROBE_STRICT_REPLAY: '1',
+        SOFTPROBE_CONFIG_PATH: replayConfigPath,
         REDIS_KEY: redisKey,
         REPLAY_TRACE_ID: replayTraceId,
       },

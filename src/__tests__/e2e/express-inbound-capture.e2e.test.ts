@@ -36,10 +36,18 @@ function getOutboundRecords(records: SoftprobeCassetteRecord[]): SoftprobeCasset
 describe('E2E Express inbound capture (Task 14.4.1)', () => {
   let artifacts: E2eArtifacts;
   let cassettePath: string;
+  let captureConfigPath: string;
 
   beforeAll(() => {
     artifacts = new E2eArtifacts();
     cassettePath = artifacts.createTempFile('express-inbound-e2e', '.ndjson');
+    const cassetteDirectory = path.dirname(cassettePath);
+    const traceId = path.basename(cassettePath, '.ndjson');
+    captureConfigPath = artifacts.createSoftprobeConfig('express-inbound-capture', {
+      mode: 'CAPTURE',
+      cassetteDirectory,
+      traceId,
+    });
   });
 
   afterAll(() => {
@@ -52,8 +60,7 @@ describe('E2E Express inbound capture (Task 14.4.1)', () => {
       WORKER_SCRIPT,
       {
         PORT: String(port),
-        SOFTPROBE_MODE: 'CAPTURE',
-        SOFTPROBE_CASSETTE_PATH: cassettePath,
+        SOFTPROBE_CONFIG_PATH: captureConfigPath,
       },
       { useTsNode: true }
     );

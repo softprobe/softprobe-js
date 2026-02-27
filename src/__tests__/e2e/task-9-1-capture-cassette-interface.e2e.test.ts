@@ -42,14 +42,18 @@ describe('Task 9.1 - Capture E2E via cassette interface', () => {
     const cassetteDir = path.join(path.dirname(cassettePath), `task-9-1-dir-${Date.now()}`);
     fs.mkdirSync(cassetteDir, { recursive: true });
     const cassetteFilePath = path.join(cassetteDir, `${traceId}.ndjson`);
+    const appConfigPath = artifacts.createSoftprobeConfig('task-9-1-app-config', {
+      mode: 'PASSTHROUGH',
+      cassetteDirectory: cassetteDir,
+      traceId,
+    });
 
     const port = 30200 + (Date.now() % 10000);
     const child = runServer(
       WORKER_SCRIPT,
       {
         PORT: String(port),
-        SOFTPROBE_MODE: 'PASSTHROUGH',
-        SOFTPROBE_CASSETTE_PATH: cassetteFilePath,
+        SOFTPROBE_CONFIG_PATH: appConfigPath,
         SOFTPROBE_E2E_OUTBOUND_URL: `http://127.0.0.1:${outboundPort}/diff-headers`,
       },
       { useTsNode: true }

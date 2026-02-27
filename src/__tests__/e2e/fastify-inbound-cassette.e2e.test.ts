@@ -41,11 +41,26 @@ function getOutboundRecords(records: SoftprobeCassetteRecord[]): SoftprobeCasset
 describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
   let artifacts: E2eArtifacts;
   let cassettePath: string;
+  let captureConfigPath: string;
+  let replayConfigPath: string;
   let capturedTraceId: string;
 
   beforeAll(() => {
     artifacts = new E2eArtifacts();
     cassettePath = artifacts.createTempFile('fastify-inbound-e2e', '.ndjson');
+    const cassetteDirectory = path.dirname(cassettePath);
+    const traceId = path.basename(cassettePath, '.ndjson');
+    captureConfigPath = artifacts.createSoftprobeConfig('fastify-inbound-capture', {
+      mode: 'CAPTURE',
+      cassetteDirectory,
+      traceId,
+    });
+    replayConfigPath = artifacts.createSoftprobeConfig('fastify-inbound-replay', {
+      mode: 'REPLAY',
+      cassetteDirectory,
+      traceId,
+      strictReplay: true,
+    });
   });
 
   afterAll(() => {
@@ -56,7 +71,7 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
     const port = 30100 + (Date.now() % 10000);
     const child = runServer(
       WORKER_SCRIPT,
-      { ...FASTIFY_WORKER_ENV, PORT: String(port), SOFTPROBE_MODE: 'CAPTURE', SOFTPROBE_CASSETTE_PATH: cassettePath },
+      { ...FASTIFY_WORKER_ENV, PORT: String(port), SOFTPROBE_CONFIG_PATH: captureConfigPath },
       { useTsNode: true }
     );
 
@@ -95,15 +110,20 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
   }, 30000);
 
   it('REPLAY + strict with fixture cassette succeeds (no live dependencies)', async () => {
-    const fixtureDir = path.join(path.dirname(FIXTURE_CASSETTE), `fastify-fixture-${Date.now()}`);
-    fs.mkdirSync(fixtureDir, { recursive: true });
+    const fixtureDir = artifacts.createTempDir('fastify-fixture');
     const fixtureCopyPath = path.join(fixtureDir, `${FIXTURE_TRACE_ID}.ndjson`);
     fs.copyFileSync(FIXTURE_CASSETTE, fixtureCopyPath);
+    const fixtureReplayConfigPath = artifacts.createSoftprobeConfig('fastify-fixture-replay', {
+      mode: 'REPLAY',
+      cassetteDirectory: fixtureDir,
+      traceId: FIXTURE_TRACE_ID,
+      strictReplay: true,
+    });
 
     const port = 30110 + (Date.now() % 10000);
     const child = runServer(
       WORKER_SCRIPT,
-      { ...FASTIFY_WORKER_ENV, PORT: String(port), SOFTPROBE_MODE: 'REPLAY', SOFTPROBE_STRICT_REPLAY: '1', SOFTPROBE_CASSETTE_PATH: fixtureCopyPath },
+      { ...FASTIFY_WORKER_ENV, PORT: String(port), SOFTPROBE_CONFIG_PATH: fixtureReplayConfigPath },
       { useTsNode: true }
     );
 
@@ -129,12 +149,6 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
       });
     } finally {
       await closeServer(child);
-      try {
-        fs.unlinkSync(fixtureCopyPath);
-        fs.rmdirSync(fixtureDir);
-      } catch {
-        // ignore cleanup
-      }
     }
   }, 30000);
 
@@ -143,7 +157,7 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
     const capturePort = 30120 + (Date.now() % 10000);
     const captureChild = runServer(
       WORKER_SCRIPT,
-      { ...FASTIFY_WORKER_ENV, PORT: String(capturePort), SOFTPROBE_MODE: 'CAPTURE', SOFTPROBE_CASSETTE_PATH: cassettePath },
+      { ...FASTIFY_WORKER_ENV, PORT: String(capturePort), SOFTPROBE_CONFIG_PATH: captureConfigPath },
       { useTsNode: true }
     );
     try {
@@ -172,7 +186,7 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
     const replayPort = 30130 + (Date.now() % 10000);
     const replayChild = runServer(
       WORKER_SCRIPT,
-      { ...FASTIFY_WORKER_ENV, PORT: String(replayPort), SOFTPROBE_MODE: 'REPLAY', SOFTPROBE_STRICT_REPLAY: '1', SOFTPROBE_CASSETTE_PATH: cassettePath },
+      { ...FASTIFY_WORKER_ENV, PORT: String(replayPort), SOFTPROBE_CONFIG_PATH: replayConfigPath },
       { useTsNode: true }
     );
 

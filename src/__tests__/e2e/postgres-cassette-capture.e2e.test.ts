@@ -27,11 +27,17 @@ describe('E2E Postgres cassette capture (Task 12.2.1)', () => {
   let artifacts: E2eArtifacts;
   let pgContainer: StartedPostgreSqlContainer;
   let cassettePath: string;
+  let captureConfigPath: string;
 
   beforeAll(async () => {
     artifacts = new E2eArtifacts();
     pgContainer = await new PostgreSqlContainer('postgres:16').start();
     cassettePath = artifacts.createTempFile('softprobe-e2e-cassette-pg', '.ndjson');
+    captureConfigPath = artifacts.createSoftprobeConfig('softprobe-e2e-pg-capture', {
+      mode: 'CAPTURE',
+      cassetteDirectory: path.dirname(cassettePath),
+      traceId: path.basename(cassettePath, '.ndjson'),
+    });
   }, 60000);
 
   afterAll(async () => {
@@ -43,8 +49,7 @@ describe('E2E Postgres cassette capture (Task 12.2.1)', () => {
     const result = runChild(
       WORKER_SCRIPT,
       {
-        SOFTPROBE_MODE: 'CAPTURE',
-        SOFTPROBE_CASSETTE_PATH: cassettePath,
+        SOFTPROBE_CONFIG_PATH: captureConfigPath,
         PG_URL: pgContainer.getConnectionUri(),
       },
       { useTsNode: true }
@@ -77,11 +82,26 @@ describe('E2E Postgres cassette replay (Task 12.2.2)', () => {
   let artifacts: E2eArtifacts;
   let pgContainer: StartedPostgreSqlContainer;
   let cassettePath: string;
+  let captureConfigPath: string;
+  let replayConfigPath: string;
 
   beforeAll(async () => {
     artifacts = new E2eArtifacts();
     pgContainer = await new PostgreSqlContainer('postgres:16').start();
     cassettePath = artifacts.createTempFile('softprobe-e2e-replay-pg', '.ndjson');
+    const cassetteDirectory = path.dirname(cassettePath);
+    const traceId = path.basename(cassettePath, '.ndjson');
+    captureConfigPath = artifacts.createSoftprobeConfig('softprobe-e2e-pg-replay-capture', {
+      mode: 'CAPTURE',
+      cassetteDirectory,
+      traceId,
+    });
+    replayConfigPath = artifacts.createSoftprobeConfig('softprobe-e2e-pg-replay', {
+      mode: 'REPLAY',
+      cassetteDirectory,
+      traceId,
+      strictReplay: true,
+    });
   }, 60000);
 
   afterAll(async () => {
@@ -94,8 +114,7 @@ describe('E2E Postgres cassette replay (Task 12.2.2)', () => {
     const captureResult = runChild(
       WORKER_SCRIPT,
       {
-        SOFTPROBE_MODE: 'CAPTURE',
-        SOFTPROBE_CASSETTE_PATH: cassettePath,
+        SOFTPROBE_CONFIG_PATH: captureConfigPath,
         PG_URL: pgContainer.getConnectionUri(), // valid URL — real Postgres container
       },
       { useTsNode: true }
@@ -110,9 +129,7 @@ describe('E2E Postgres cassette replay (Task 12.2.2)', () => {
     const replayResult = runChild(
       REPLAY_WORKER,
       {
-        SOFTPROBE_MODE: 'REPLAY',
-        SOFTPROBE_CASSETTE_PATH: cassettePath,
-        SOFTPROBE_STRICT_REPLAY: '1',
+        SOFTPROBE_CONFIG_PATH: replayConfigPath,
         PG_URL: 'postgres://127.0.0.1:63999/offline',
         ...(recordedTraceId && { REPLAY_TRACE_ID: recordedTraceId }),
       },
