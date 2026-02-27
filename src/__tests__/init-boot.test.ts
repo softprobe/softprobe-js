@@ -28,7 +28,7 @@ describe('softprobe/init boot', () => {
       jest.doMock('../store/cassette-store', () => ({ CassetteStore }));
       jest.doMock('../capture/mutator', () => ({ applyAutoInstrumentationMutator }));
       jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators }));
-      jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor }));
+      jest.doMock('../instrumentations/fetch', () => ({ setupHttpReplayInterceptor }));
       require('../init');
       expect(CassetteStore).not.toHaveBeenCalled();
       expect(setCaptureStore).not.toHaveBeenCalled();
@@ -54,7 +54,7 @@ describe('softprobe/init boot', () => {
       jest.doMock('../store/cassette-store', () => ({ CassetteStore }));
       jest.doMock('../capture/mutator', () => ({ applyAutoInstrumentationMutator: jest.fn() }));
       jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
-      jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
+      jest.doMock('../instrumentations/fetch', () => ({ setupHttpReplayInterceptor: jest.fn() }));
       require('../init');
       expect(CassetteStore).not.toHaveBeenCalled();
       expect(setCaptureStore).not.toHaveBeenCalled();
@@ -84,9 +84,9 @@ describe('softprobe/init boot', () => {
         },
       }));
       jest.doMock('../capture/mutator', () => ({ applyAutoInstrumentationMutator: jest.fn() }));
-      jest.doMock('../replay/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
-      jest.doMock('../replay/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
-      jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
+      jest.doMock('../instrumentations/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
+      jest.doMock('../instrumentations/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
+      jest.doMock('../instrumentations/fetch', () => ({ setupHttpReplayInterceptor: jest.fn() }));
       jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
       require('../init');
     });
@@ -107,9 +107,9 @@ describe('softprobe/init boot', () => {
         },
       }));
       jest.doMock('../capture/mutator', () => ({ applyAutoInstrumentationMutator: jest.fn() }));
-      jest.doMock('../replay/postgres', () => ({ setupPostgresReplay, applyPostgresReplay: jest.fn() }));
-      jest.doMock('../replay/redis', () => ({ setupRedisReplay, applyRedisReplay }));
-      jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor }));
+      jest.doMock('../instrumentations/postgres', () => ({ setupPostgresReplay, applyPostgresReplay: jest.fn() }));
+      jest.doMock('../instrumentations/redis', () => ({ setupRedisReplay, applyRedisReplay }));
+      jest.doMock('../instrumentations/fetch', () => ({ setupHttpReplayInterceptor }));
       jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
       require('../init');
       expect(setupHttpReplayInterceptor).toHaveBeenCalledTimes(1);
@@ -138,9 +138,9 @@ describe('softprobe/init boot', () => {
         SoftprobeContext: { initGlobal },
       }));
       jest.doMock('../core/cassette/ndjson-cassette', () => ({ NdjsonCassette }));
-      jest.doMock('../replay/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
-      jest.doMock('../replay/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
-      jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
+      jest.doMock('../instrumentations/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
+      jest.doMock('../instrumentations/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
+      jest.doMock('../instrumentations/fetch', () => ({ setupHttpReplayInterceptor: jest.fn() }));
       jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
 
       require('../init');
@@ -174,9 +174,9 @@ describe('softprobe/init boot', () => {
         SoftprobeContext: { initGlobal },
       }));
       jest.doMock('../core/cassette/ndjson-cassette', () => ({ NdjsonCassette }));
-      jest.doMock('../replay/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
-      jest.doMock('../replay/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
-      jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
+      jest.doMock('../instrumentations/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
+      jest.doMock('../instrumentations/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
+      jest.doMock('../instrumentations/fetch', () => ({ setupHttpReplayInterceptor: jest.fn() }));
       jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
 
       require('../init');
@@ -214,9 +214,9 @@ describe('softprobe/init boot', () => {
         jest.doMock('../store/cassette-store', () => ({ CassetteStore }));
         jest.doMock('../capture/mutator', () => ({ applyAutoInstrumentationMutator: jest.fn() }));
         jest.doMock('../capture/framework-mutator', () => ({ applyFrameworkMutators: jest.fn() }));
-        jest.doMock('../replay/http', () => ({ setupHttpReplayInterceptor: jest.fn() }));
-        jest.doMock('../replay/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
-        jest.doMock('../replay/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
+        jest.doMock('../instrumentations/fetch', () => ({ setupHttpReplayInterceptor: jest.fn() }));
+        jest.doMock('../instrumentations/postgres', () => ({ setupPostgresReplay: jest.fn(), applyPostgresReplay: jest.fn() }));
+        jest.doMock('../instrumentations/redis', () => ({ setupRedisReplay: jest.fn(), applyRedisReplay: jest.fn() }));
         require('../init');
       });
     };

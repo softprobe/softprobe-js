@@ -45,9 +45,9 @@ try {
 
 const { applyAutoInstrumentationMutator } = require('./capture/mutator');
 const { applyFrameworkMutators } = require('./capture/framework-mutator');
-const { setupHttpReplayInterceptor } = require('./replay/http');
-const { setupPostgresReplay } = require('./replay/postgres');
-const { setupRedisReplay, applyRedisReplay } = require('./replay/redis');
+const { setupHttpReplayInterceptor } = require('./instrumentations/fetch');
+const { setupPostgresReplay } = require('./instrumentations/postgres');
+const { setupRedisReplay, applyRedisReplay } = require('./instrumentations/redis');
 
 applyAutoInstrumentationMutator();
 applyFrameworkMutators();

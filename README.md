@@ -121,6 +121,12 @@ npx softprobe diff ./softprobe-cassettes.ndjson http://localhost:3000
 # Or from repo: ./bin/softprobe diff ./softprobe-cassettes.ndjson http://localhost:3000
 ```
 
+## Package Layout
+
+- `src/core` contains shared framework-agnostic contracts and runtime helpers.
+- `src/instrumentations/<package>` contains package-specific hooks/patches (for example `express`, `fastify`, `redis`, `postgres`, `fetch`).
+- `src/instrumentations/common` contains shared protocol helpers used by multiple instrumentation packages.
+
 ## More
 
 - **Example app:** `examples/basic-app` — capture, replay, and custom matcher.
