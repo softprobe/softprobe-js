@@ -5,25 +5,56 @@ Topology-aware record & replay testing framework for Node.js via OpenTelemetry. 
 ## Installation
 
 ```bash
-npm install softprobe
+npm install @softprobe/softprobe-js
 ```
 
-## Quick start
+## Global CLI (Recommended)
 
-1. **Import first** (before any other imports that load drivers):
+Install once, then use `softprobe` directly:
+
+```bash
+npm install -g @softprobe/softprobe-js
+softprobe --help
+softprobe --version
+```
+
+Fallback (no global install):
+
+```bash
+npx @softprobe/softprobe-js --help
+```
+
+## Quick Start (Library + CLI)
+
+1. Install and add an instrumentation bootstrap that imports Softprobe first:
 
 ```ts
 // instrumentation.ts
-import "softprobe/init";
+import "@softprobe/softprobe-js/init";
 
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 ```
 
-2. **Replay in tests** with `run({ mode, storage, traceId }, fn)`:
+2. Start your service with that bootstrap:
+
+```bash
+node -r ./instrumentation.ts ./server.ts
+```
+
+3. Capture a real request as a cassette:
+
+```bash
+TRACE_ID=11111111111111111111111111111111
+curl -H "x-softprobe-mode: CAPTURE" \
+     -H "x-softprobe-trace-id: ${TRACE_ID}" \
+     http://localhost:3000/your-route
+```
+
+4. Replay in tests with `run({ mode, storage, traceId }, fn)`:
 
 ```ts
-import { softprobe } from "softprobe";
+import { softprobe } from "@softprobe/softprobe-js";
 
 it("replays from cassette", async () => {
   const storage = {
@@ -46,13 +77,13 @@ it("replays from cassette", async () => {
 });
 ```
 
-3. **Run the end-to-end example flow** (capture -> replay -> diff):
+5. Compare current behavior vs recorded behavior with CLI diff:
 
 ```bash
-npm run example:test
+softprobe diff ./cassettes/11111111111111111111111111111111.ndjson http://localhost:3000
 ```
 
-For a step-by-step walkthrough, see [examples/basic-app/README.md](examples/basic-app/README.md).
+For a full walkthrough, see [examples/basic-app/README.md](examples/basic-app/README.md) and [examples/pricing-regression-demo/README.md](examples/pricing-regression-demo/README.md).
 
 ## CLI — `softprobe diff`
 
@@ -89,10 +120,16 @@ Repeat for other routes or use the same path to append more records to the same 
 
 ### How to run the CLI
 
-**If you installed the package** (`npm install softprobe`):
+**Global install (recommended):**
 
 ```bash
-npx softprobe diff <cassette.ndjson> <targetUrl>
+softprobe diff <cassette.ndjson> <targetUrl>
+```
+
+**No global install (fallback):**
+
+```bash
+npx @softprobe/softprobe-js diff <cassette.ndjson> <targetUrl>
 ```
 
 **If you're in the repo** (no install, no build needed):
@@ -117,9 +154,37 @@ Your service must use Softprobe middleware (Express or Fastify) so it reads thes
 
 ```bash
 # Start your app (with Softprobe middleware) on port 3000, then:
-npx softprobe diff ./softprobe-cassettes.ndjson http://localhost:3000
+softprobe diff ./softprobe-cassettes.ndjson http://localhost:3000
+# Fallback:
+npx @softprobe/softprobe-js diff ./softprobe-cassettes.ndjson http://localhost:3000
 # Or from repo: ./bin/softprobe diff ./softprobe-cassettes.ndjson http://localhost:3000
 ```
+
+## Release
+
+This repository publishes to npm as `@softprobe/softprobe-js` via GitHub Actions workflow [`.github/workflows/release.yml`](.github/workflows/release.yml).
+
+Setup once:
+
+1. Configure npm Trusted Publishing for this package and this GitHub repository/workflow.
+2. Ensure npm package access is public for the scoped package.
+3. Keep workflow permissions with `id-token: write` (already set in release workflow).
+
+Reference:
+- npm trusted publishing docs: https://docs.npmjs.com/trusted-publishers/
+- npm classic token revocation announcement: https://github.blog/changelog/2025-12-09-npm-classic-tokens-revoked-session-based-auth-and-cli-token-management-now-available/
+
+Release flow:
+
+1. Merge changes to `main`.
+2. Create and push a version tag, for example `v2.0.1`.
+3. GitHub Action builds and publishes automatically.
+
+Manual validation flow:
+
+1. Run the `Release` workflow with `dry_run=true` to verify publish steps without publishing.
+
+No `NPM_TOKEN` repository secret is required for this workflow.
 
 ## Package Layout
 

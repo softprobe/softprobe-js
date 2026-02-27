@@ -1,0 +1,1 @@
+{"version":"4.1","traceId":"11111111111111111111111111111111","spanId":"db33ef57496aad04","timestamp":"2026-02-27T22:06:15.282Z","type":"inbound","protocol":"http","identifier":"GET /price","responsePayload":{"statusCode":200,"body":"{\"sku\":\"coffee-beans\",\"basePriceCents\":1000,\"priceCents\":1080,\"price\":\"$10.80\"}"}}

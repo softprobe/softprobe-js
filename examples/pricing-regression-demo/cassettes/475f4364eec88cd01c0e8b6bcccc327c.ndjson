@@ -1,0 +1,1 @@
+{"version":"4.1","traceId":"475f4364eec88cd01c0e8b6bcccc327c","spanId":"34fea590c19e76e3","timestamp":"2026-02-27T22:05:26.256Z","type":"inbound","protocol":"http","identifier":"GET /ping","responsePayload":{"statusCode":200,"body":"ok"}}

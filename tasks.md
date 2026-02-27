@@ -3,12 +3,11 @@
 This tracker replaces completed history and contains only remaining refactor work.
 
 Implementation rule per task:
-1. write test
-2. run and verify fail (red)
-3. minimal implementation
-4. run and verify pass (green)
-5. mark `[x]` with short commit-style note
-6. continue to the next first unchecked task automatically (no stop-between-tasks), unless blocked by a required human decision
+1. implement the smallest change for the active task
+2. validate only with Softprobe flows (capture/replay/diff) as the testing method
+3. skip TDD and do not add or require red/green unit-test cycles for task completion
+4. mark `[x]` with short commit-style note
+5. continue to the next first unchecked task automatically (no stop-between-tasks), unless blocked by a required human decision
 
 > Do not implement ahead of the first unchecked task. Execute in strict order.
 
@@ -73,3 +72,27 @@ Implementation rule per task:
 - [x] **Task 5.1 Full refactor validation** — `test(refactor): pass targeted guard suite and full repo tests (stable with --maxWorkers=50%)`
   - **Goal**: run targeted unit suite for migrated modules, architecture guards, and then full repository tests.
   - **Test**: all refactor-related tests and full test suite pass with zero failures.
+
+## 6) Demo App Expansion
+
+- [x] **Task 6.1 Add manual pricing-regression demo with v1/v2 app flow** — `feat(example): add manual pricing regression demo with v1/v2 and replay diff mismatch`
+  - **Goal**: provide a customer-facing manual demo with two nearly identical app versions where v2 introduces a pricing bug (wrong price, no exception), captured with curl and verified via replay diff mismatch output.
+  - **Verification**: run Softprobe capture with v1, replay/diff against v2, and confirm mismatch output shows `priceCents` recorded `1080` vs live `1180`.
+
+## 7) Release Readiness
+
+- [x] **Task 7.1 Prepare npm + GitHub Actions release pipeline and developer quick start** — `chore(release): add npm publish workflow and scoped-package quick start docs`
+  - **Goal**: publish the package as `@softprobe/softprobe-js`, add an automated GitHub Actions release workflow for npm, and update README with a practical quick start for library + CLI usage.
+  - **Verification**: release workflow file exists, package metadata targets scoped npm package, and README documents install/release/quick-start commands.
+
+- [x] **Task 7.2 Make global CLI install the primary developer experience** — `docs(cli): make global softprobe command the default UX`
+  - **Goal**: document and expose Softprobe as a globally installed CLI (`softprobe`) similar to aws/claude style tooling, with scoped-package `npx` as fallback.
+  - **Verification**: README and package metadata clearly present global installation and `softprobe` command-first usage.
+
+- [x] **Task 7.3 Improve CLI ergonomics for global-tool usage** — `feat(cli): add --help and --version for global command discoverability`
+  - **Goal**: provide standard CLI affordances (`--help`, `--version`) so global `softprobe` usage is self-discoverable.
+  - **Verification**: `softprobe --help` and `softprobe --version` are documented and implemented in CLI entrypoint.
+
+- [x] **Task 7.4 Migrate release pipeline from npm token auth to Trusted Publishing** — `chore(release): remove NPM_TOKEN usage and document OIDC trusted publishing`
+  - **Goal**: align publish flow with npm token changes by using GitHub OIDC trusted publishing instead of token-based auth.
+  - **Verification**: release workflow has no `NODE_AUTH_TOKEN` usage and README release setup states trusted publishing.

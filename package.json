@@ -1,8 +1,35 @@
 {
-  "name": "softprobe",
+  "name": "@softprobe/softprobe-js",
   "version": "2.0.0",
   "description": "Topology-aware record & replay testing framework via OpenTelemetry",
+  "keywords": [
+    "softprobe",
+    "record-replay",
+    "testing",
+    "otel",
+    "opentelemetry",
+    "cli"
+  ],
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/softprobe/softprobe-js.git"
+  },
+  "homepage": "https://github.com/softprobe/softprobe-js#readme",
+  "bugs": {
+    "url": "https://github.com/softprobe/softprobe-js/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ],
   "bin": {
     "softprobe": "./dist/cli.js"
   },
@@ -13,6 +40,8 @@
   "scripts": {
     "test": "jest",
     "build": "tsc",
+    "prebuild": "rm -rf dist",
+    "prepublishOnly": "npm run build",
     "test:e2e": "jest --testPathPattern=__tests__/e2e",
     "example:run": "cd examples/basic-app && npx ts-node --transpile-only -r ./instrumentation.ts run.ts",
     "example:capture": "cd examples/basic-app && npx ts-node --transpile-only capture-runner.ts",
@@ -21,6 +50,8 @@
     "example:down": "docker compose -f examples/basic-app/docker-compose.yml down",
     "example:test": "bash examples/basic-app/test-with-capture-replay.sh",
     "example:replay-then-diff": "bash examples/basic-app/replay-and-diff.sh",
+    "example:pricing:v1": "cd examples/pricing-regression-demo && SOFTPROBE_CONFIG_PATH=./.softprobe/config-capture.yml PORT=3020 npx ts-node --transpile-only -r ./instrumentation.ts app-v1.ts",
+    "example:pricing:v2": "cd examples/pricing-regression-demo && SOFTPROBE_CONFIG_PATH=./.softprobe/config-passthrough.yml PORT=3020 npx ts-node --transpile-only -r ./instrumentation.ts app-v2.ts",
     "example:kill": "(lsof -ti :3000; lsof -ti :3010) 2>/dev/null | xargs kill -9 2>/dev/null; echo Done",
     "example:kill-e2e": "pkill -f 'express-inbound-worker|fastify-inbound-worker|diff-headers-server' 2>/dev/null; echo Done",
     "diff": "node dist/cli.js diff",

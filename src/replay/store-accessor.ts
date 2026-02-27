@@ -8,7 +8,8 @@
 import path from 'path';
 import type { SoftprobeCassetteRecord } from '../types/schema';
 import { SoftprobeContext } from '../context';
-import type { SoftprobeMatcher } from './softprobe-matcher';
+
+type MatcherWithRecords = { _getRecords?: () => SoftprobeCassetteRecord[] };
 
 /**
  * Returns recorded cassette records for the given traceId from the active context only.
@@ -18,8 +19,9 @@ import type { SoftprobeMatcher } from './softprobe-matcher';
 export function getRecordsForTrace(traceId: string): SoftprobeCassetteRecord[] {
   const normalized = traceId.toLowerCase();
   const matcher = SoftprobeContext.getMatcher();
-  if (matcher && '_getRecords' in matcher && typeof (matcher as SoftprobeMatcher)._getRecords === 'function') {
-    const contextRecords = (matcher as SoftprobeMatcher)._getRecords();
+  const replayMatcher = matcher as MatcherWithRecords | undefined;
+  if (replayMatcher && typeof replayMatcher._getRecords === 'function') {
+    const contextRecords = replayMatcher._getRecords();
     return contextRecords.filter((r) => (r.traceId ?? '').toLowerCase() === normalized);
   }
   return [];
