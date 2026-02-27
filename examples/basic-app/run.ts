@@ -7,9 +7,9 @@
  * and the Express middleware are active. From repo root: npm run example:run
  *
  * This app demonstrates:
- * - Capture: request with x-softprobe-mode: CAPTURE + x-softprobe-cassette-path
- *   records inbound GET / and outbound Postgres, Redis, and HTTP to an NDJSON cassette.
- * - Replay: run with SOFTPROBE_MODE=REPLAY and SOFTPROBE_CASSETTE_PATH; GET / is
+ * - Capture: request with x-softprobe-mode: CAPTURE + x-softprobe-trace-id
+ *   records inbound GET / and outbound Postgres, Redis, and HTTP to {cassetteDirectory}/{traceId}.ndjson.
+ * - Replay: run with SOFTPROBE_MODE=REPLAY and config (cassetteDirectory + traceId, or legacy SOFTPROBE_CASSETTE_PATH); GET / is
  *   served from the cassette (Postgres, Redis, and httpbin.org are mocked, no live deps).
  *
  * Use require('express') so the framework mutator injects Softprobe middleware.
@@ -18,10 +18,6 @@
 
 import { Client } from 'pg';
 import { createClient } from 'redis';
-import { softprobe } from '../../src/api';
-import { loadNdjson } from '../../src/store/load-ndjson';
-import { SoftprobeMatcher } from '../../src/replay/softprobe-matcher';
-import { createDefaultMatcher } from '../../src/replay/extract-key';
 
 const DEFAULT_PG_URL = 'postgres://postgres:postgres@localhost:5432/postgres';
 const DEFAULT_REDIS_URL = 'redis://localhost:6379';
@@ -32,16 +28,7 @@ const pgUrl = process.env.PG_URL ?? DEFAULT_PG_URL;
 const redisUrl = process.env.REDIS_URL ?? DEFAULT_REDIS_URL;
 
 async function start(): Promise<void> {
-  if (process.env.SOFTPROBE_MODE === 'REPLAY') {
-    const cassettePath = process.env.SOFTPROBE_CASSETTE_PATH;
-    if (!cassettePath) throw new Error('SOFTPROBE_CASSETTE_PATH is required for REPLAY');
-    const records = await loadNdjson(cassettePath);
-    softprobe.setReplayRecordsCache(records);
-    const matcher = new SoftprobeMatcher();
-    matcher.use(createDefaultMatcher());
-    matcher._setRecords(records); // Prime so single-trace cassette works; middleware refines per request
-    softprobe.setGlobalReplayMatcher(matcher);
-  }
+  // REPLAY: init (from instrumentation) sets mode and cassetteDirectory; middleware creates matcher per request via SoftprobeContext.run(REPLAY). No user-created matcher or global cache.
 
   const express = require('express') as typeof import('express');
   const app = express();

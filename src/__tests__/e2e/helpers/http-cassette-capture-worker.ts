@@ -16,14 +16,30 @@ async function main(): Promise<void> {
   if (!url) throw new Error('CAPTURE_URL is required');
 
   const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
-  let cassettePath = '';
+  let cassetteDirectory: string | undefined;
+  let traceId: string | undefined;
   try {
-    const cfg = new ConfigManager(configPath).get();
-    cassettePath = (cfg as { cassettePath?: string }).cassettePath ?? '';
+    const cfg = new ConfigManager(configPath).get() as {
+      cassetteDirectory?: string;
+      traceId?: string;
+      cassettePath?: string;
+    };
+    cassetteDirectory = cfg.cassetteDirectory;
+    traceId = cfg.traceId;
+    if (!cassetteDirectory || !traceId) {
+      const fromPath = cfg.cassettePath;
+      if (typeof fromPath === 'string' && fromPath) {
+        cassetteDirectory = path.dirname(fromPath);
+        traceId = path.basename(fromPath, '.ndjson');
+      }
+    }
   } catch {
-    cassettePath = '';
+    cassetteDirectory = undefined;
+    traceId = undefined;
   }
-  if (!cassettePath) throw new Error('cassettePath is required in config');
+  if (!cassetteDirectory || !traceId) {
+    throw new Error('cassetteDirectory + traceId or cassettePath is required in config');
+  }
 
   const { NodeSDK } = require('@opentelemetry/sdk-node');
   const { getNodeAutoInstrumentations } = require('@opentelemetry/auto-instrumentations-node');
@@ -36,11 +52,8 @@ async function main(): Promise<void> {
     applyHttpReplay();
   }
 
-  const cassetteDir = path.dirname(cassettePath);
-  const traceId = path.basename(cassettePath, '.ndjson');
-
   const result = await softprobe.run(
-    { mode: 'CAPTURE', traceId, cassetteDirectory: cassetteDir },
+    { mode: 'CAPTURE', traceId, cassetteDirectory },
     async () => {
       const response = await fetch(url, {
         signal: AbortSignal.timeout(15000),

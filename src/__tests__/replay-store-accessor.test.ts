@@ -1,9 +1,11 @@
 /**
- * Task 15.3.1: Middleware loads specific trace records from eager-loaded global store.
- * Test: middleware retrieves only records for the current traceId from the store initialized at boot.
+ * Task 15.3.1: getRecordsForTrace returns context-scoped records only (from the matcher created by SoftprobeContext.run(REPLAY)).
  */
+import * as otelApi from '@opentelemetry/api';
+import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import { softprobe } from '../api';
-import type { SoftprobeCassetteRecord } from '../types/schema';
+import { SoftprobeContext } from '../context';
+import type { Cassette, SoftprobeCassetteRecord } from '../types/schema';
 
 function record(traceId: string, spanId: string, identifier: string): SoftprobeCassetteRecord {
   return {
@@ -18,7 +20,17 @@ function record(traceId: string, spanId: string, identifier: string): SoftprobeC
 }
 
 describe('Task 15.3.1: replay store accessor', () => {
-  it('middleware retrieves only records for the current traceId from the store initialized at boot', () => {
+  beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
+  });
+
+  beforeEach(() => {
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH' });
+  });
+
+  it('getRecordsForTrace returns only records for the current traceId from context (run creates matcher)', async () => {
     const traceA = 'trace-aaa';
     const traceB = 'trace-bbb';
     const store: SoftprobeCassetteRecord[] = [
@@ -26,28 +38,53 @@ describe('Task 15.3.1: replay store accessor', () => {
       record(traceA, 'span-a2', 'GET /b'),
       record(traceB, 'span-b1', 'GET /c'),
     ];
-    softprobe.setReplayRecordsCache(store);
+    const cassette: Cassette = {
+      loadTrace: async () => store,
+      saveRecord: async () => {},
+    };
 
-    const forA = softprobe.getRecordsForTrace(traceA);
-    const forB = softprobe.getRecordsForTrace(traceB);
+    await SoftprobeContext.run(
+      { mode: 'REPLAY', storage: cassette, traceId: traceA },
+      () => {
+        const forA = softprobe.getRecordsForTrace(traceA);
+        expect(forA).toHaveLength(2);
+        expect(forA.every((r) => r.traceId === traceA)).toBe(true);
+        expect(forA.map((r) => r.identifier)).toEqual(['GET /a', 'GET /b']);
+      }
+    );
 
-    expect(forA).toHaveLength(2);
-    expect(forA.every((r) => r.traceId === traceA)).toBe(true);
-    expect(forA.map((r) => r.identifier)).toEqual(['GET /a', 'GET /b']);
-
-    expect(forB).toHaveLength(1);
-    expect(forB[0].traceId).toBe(traceB);
-    expect(forB[0].identifier).toBe('GET /c');
+    await SoftprobeContext.run(
+      { mode: 'REPLAY', storage: cassette, traceId: traceB },
+      () => {
+        const forB = softprobe.getRecordsForTrace(traceB);
+        expect(forB).toHaveLength(1);
+        expect(forB[0].traceId).toBe(traceB);
+        expect(forB[0].identifier).toBe('GET /c');
+      }
+    );
   });
 
-  it('getRecordsForTrace matches traceId case-insensitively (W3C traceparent)', () => {
+  it('getRecordsForTrace matches traceId case-insensitively (W3C traceparent)', async () => {
     const store: SoftprobeCassetteRecord[] = [
       record('Trace-Id-Mixed', 'span-1', 'GET /'),
     ];
-    softprobe.setReplayRecordsCache(store);
+    const cassette: Cassette = {
+      loadTrace: async () => store,
+      saveRecord: async () => {},
+    };
 
-    const found = softprobe.getRecordsForTrace('trace-id-mixed');
-    expect(found).toHaveLength(1);
-    expect(found[0].traceId).toBe('Trace-Id-Mixed');
+    await SoftprobeContext.run(
+      { mode: 'REPLAY', storage: cassette, traceId: 'Trace-Id-Mixed' },
+      () => {
+        const found = softprobe.getRecordsForTrace('trace-id-mixed');
+        expect(found).toHaveLength(1);
+        expect(found[0].traceId).toBe('Trace-Id-Mixed');
+      }
+    );
+  });
+
+  it('getRecordsForTrace returns [] when no active context matcher', () => {
+    const found = softprobe.getRecordsForTrace('any-trace');
+    expect(found).toEqual([]);
   });
 });

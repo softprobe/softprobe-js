@@ -56,7 +56,6 @@ describe('Task 21.2.1: softprobe diff CLI', () => {
 
       expect(receivedHeaders['x-softprobe-mode']).toBe('REPLAY');
       expect(receivedHeaders['x-softprobe-trace-id']).toBe('trace-diff-99');
-      expect(receivedHeaders['x-softprobe-cassette-path']).toBe(cassettePath);
     } finally {
       await closeServer(child);
       if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);

@@ -93,7 +93,6 @@ function withData(otelContext: Context, data: PartialData): Context {
  */
 function initGlobal(config: {
   mode?: string;
-  cassettePath?: string;
   cassetteDirectory?: string;
   storage?: Cassette;
   strictReplay?: boolean;

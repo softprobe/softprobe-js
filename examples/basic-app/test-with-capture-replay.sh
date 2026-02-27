@@ -35,8 +35,10 @@ for i in $(seq 1 30); do
   sleep 0.5
 done
 
+# Trace id must match the cassette filename (without .ndjson) so server writes to cassette path
+CASSETTE_TRACE_ID=$(basename "$CASSETTE_REL" .ndjson)
 curl -s -H "x-softprobe-mode: CAPTURE" \
-     -H "x-softprobe-cassette-path: $CASSETTE_REL" \
+     -H "x-softprobe-trace-id: $CASSETTE_TRACE_ID" \
      "http://127.0.0.1:$PORT/" > /dev/null
 curl -s "http://127.0.0.1:$PORT/flush" > /dev/null
 kill $SERVER_PID 2>/dev/null || true

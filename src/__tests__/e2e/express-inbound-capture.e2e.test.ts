@@ -60,8 +60,12 @@ describe('E2E Express inbound capture (Task 14.4.1)', () => {
 
     try {
       await waitForServer(port, 20000);
-      const res = await fetch(`http://127.0.0.1:${port}/`);
+      const traceId = path.basename(cassettePath, '.ndjson');
+      const res = await fetch(`http://127.0.0.1:${port}/`, {
+        headers: { 'x-softprobe-trace-id': traceId },
+      });
       expect(res.ok).toBe(true);
+      await new Promise((r) => setTimeout(r, 800));
       await fetch(`http://127.0.0.1:${port}/exit`).catch(() => {});
       await new Promise<void>((r) => {
         child.once('exit', r);

@@ -1,0 +1,6 @@
+# Canonical example config (Task 12.1).
+# Mode and cassette directory come from this YAML only; do not use
+# SOFTPROBE_MODE, SOFTPROBE_CASSETTE_PATH, or SOFTPROBE_CASSETTE_DIRECTORY.
+# One NDJSON file per trace: {cassetteDirectory}/{traceId}.ndjson
+mode: CAPTURE
+cassetteDirectory: "."

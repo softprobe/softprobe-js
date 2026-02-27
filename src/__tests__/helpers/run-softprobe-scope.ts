@@ -1,13 +1,12 @@
 import { context } from '@opentelemetry/api';
 import { SoftprobeContext } from '../../context';
-import { loadReplayRecordsFromPath } from '../../replay/store-accessor';
 import type { SemanticMatcher } from '../../replay/matcher';
 import { SoftprobeMatcher } from '../../replay/softprobe-matcher';
 import type { Cassette, SoftprobeCassetteRecord, SoftprobeMode } from '../../types/schema';
 
 type ScopeOptions = {
   traceId?: string;
-  cassettePath?: string;
+  cassetteDirectory?: string;
   mode?: SoftprobeMode;
   strictReplay?: boolean;
   strictComparison?: boolean;
@@ -22,6 +21,7 @@ const noOpCassette: Cassette = {
 
 /**
  * Test helper to run code inside a Softprobe scope using the canonical run(options, fn) API.
+ * Uses cassetteDirectory + traceId; cassette path is always {cassetteDirectory}/{traceId}.ndjson (Cassette API).
  */
 export function runSoftprobeScope<T>(
   scope: ScopeOptions,
@@ -29,23 +29,32 @@ export function runSoftprobeScope<T>(
 ): T | Promise<T> {
   let loadedRecords: SoftprobeCassetteRecord[] = [];
   const hasExplicitTraceId = Boolean(scope.traceId);
-  const replayStorage: Cassette | undefined = scope.cassettePath
-    ? {
-        loadTrace: async () => {
-          const records = await loadReplayRecordsFromPath(scope.cassettePath as string);
-          loadedRecords =
-            hasExplicitTraceId && scope.traceId
-              ? records.filter((r) => r.traceId === scope.traceId)
-              : records;
-          return loadedRecords;
-        },
-        saveRecord: async () => {},
-      }
-    : undefined;
+  const replayStorage: Cassette | undefined =
+    scope.cassetteDirectory && scope.traceId
+      ? (() => {
+          const cassette = SoftprobeContext.getOrCreateCassette(
+            scope.cassetteDirectory,
+            scope.traceId
+          );
+          return {
+            loadTrace: async () => {
+              const records = await cassette.loadTrace();
+              loadedRecords =
+                hasExplicitTraceId && scope.traceId
+                  ? records.filter((r) => r.traceId === scope.traceId)
+                  : records;
+              return loadedRecords;
+            },
+            saveRecord: async () => {},
+          };
+        })()
+      : undefined;
 
   return SoftprobeContext.run(
     {
-      mode: scope.mode ?? (scope.cassettePath || scope.matcher ? 'REPLAY' : 'PASSTHROUGH'),
+      mode:
+        scope.mode ??
+        ((scope.cassetteDirectory && scope.traceId) || scope.matcher ? 'REPLAY' : 'PASSTHROUGH'),
       storage: replayStorage ?? noOpCassette,
       traceId: scope.traceId ?? '',
     },

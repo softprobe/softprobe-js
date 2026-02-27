@@ -148,8 +148,9 @@ describe('softprobe/init boot', () => {
       expect(NdjsonCassette).not.toHaveBeenCalled();
       expect(initGlobal).toHaveBeenCalledWith(expect.objectContaining({
         mode: 'REPLAY',
-        cassettePath: '/tmp/configured-cassette.ndjson',
+        cassetteDirectory: '/tmp',
       }));
+      expect(initGlobal.mock.calls[0][0].cassettePath).toBeUndefined();
       expect(initGlobal.mock.calls[0][0].storage).toBeUndefined();
     });
   });
@@ -195,7 +196,7 @@ describe('softprobe/init boot', () => {
     const setCaptureStore = jest.fn();
     const CassetteStore = jest.fn();
 
-    const runInitForMode = (mode: string, cassetteDirectory?: string, cassettePath?: string) => {
+    const runInitForMode = (mode: string, cassetteDirectory?: string) => {
       NdjsonCassette.mockClear();
       setCaptureStore.mockClear();
       jest.isolateModules(() => {
@@ -204,8 +205,7 @@ describe('softprobe/init boot', () => {
             get() {
               return {
                 mode,
-                cassetteDirectory: cassetteDirectory ?? '',
-                cassettePath: cassettePath ?? '',
+                cassetteDirectory: cassetteDirectory ?? undefined,
                 replay: { strictReplay: false, strictComparison: false },
               };
             }

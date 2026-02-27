@@ -8,7 +8,6 @@ import { context, trace } from '@opentelemetry/api';
 import type { SoftprobeCassetteRecord } from '../types/schema';
 import { activateReplayForContext } from '../replay/express';
 import { SoftprobeContext } from '../context';
-import { softprobe } from '../api';
 import { resolveRequestStorageForContext } from '../core/cassette/context-request-storage';
 import { httpIdentifier } from '../identifier';
 
@@ -59,8 +58,8 @@ export const CaptureEngine = {
 };
 
 /**
- * Environment-aware Express middleware. When request has x-softprobe-mode=REPLAY and
- * x-softprobe-cassette-path, loads the cassette on demand and primes the matcher (no server REPLAY boot required).
+ * Environment-aware Express middleware. Replay uses cassetteDirectory + traceId (from context/headers);
+ * storage is resolved per request and SoftprobeContext.run loads the cassette in REPLAY mode.
  * In CAPTURE mode wraps res.send to record status/body via CaptureEngine.queueInboundResponse.
  * When placed after body-parser, req.body is captured in the inbound record (Task 14.3.1).
  * Task 17.3.2: Runs the request in an OTel context with softprobe traceId/mode/storage so SoftprobeContext works downstream.
@@ -88,7 +87,7 @@ export function softprobeExpressMiddleware(
   }
 
   const mode = SoftprobeContext.getMode(ctxWithSoftprobe);
-  const { storage, cassettePathHeader } = resolveRequestStorageForContext(req.headers, activeCtx);
+  const { storage } = resolveRequestStorageForContext(req.headers, activeCtx, ctxTraceId);
   const runOptions = { mode, traceId: ctxTraceId, storage } as const;
   const runInRequestScope = (fn: () => void | Promise<void>): void => {
     void Promise.resolve(
@@ -100,15 +99,12 @@ export function softprobeExpressMiddleware(
 
   if (mode === 'REPLAY') {
     runInRequestScope(async () => {
-        try {
-          if (cassettePathHeader) {
-            await softprobe.ensureReplayLoadedForRequest(cassettePathHeader);
-          }
-          activateReplayForContext(ctxTraceId);
-        } catch (err) {
-          return next(err);
-        }
-        next();
+      try {
+        activateReplayForContext(ctxTraceId);
+      } catch (err) {
+        return next(err);
+      }
+      next();
     });
     return;
   }

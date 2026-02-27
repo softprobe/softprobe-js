@@ -77,4 +77,24 @@ You are an elite, senior Staff-level AI engineer implementing the `softprobe` fr
   * Implementation must stay minimal and strictly within approved scope.
   * Do not add "temporary" helpers or inferred behavior (for example fallback mechanisms) without explicit approval.
 
+11. **Coding Principles**
+To ensure the codebase remains maintainable and clear, adhere to the following constraints:
+
+  * Simplify & Minimalize: 
+    
+    - No Over-Engineering: Build only for the current requirement. Do not add abstractions, "future-proof" hooks, or complexity for scenarios that do not yet exist.
+    
+    - Avoid Defaults & Fallbacks: Do not mask underlying issues with "safe" defaults or silent fallbacks. If a required value is missing or a state is invalid, the system should not guess.
+
+  * Failure Strategy
+    
+    - Fail Fast: Validate inputs and state immediately. Throw explicit errors at the point of failure rather than allowing the execution to proceed with corrupted data.
+
+    - Transparency: Errors should be loud and descriptive to ensure they are caught during development, not hidden in production logs.
+
+  * Structural Integrity
+    - DRY (Don't Repeat Yourself): Consolidate logic. If you find yourself copying and pasting patterns, abstract them into a single, reusable utility.
+
+    - Single Source of Truth (SSOT): Ensure every piece of data or logic exists in exactly one place. Do not synchronize state across multiple variables; derive state whenever possible to prevent desynchronization.
+
 **If you understand these rules, reply with "I acknowledge the Softprobe Constitution" and read tasks.md to begin.**

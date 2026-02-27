@@ -42,7 +42,8 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
     );
     try {
       await waitForServer(port, 20000);
-      await fetch(`http://127.0.0.1:${port}/`);
+      const traceId = path.basename(cassettePath, '.ndjson');
+      await fetch(`http://127.0.0.1:${port}/`, { headers: { 'x-softprobe-trace-id': traceId } });
       await fetch(`http://127.0.0.1:${port}/exit`).catch(() => {});
       await new Promise<void>((resolve) => {
         child.on('exit', () => resolve());
@@ -65,6 +66,11 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
   });
 
   it('REPLAY + strict with fixture cassette succeeds (propagation + matcher)', async () => {
+    const fixtureDir = path.join(path.dirname(FIXTURE_CASSETTE), `express-replay-fixture-${Date.now()}`);
+    fs.mkdirSync(fixtureDir, { recursive: true });
+    const fixtureCopyPath = path.join(fixtureDir, `${FIXTURE_TRACE_ID}.ndjson`);
+    fs.copyFileSync(FIXTURE_CASSETTE, fixtureCopyPath);
+
     const port = 30010 + (Date.now() % 10000);
     const child = runServer(
       WORKER_SCRIPT,
@@ -72,7 +78,7 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
         PORT: String(port),
         SOFTPROBE_MODE: 'REPLAY',
         SOFTPROBE_STRICT_REPLAY: '1',
-        SOFTPROBE_CASSETTE_PATH: FIXTURE_CASSETTE,
+        SOFTPROBE_CASSETTE_PATH: fixtureCopyPath,
       },
       { useTsNode: true }
     );
@@ -81,7 +87,10 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
       await waitForServer(port, 20000);
       const traceparent = `00-${FIXTURE_TRACE_ID}-0000000000000001-01`;
       const res = await fetch(`http://127.0.0.1:${port}/`, {
-        headers: { traceparent, 'x-softprobe-trace-id': FIXTURE_TRACE_ID },
+        headers: {
+          traceparent,
+          'x-softprobe-trace-id': FIXTURE_TRACE_ID,
+        },
       });
       expect(res.ok).toBe(true);
       const body = (await res.json()) as { ok?: boolean; outbound?: unknown };
@@ -95,6 +104,12 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
       });
     } finally {
       await closeServer(child);
+      try {
+        fs.unlinkSync(fixtureCopyPath);
+        fs.rmdirSync(fixtureDir);
+      } catch {
+        // ignore cleanup
+      }
     }
   }, 30000);
 
@@ -113,10 +128,14 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
 
     try {
       await waitForServer(port, 20000);
+      const traceIdForFile = path.basename(cassettePath, '.ndjson');
       const traceIdHex = String(capturedTraceId).trim().toLowerCase();
       const traceparent = `00-${traceIdHex}-0000000000000001-01`;
       const res = await fetch(`http://127.0.0.1:${port}/`, {
-        headers: { traceparent, 'x-softprobe-trace-id': traceIdHex },
+        headers: {
+          traceparent,
+          'x-softprobe-trace-id': traceIdForFile,
+        },
       });
       expect(res.ok).toBe(true);
       const body = (await res.json()) as { ok?: boolean; outbound?: unknown };
@@ -124,13 +143,16 @@ describe('E2E Express inbound replay (Task 14.4.2)', () => {
       expect(body.outbound).toBeDefined();
 
       const records = await loadCassetteRecordsByPath(cassettePath);
+      const norm = (s: string) => s?.trim().toLowerCase() ?? '';
       const outboundHttp = records.find(
-        (r) => r.traceId === capturedTraceId && r.type === 'outbound' && r.protocol === 'http'
+        (r) => r.type === 'outbound' && r.protocol === 'http' && norm(r.traceId ?? '') === norm(capturedTraceId ?? '')
       );
       expect(outboundHttp).toBeDefined();
       const responsePayload = (outboundHttp as SoftprobeCassetteRecord).responsePayload as { body?: unknown } | undefined;
       if (responsePayload?.body !== undefined) {
-        expect(body.outbound).toEqual(responsePayload.body);
+        const expectedBody =
+          typeof responsePayload.body === 'string' ? JSON.parse(responsePayload.body) : responsePayload.body;
+        expect(body.outbound).toEqual(expectedBody);
       }
 
       await fetch(`http://127.0.0.1:${port}/exit`).catch(() => {});

@@ -7,17 +7,21 @@ type HeaderMap = Record<string, string | string[] | undefined>;
 
 /**
  * Resolves request storage using shared priority:
- * 1) cassette path header
- * 2) existing scoped cassette on current OTel context
- * 3) globally configured cassette on ROOT_CONTEXT
+ * 1) existing scoped cassette on current OTel context
+ * 2) globally configured cassette on ROOT_CONTEXT
+ * 3) global cassetteDirectory + traceId (Task 13.11: per-trace files from config)
  */
 export function resolveRequestStorageForContext(
-  headers: HeaderMap | undefined,
-  otelContext: Context = context.active()
+  _headers: HeaderMap | undefined,
+  otelContext: Context = context.active(),
+  /** Request traceId; when set with global cassetteDirectory, yields per-trace cassette. */
+  traceId?: string
 ): ReturnType<typeof resolveRequestStorage> {
+  const cassetteDirectory = SoftprobeContext.getCassetteDirectory(ROOT_CONTEXT);
   return resolveRequestStorage({
-    headers,
     existingCassette: SoftprobeContext.getScopedCassette(otelContext),
     configuredCassette: SoftprobeContext.getCassette(ROOT_CONTEXT),
+    cassetteDirectory,
+    traceId,
   });
 }

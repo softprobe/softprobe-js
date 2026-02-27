@@ -5,7 +5,7 @@ import path from 'path';
 import * as otelApi from '@opentelemetry/api';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import type { SoftprobeCassetteRecord } from '../types/schema';
-import { SoftprobeContext, createTestCassette } from '../context';
+import { SoftprobeContext } from '../context';
 
 beforeAll(() => {
   const contextManager = new AsyncHooksContextManager();
@@ -146,12 +146,5 @@ describe('NdjsonCassette.saveRecord', () => {
     } catch {
       // ignore cleanup
     }
-  });
-});
-
-describe('NdjsonCassette.flush', () => {
-  it('is a no-op for direct-write implementation', async () => {
-    const cassette = createTestCassette(os.tmpdir(), 'unused');
-    await expect(cassette.flush?.()).resolves.toBeUndefined();
   });
 });

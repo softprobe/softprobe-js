@@ -4,19 +4,19 @@
 
 **Typical user flow (capture and replay via CLI and headers):**
 1. Add `softprobe/init` to their Express (or Fastify) app and use Softprobe middleware.
-2. Send a request with **capture mode headers** (`x-softprobe-mode: CAPTURE`, `x-softprobe-cassette-path: <path>`) to generate an NDJSON cassette file.
+2. Send a request with **capture mode headers** (`x-softprobe-mode: CAPTURE`, `x-softprobe-trace-id: <id>`) to generate an NDJSON cassette file (server uses cassetteDirectory + traceId).
 3. Use the **softprobe CLI** to replay that file against the server: `softprobe diff <cassette.ndjson> <targetUrl>` (CLI sends the request with replay headers; server responds from the cassette).
 
 * [x] **Task 16.1.1 Scaffold `examples/basic-app`** *(feat: minimal Express app with PG/Redis/HTTP; softprobe/init + middleware for header-driven capture/replay)*
 * [x] **Task 16.1.2 HTTP for demo** *(feat: outbound HTTP e.g. httpbin so cassette includes HTTP records)*
 * [x] **Task 16.1.3 Provide docker-compose** *(feat: Postgres + Redis for local run; optional for replay since CLI replays without live deps)*
 * [ ] **Task 16.2.1 Example app: demonstrate capture via headers**
-* **User-facing**: Start app (with softprobe/init + middleware); send a request with `x-softprobe-mode: CAPTURE` and `x-softprobe-cassette-path: ./softprobe-cassettes.ndjson`; cassette file is written with inbound (and outbound) records.
+* **User-facing**: Start app (with softprobe/init + middleware); send a request with `x-softprobe-mode: CAPTURE` and `x-softprobe-trace-id`; cassette file is written at `{cassetteDirectory}/{traceId}.ndjson` with inbound (and outbound) records.
 * **Note**: Env-based capture-runner script exists (historical); this task is the header-based capture flow as the primary demo.
 * **Test**: App running as HTTP server; one request with capture headers → cassette exists and contains inbound record.
 * [ ] **Task 16.3.1 Example app: demonstrate replay via CLI**
 * **User-facing**: App runs as HTTP server; user captures with headers, then runs `softprobe diff` against the server.
-* **Behavior**: (1) Start app with `softprobe/init` and middleware. (2) `curl` (or similar) with `x-softprobe-mode: CAPTURE` and `x-softprobe-cassette-path: ./softprobe-cassettes.ndjson` to record. (3) `softprobe diff ./softprobe-cassettes.ndjson http://localhost:PORT` replays and compares. Optional: stop DB/Redis to show replay works without live deps.
+* **Behavior**: (1) Start app with `softprobe/init` and middleware. (2) `curl` (or similar) with `x-softprobe-mode: CAPTURE` and `x-softprobe-trace-id` to record (server uses cassetteDirectory + traceId). (3) `softprobe diff ./softprobe-cassettes.ndjson http://localhost:PORT` replays and compares. Optional: stop DB/Redis to show replay works without live deps.
 * **Test**: Record via capture headers → cassette has inbound; run `softprobe diff` → exit 0 and response matches recorded (or E2E asserts CLI receives expected response).
 
 * [ ] **Task 16.4.1 Example app: document or demonstrate custom matcher (optional)**
@@ -62,7 +62,7 @@
 - [x] Task 20.2.1 Add capture runner script: `npm run example:capture` *(feat: capture-runner.ts, softprobe/init in instrumentation, /exit + flushCapture, example:capture script)*
   - Env:
     - `SOFTPROBE_MODE=CAPTURE`
-    - `SOFTPROBE_CASSETTE_PATH=./softprobe-cassettes.ndjson` (when cwd is examples/basic-app)
+    - Config with cassetteDirectory (or legacy `SOFTPROBE_CASSETTE_PATH=./softprobe-cassettes.ndjson` when cwd is examples/basic-app; path is converted to directory + traceId)
   - Behavior:
     - Runs the example flow once against live Postgres/Redis/http stub
     - Produces an NDJSON file containing:

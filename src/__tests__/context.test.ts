@@ -22,7 +22,7 @@ describe('context (SoftprobeContext)', () => {
   });
 
   beforeEach(() => {
-    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', cassettePath: '', strictReplay: false, strictComparison: false });
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', strictReplay: false, strictComparison: false });
     SoftprobeContext.setGlobalReplayMatcher(undefined);
   });
 
@@ -41,7 +41,7 @@ describe('context (SoftprobeContext)', () => {
     it('fromHeaders does not add cassettePath to runtime context state', () => {
       const base = { mode: 'PASSTHROUGH' as const };
       const headers: Record<string, string | string[] | undefined> = {
-        'x-softprobe-cassette-path': '/header.ndjson',
+        'x-softprobe-trace-id': 'header-trace',
       };
       const result = SoftprobeContext.fromHeaders(base as any, headers);
       expect((result as unknown as Record<string, unknown>).cassettePath).toBeUndefined();
@@ -59,7 +59,7 @@ describe('context (SoftprobeContext)', () => {
     });
 
     it('returns global default when context has no value', () => {
-      SoftprobeContext.initGlobal({ mode: 'REPLAY', cassettePath: '/global.ndjson' });
+      SoftprobeContext.initGlobal({ mode: 'REPLAY', cassetteDirectory: '/tmp' });
       expect(SoftprobeContext.getMode(ROOT_CONTEXT)).toBe('REPLAY');
     });
 
@@ -147,7 +147,7 @@ describe('context (SoftprobeContext)', () => {
     it('seeds global default used when context is empty', () => {
       SoftprobeContext.initGlobal({
         mode: 'REPLAY',
-        cassettePath: '/boot.ndjson',
+        cassetteDirectory: '/tmp',
         strictReplay: true,
         strictComparison: true,
       });
@@ -163,7 +163,6 @@ describe('context (SoftprobeContext)', () => {
       const headers: Record<string, string | string[] | undefined> = {
         'x-softprobe-mode': 'REPLAY',
         'x-softprobe-trace-id': 'header-trace',
-        'x-softprobe-cassette-path': '/header.ndjson',
       };
       const result = SoftprobeContext.fromHeaders(base, headers);
       expect(result.mode).toBe('REPLAY');
@@ -176,7 +175,7 @@ describe('context (SoftprobeContext)', () => {
     it('getMatcher does not return global matcher when context has no matcher', () => {
       const globalMatcher = {} as SoftprobeMatcher;
       SoftprobeContext.setGlobalReplayMatcher(globalMatcher);
-      SoftprobeContext.initGlobal({ mode: 'REPLAY', cassettePath: '' });
+      SoftprobeContext.initGlobal({ mode: 'REPLAY' });
       const ctx = SoftprobeContext.withData(ROOT_CONTEXT, { mode: 'REPLAY' });
       expect(SoftprobeContext.getMatcher(ctx)).toBeUndefined();
     });

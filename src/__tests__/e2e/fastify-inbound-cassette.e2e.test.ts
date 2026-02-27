@@ -55,8 +55,13 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
 
     try {
       await waitForServer(port, 20000);
-      const res = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(20000) });
+      const traceId = path.basename(cassettePath, '.ndjson');
+      const res = await fetch(`http://127.0.0.1:${port}/`, {
+        headers: { 'x-softprobe-trace-id': traceId },
+        signal: AbortSignal.timeout(20000),
+      });
       expect(res.ok).toBe(true);
+      await new Promise((r) => setTimeout(r, 800));
       await fetch(`http://127.0.0.1:${port}/exit`, { signal: AbortSignal.timeout(5000) }).catch(() => {});
       await new Promise<void>((r) => {
         child.once('exit', r);
@@ -83,10 +88,15 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
   }, 30000);
 
   it('REPLAY + strict with fixture cassette succeeds (no live dependencies)', async () => {
+    const fixtureDir = path.join(path.dirname(FIXTURE_CASSETTE), `fastify-fixture-${Date.now()}`);
+    fs.mkdirSync(fixtureDir, { recursive: true });
+    const fixtureCopyPath = path.join(fixtureDir, `${FIXTURE_TRACE_ID}.ndjson`);
+    fs.copyFileSync(FIXTURE_CASSETTE, fixtureCopyPath);
+
     const port = 30110 + (Date.now() % 10000);
     const child = runServer(
       WORKER_SCRIPT,
-      { ...FASTIFY_WORKER_ENV, PORT: String(port), SOFTPROBE_MODE: 'REPLAY', SOFTPROBE_STRICT_REPLAY: '1', SOFTPROBE_CASSETTE_PATH: FIXTURE_CASSETTE },
+      { ...FASTIFY_WORKER_ENV, PORT: String(port), SOFTPROBE_MODE: 'REPLAY', SOFTPROBE_STRICT_REPLAY: '1', SOFTPROBE_CASSETTE_PATH: fixtureCopyPath },
       { useTsNode: true }
     );
 
@@ -94,7 +104,10 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
       await waitForServer(port, 20000);
       const traceparent = `00-${FIXTURE_TRACE_ID}-0000000000000001-01`;
       const res = await fetch(`http://127.0.0.1:${port}/`, {
-        headers: { traceparent, 'x-softprobe-trace-id': FIXTURE_TRACE_ID },
+        headers: {
+          traceparent,
+          'x-softprobe-trace-id': FIXTURE_TRACE_ID,
+        },
         signal: AbortSignal.timeout(20000),
       });
       expect(res.ok).toBe(true);
@@ -109,6 +122,12 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
       });
     } finally {
       await closeServer(child);
+      try {
+        fs.unlinkSync(fixtureCopyPath);
+        fs.rmdirSync(fixtureDir);
+      } catch {
+        // ignore cleanup
+      }
     }
   }, 30000);
 
@@ -122,7 +141,11 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
     );
     try {
       await waitForServer(capturePort, 20000);
-      await fetch(`http://127.0.0.1:${capturePort}/`, { signal: AbortSignal.timeout(20000) });
+      const traceId = path.basename(cassettePath, '.ndjson');
+      await fetch(`http://127.0.0.1:${capturePort}/`, {
+        headers: { 'x-softprobe-trace-id': traceId },
+        signal: AbortSignal.timeout(20000),
+      });
       await fetch(`http://127.0.0.1:${capturePort}/exit`, { signal: AbortSignal.timeout(5000) }).catch(() => {});
       await new Promise<void>((resolve) => {
         captureChild.on('exit', () => resolve());
@@ -148,10 +171,14 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
 
     try {
       await waitForServer(replayPort, 20000);
+      const traceIdForFile = path.basename(cassettePath, '.ndjson');
       const traceIdHex = String(capturedTraceId).trim().toLowerCase();
       const traceparent = `00-${traceIdHex}-0000000000000001-01`;
       const res = await fetch(`http://127.0.0.1:${replayPort}/`, {
-        headers: { traceparent, 'x-softprobe-trace-id': traceIdHex },
+        headers: {
+          traceparent,
+          'x-softprobe-trace-id': traceIdForFile,
+        },
         signal: AbortSignal.timeout(20000),
       });
       expect(res.ok).toBe(true);
@@ -167,7 +194,9 @@ describe('E2E Fastify inbound cassette (Task 14.4.3)', () => {
         | { body?: unknown }
         | undefined;
       if (responsePayload?.body !== undefined) {
-        expect(body.outbound).toEqual(responsePayload.body);
+        const expectedBody =
+          typeof responsePayload.body === 'string' ? JSON.parse(responsePayload.body) : responsePayload.body;
+        expect(body.outbound).toEqual(expectedBody);
       }
 
       await fetch(`http://127.0.0.1:${replayPort}/exit`, { signal: AbortSignal.timeout(5000) }).catch(() => {});

@@ -9,7 +9,6 @@ import { context, trace } from '@opentelemetry/api';
 import { CaptureEngine } from './express';
 import { softprobeFastifyReplayPreHandler } from '../replay/fastify';
 import { SoftprobeContext } from '../context';
-import { softprobe } from '../api';
 import { resolveRequestStorageForContext } from '../core/cassette/context-request-storage';
 
 /**
@@ -30,19 +29,17 @@ function softprobeFastifyOnRequest(
   const ctxWithSoftprobe = SoftprobeContext.withData(activeCtx, softprobeValue);
   const runMode = SoftprobeContext.getMode(ctxWithSoftprobe);
   const runTraceId = SoftprobeContext.getTraceId(ctxWithSoftprobe);
-  const { storage, cassettePathHeader } = resolveRequestStorageForContext(
+  const { storage } = resolveRequestStorageForContext(
     request.headers as Record<string, string | string[] | undefined>,
-    activeCtx
+    activeCtx,
+    runTraceId
   );
 
   void Promise.resolve(context.with(
     ctxWithSoftprobe,
     () => SoftprobeContext.run(
       { mode: runMode, traceId: runTraceId, storage },
-      async () => {
-        if (runMode === 'REPLAY' && cassettePathHeader) {
-          await softprobe.ensureReplayLoadedForRequest(cassettePathHeader);
-        }
+      () => {
         next();
       }
     )

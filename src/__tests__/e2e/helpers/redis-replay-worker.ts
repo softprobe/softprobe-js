@@ -26,16 +26,31 @@ async function main() {
       ? process.env.REPLAY_TRACE_ID
       : 'redis-e2e-replay';
   const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
-  let cassettePath = '';
+  let cassetteDirectory: string | undefined;
+  let traceId: string | undefined;
   try {
-    cassettePath = new ConfigManager(configPath).get().cassettePath ?? '';
+    const cfg = new ConfigManager(configPath).get() as {
+      cassetteDirectory?: string;
+      traceId?: string;
+      cassettePath?: string;
+    };
+    cassetteDirectory = cfg.cassetteDirectory;
+    traceId = cfg.traceId;
+    if (!cassetteDirectory || !traceId) {
+      const fromPath = cfg.cassettePath;
+      if (typeof fromPath === 'string' && fromPath) {
+        cassetteDirectory = path.dirname(fromPath);
+        traceId = path.basename(fromPath, '.ndjson');
+      }
+    }
   } catch {
-    cassettePath = '';
+    cassetteDirectory = undefined;
+    traceId = undefined;
   }
   if (!key) throw new Error('REDIS_KEY is required');
-  if (!cassettePath) throw new Error('cassettePath is required in config');
-  const cassetteDir = path.dirname(cassettePath);
-  const traceId = path.basename(cassettePath, '.ndjson');
+  if (!cassetteDirectory || !traceId) {
+    throw new Error('cassetteDirectory + traceId or cassettePath is required in config');
+  }
 
   // Intentionally do not connect to a live Redis server.
   const client = createClient({ url: 'redis://127.0.0.1:6399' });
@@ -44,7 +59,7 @@ async function main() {
     {
       mode: 'REPLAY',
       traceId,
-      cassetteDirectory: cassetteDir,
+      cassetteDirectory,
     },
     async () =>
       trace.getTracer('softprobe-e2e').startActiveSpan('redis-replay-command', async (span) => {

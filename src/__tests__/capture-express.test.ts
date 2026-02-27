@@ -33,7 +33,9 @@ describe('softprobeExpressMiddleware capture path (Task 14.1.1)', () => {
   });
 
   it('when mode=CAPTURE, res.send triggers CaptureEngine.queueInboundResponse with status and body', () => {
-    SoftprobeContext.initGlobal({ mode: 'CAPTURE' });
+    const cassetteDir = path.join(os.tmpdir(), `softprobe-capture-express-${Date.now()}`);
+    fs.mkdirSync(cassetteDir, { recursive: true });
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE', cassetteDirectory: cassetteDir });
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId: 'trace-express-1', spanId: 'span-express-1' }),
     } as ReturnType<typeof trace.getActiveSpan>);
@@ -43,7 +45,7 @@ describe('softprobeExpressMiddleware capture path (Task 14.1.1)', () => {
     const req = {
       method: 'GET',
       path: '/users/1',
-      headers: { 'x-softprobe-cassette-path': '/capture-express-task-14-1-1.ndjson' },
+      headers: {},
     };
     const res = { statusCode: 200, send: originalSend };
     const next = jest.fn();
@@ -213,11 +215,14 @@ describe('Task 21.1.1: Header extraction in middleware — SoftprobeContext.acti
   });
 
   it('request with coordination headers: SoftprobeContext.active() returns header values, not YAML defaults', async () => {
-    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', storage: replayCassette });
+    const cassetteDir = path.join(os.tmpdir(), `softprobe-header-express-${Date.now()}`);
+    fs.mkdirSync(cassetteDir, { recursive: true });
+    const traceId = 'header-trace-99';
+    fs.writeFileSync(path.join(cassetteDir, `${traceId}.ndjson`), '', 'utf8');
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', cassetteDirectory: cassetteDir });
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId: 'otel-span-trace', spanId: 'span-1' }),
     } as ReturnType<typeof trace.getActiveSpan>);
-    jest.spyOn(softprobe, 'ensureReplayLoadedForRequest').mockResolvedValue(undefined);
 
     let downstreamContext: ReturnType<typeof SoftprobeContext.active> | undefined;
     let resolveNext: () => void;
@@ -226,15 +231,12 @@ describe('Task 21.1.1: Header extraction in middleware — SoftprobeContext.acti
       downstreamContext = SoftprobeContext.active();
       resolveNext();
     };
-    const cassettePath = path.join(os.tmpdir(), `softprobe-header-express-${Date.now()}.ndjson`);
-    fs.writeFileSync(cassettePath, '', 'utf8');
     const req = {
       method: 'GET',
       path: '/api',
       headers: {
         'x-softprobe-mode': 'REPLAY',
-        'x-softprobe-trace-id': 'header-trace-99',
-        'x-softprobe-cassette-path': cassettePath,
+        'x-softprobe-trace-id': traceId,
       },
     };
     const res = { statusCode: 200, send: jest.fn() };
@@ -244,9 +246,14 @@ describe('Task 21.1.1: Header extraction in middleware — SoftprobeContext.acti
 
     expect(downstreamContext).toBeDefined();
     expect(downstreamContext?.mode).toBe('REPLAY');
-    expect(downstreamContext?.traceId).toBe('header-trace-99');
+    expect(downstreamContext?.traceId).toBe(traceId);
     expect(downstreamContext?.storage).toBeDefined();
-    fs.unlinkSync(cassettePath);
+    try {
+      fs.unlinkSync(path.join(cassetteDir, `${traceId}.ndjson`));
+      fs.rmdirSync(cassetteDir);
+    } catch {
+      // ignore cleanup errors
+    }
   });
 });
 
@@ -256,7 +263,9 @@ describe('Task 5.1: Express middleware uses SoftprobeContext.run(options, next)'
   });
 
   it('downstream handler observes active mode, traceId, and storage', () => {
-    SoftprobeContext.initGlobal({ mode: 'CAPTURE', cassettePath: '/task-5-1.ndjson' });
+    const cassetteDir = path.join(os.tmpdir(), `softprobe-express-5-1-${Date.now()}`);
+    fs.mkdirSync(cassetteDir, { recursive: true });
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE', cassetteDirectory: cassetteDir });
     const traceId = 'trace-task-5-1';
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId, spanId: 'span-task-5-1' }),
@@ -265,7 +274,7 @@ describe('Task 5.1: Express middleware uses SoftprobeContext.run(options, next)'
     const req = {
       method: 'GET',
       path: '/task-5-1',
-      headers: { 'x-softprobe-cassette-path': '/capture-express-task-5-1.ndjson' },
+      headers: {},
     };
     const res = { statusCode: 200, send: jest.fn() };
     let seenMode: ReturnType<typeof SoftprobeContext.getMode> | undefined;

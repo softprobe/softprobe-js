@@ -1,0 +1,5 @@
+# Optional: use this config for a single server that handles both capture and replay via headers.
+# SOFTPROBE_CONFIG_PATH=./.softprobe/config-passthrough.yml
+# Then: capture request (headers) writes cassette; softprobe diff sends REPLAY headers for the replay test.
+mode: PASSTHROUGH
+cassetteDirectory: "."

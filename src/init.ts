@@ -6,6 +6,7 @@
  * Task 13.1: when cassetteDirectory is set, init does not create or pass a single-file cassette.
  */
 
+const pathModule = require('path');
 const { ConfigManager } = require('./config/config-manager');
 const { SoftprobeContext } = require('./context');
 
@@ -20,11 +21,14 @@ try {
     cassetteDirectory?: string;
     replay?: { strictReplay?: boolean; strictComparison?: boolean };
   };
+  // Task 13.11: When config has cassettePath but no cassetteDirectory, derive directory for per-trace files.
+  const cassetteDirectory =
+    g.cassetteDirectory ??
+    (typeof g.cassettePath === 'string' && g.cassettePath ? pathModule.dirname(g.cassettePath) : undefined);
   // Task 13.2: init never creates a Cassette or sets global storage; only mode, cassetteDirectory, strict flags.
   SoftprobeContext.initGlobal({
     mode: g.mode,
-    cassettePath: g.cassettePath,
-    cassetteDirectory: g.cassetteDirectory,
+    cassetteDirectory,
     storage: undefined,
     strictReplay: g.replay?.strictReplay,
     strictComparison: g.replay?.strictComparison,
@@ -34,7 +38,6 @@ try {
   // No config file: default to PASSTHROUGH with no cassette path.
   SoftprobeContext.initGlobal({
     mode: 'PASSTHROUGH',
-    cassettePath: '',
     cassetteDirectory: undefined,
     storage: undefined,
     strictReplay: false,
@@ -54,9 +57,9 @@ if (mode === 'CAPTURE') {
   (globalThis as unknown as { __softprobeApplyHttpReplay?: () => void }).__softprobeApplyHttpReplay = setupHttpReplayInterceptor;
 }
 
-// Task 16.2.1: When PASSTHROUGH, enable capture via headers (x-softprobe-mode: CAPTURE + x-softprobe-cassette-path).
-// Also apply replay patches (undici, pg, redis) so replay works via headers (x-softprobe-mode: REPLAY + x-softprobe-cassette-path);
-// middleware loads cassette on demand; no SOFTPROBE_MODE=REPLAY required at boot.
+// Task 16.2.1: When PASSTHROUGH, enable capture/replay via headers (x-softprobe-mode and x-softprobe-trace-id).
+// Server must have cassetteDirectory set; cassette is resolved as {cassetteDirectory}/{traceId}.ndjson.
+// Replay patches (undici, pg, redis) are applied so replay works; no SOFTPROBE_MODE=REPLAY required at boot.
 // Task 13.2: no global cassette or setCaptureStore; capture/replay use context-created cassettes per request.
 if (mode === 'PASSTHROUGH') {
   const { applyAutoInstrumentationMutator } = require('./capture/mutator');

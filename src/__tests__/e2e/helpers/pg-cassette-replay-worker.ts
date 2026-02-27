@@ -22,25 +22,38 @@ async function main() {
 
   const configPath = process.env.SOFTPROBE_CONFIG_PATH ?? './.softprobe/config.yml';
   const replayTraceId = process.env.REPLAY_TRACE_ID ?? 'pg-replay-e2e';
-  let cassettePath = '';
+  let cassetteDirectory: string | undefined;
+  let traceId: string | undefined;
   try {
-    cassettePath = new ConfigManager(configPath).get().cassettePath ?? '';
+    const cfg = new ConfigManager(configPath).get() as {
+      cassetteDirectory?: string;
+      traceId?: string;
+      cassettePath?: string;
+    };
+    cassetteDirectory = cfg.cassetteDirectory;
+    traceId = cfg.traceId;
+    if (!cassetteDirectory || !traceId) {
+      const fromPath = cfg.cassettePath;
+      if (typeof fromPath === 'string' && fromPath) {
+        cassetteDirectory = path.dirname(fromPath);
+        traceId = path.basename(fromPath, '.ndjson');
+      }
+    }
   } catch {
-    cassettePath = '';
+    cassetteDirectory = undefined;
+    traceId = undefined;
   }
-  if (!cassettePath) {
-    process.stderr.write('cassettePath is required in config');
+  if (!cassetteDirectory || !traceId) {
+    process.stderr.write('cassetteDirectory + traceId or cassettePath is required in config');
     process.exit(1);
   }
-  const cassetteDir = path.dirname(cassettePath);
-  const traceId = path.basename(cassettePath, '.ndjson');
 
   let output: { rows: unknown[]; rowCount: number } | undefined;
   await softprobe.run(
     {
       mode: 'REPLAY',
       traceId,
-      cassetteDirectory: cassetteDir,
+      cassetteDirectory,
     },
     async () => {
     const { Client } = require('pg');

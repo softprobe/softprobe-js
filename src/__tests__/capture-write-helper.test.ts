@@ -14,7 +14,6 @@ describe('capture: getCassette().saveRecord(record) with context traceId', () =>
   beforeEach(() => {
     SoftprobeContext.initGlobal({
       mode: 'PASSTHROUGH',
-      cassettePath: '',
       strictReplay: false,
       strictComparison: false,
     });

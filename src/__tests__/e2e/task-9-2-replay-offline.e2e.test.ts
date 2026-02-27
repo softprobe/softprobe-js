@@ -67,6 +67,11 @@ describe('Task 9.2 - replay succeeds with dependencies offline', () => {
   });
 
   it('strict replay succeeds for recorded HTTP/Postgres/Redis without live dependencies', async () => {
+    const fixtureDir = path.join(path.dirname(EXPRESS_FIXTURE), `task-9-2-http-${Date.now()}`);
+    fs.mkdirSync(fixtureDir, { recursive: true });
+    const expressFixtureCopy = path.join(fixtureDir, `${FIXTURE_TRACE_ID}.ndjson`);
+    fs.copyFileSync(EXPRESS_FIXTURE, expressFixtureCopy);
+
     const httpPort = 30400 + (Date.now() % 10000);
     const httpChild = runServer(
       EXPRESS_WORKER,
@@ -74,7 +79,7 @@ describe('Task 9.2 - replay succeeds with dependencies offline', () => {
         PORT: String(httpPort),
         SOFTPROBE_MODE: 'REPLAY',
         SOFTPROBE_STRICT_REPLAY: '1',
-        SOFTPROBE_CASSETTE_PATH: EXPRESS_FIXTURE,
+        SOFTPROBE_CASSETTE_PATH: expressFixtureCopy,
       },
       { useTsNode: true }
     );
@@ -83,7 +88,10 @@ describe('Task 9.2 - replay succeeds with dependencies offline', () => {
       await waitForServer(httpPort, 20000);
       const traceparent = `00-${FIXTURE_TRACE_ID}-0000000000000001-01`;
       const httpRes = await fetch(`http://127.0.0.1:${httpPort}/`, {
-        headers: { traceparent, 'x-softprobe-trace-id': FIXTURE_TRACE_ID },
+        headers: {
+          traceparent,
+          'x-softprobe-trace-id': FIXTURE_TRACE_ID,
+        },
         signal: AbortSignal.timeout(20000),
       });
       expect(httpRes.ok).toBe(true);

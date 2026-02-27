@@ -47,7 +47,7 @@ describe('softprobeFastifyPlugin capture path (Task 14.2.1)', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/ping',
-      headers: { 'x-softprobe-cassette-path': '/capture-fastify-task-14-2-1.ndjson' },
+      headers: {},
     });
 
     expect(res.statusCode).toBe(200);
@@ -145,34 +145,39 @@ describe('Task 21.1.1: Header extraction in Fastify — SoftprobeContext.active(
   });
 
   it('request with coordination headers: SoftprobeContext.active() returns header values, not YAML defaults', async () => {
-    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', storage: replayCassette });
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId: 'otel-span-trace', spanId: 'span-1' }),
     } as ReturnType<typeof trace.getActiveSpan>);
-    jest.spyOn(softprobe, 'ensureReplayLoadedForRequest').mockResolvedValue(undefined);
 
     const app = Fastify();
     await app.register(fp(softprobeFastifyPlugin));
     app.get('/ctx', async () => SoftprobeContext.active());
 
-    const cassettePath = path.join(os.tmpdir(), `softprobe-header-fastify-${Date.now()}.ndjson`);
-    fs.writeFileSync(cassettePath, '', 'utf8');
+    const cassetteDir = path.join(os.tmpdir(), `softprobe-header-fastify-${Date.now()}`);
+    fs.mkdirSync(cassetteDir, { recursive: true });
+    const traceId = 'header-trace-99';
+    fs.writeFileSync(path.join(cassetteDir, `${traceId}.ndjson`), '', 'utf8');
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', cassetteDirectory: cassetteDir });
     const res = await app.inject({
       method: 'GET',
       url: '/ctx',
       headers: {
         'x-softprobe-mode': 'REPLAY',
-        'x-softprobe-trace-id': 'header-trace-99',
-        'x-softprobe-cassette-path': cassettePath,
+        'x-softprobe-trace-id': traceId,
       },
     });
 
     expect(res.statusCode).toBe(200);
     const body = JSON.parse(res.payload);
     expect(body.mode).toBe('REPLAY');
-    expect(body.traceId).toBe('header-trace-99');
+    expect(body.traceId).toBe(traceId);
     expect(body.storage).toBeDefined();
-    fs.unlinkSync(cassettePath);
+    try {
+      fs.unlinkSync(path.join(cassetteDir, `${traceId}.ndjson`));
+      fs.rmdirSync(cassetteDir);
+    } catch {
+      // ignore cleanup errors
+    }
   });
 });
 
@@ -188,7 +193,9 @@ describe('Task 5.2: Fastify plugin uses SoftprobeContext.run(options, handler)',
   });
 
   it('route handler observes active mode, traceId, and storage', async () => {
-    SoftprobeContext.initGlobal({ mode: 'CAPTURE', cassettePath: '/fastify-task-5-2.ndjson' });
+    const cassetteDir = path.join(os.tmpdir(), `softprobe-fastify-5-2-${Date.now()}`);
+    fs.mkdirSync(cassetteDir, { recursive: true });
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE', cassetteDirectory: cassetteDir });
     const traceId = 'trace-fastify-task-5-2';
     jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
       spanContext: () => ({ traceId, spanId: 'span-fastify-task-5-2' }),
@@ -205,7 +212,7 @@ describe('Task 5.2: Fastify plugin uses SoftprobeContext.run(options, handler)',
     const res = await app.inject({
       method: 'GET',
       url: '/task-5-2',
-      headers: { 'x-softprobe-cassette-path': '/capture-fastify-task-5-2.ndjson' },
+      headers: {},
     });
 
     expect(res.statusCode).toBe(200);

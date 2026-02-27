@@ -169,14 +169,14 @@ describe('Postgres Replay (Task 9.2)', () => {
  */
 describe('Task 18.1.1 Postgres connect() context-lookup', () => {
   it('when globalDefault is REPLAY, client.connect() returns Promise.resolve() immediately', async () => {
-    SoftprobeContext.initGlobal({ mode: 'REPLAY', cassettePath: '' });
+    SoftprobeContext.initGlobal({ mode: 'REPLAY' });
 
     const { Client } = require('pg');
     const client = new Client();
 
     await expect(client.connect()).resolves.toBeUndefined();
 
-    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', cassettePath: '' });
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH' });
   });
 });
 
@@ -209,7 +209,6 @@ describe('Task 18.1.2 Postgres query() context-matcher', () => {
     const activeCtx = context.active();
     const ctxWithMatcher = SoftprobeContext.withData(activeCtx, {
       mode: 'REPLAY',
-      cassettePath: '',
       matcher: contextMatcher,
     });
 

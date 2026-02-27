@@ -38,13 +38,18 @@ describe('Task 9.1 - Capture E2E via cassette interface', () => {
       { useTsNode: true }
     );
 
-    const port = 30200 + (Date.now() % 10000);
     const traceId = '9f1dcb4b9f5f4f52b7c91de2be5db5fd';
+    const cassetteDir = path.join(path.dirname(cassettePath), `task-9-1-dir-${Date.now()}`);
+    fs.mkdirSync(cassetteDir, { recursive: true });
+    const cassetteFilePath = path.join(cassetteDir, `${traceId}.ndjson`);
+
+    const port = 30200 + (Date.now() % 10000);
     const child = runServer(
       WORKER_SCRIPT,
       {
         PORT: String(port),
         SOFTPROBE_MODE: 'PASSTHROUGH',
+        SOFTPROBE_CASSETTE_PATH: cassetteFilePath,
         SOFTPROBE_E2E_OUTBOUND_URL: `http://127.0.0.1:${outboundPort}/diff-headers`,
       },
       { useTsNode: true }
@@ -53,10 +58,11 @@ describe('Task 9.1 - Capture E2E via cassette interface', () => {
     try {
       await waitForServer(outboundPort, 20000);
       await waitForServer(port, 20000);
+      const traceparent = `00-${traceId}-0000000000000001-01`;
       const res = await fetch(`http://127.0.0.1:${port}/`, {
         headers: {
+          traceparent,
           'x-softprobe-mode': 'CAPTURE',
-          'x-softprobe-cassette-path': cassettePath,
           'x-softprobe-trace-id': traceId,
         },
         signal: AbortSignal.timeout(20000),
@@ -72,8 +78,8 @@ describe('Task 9.1 - Capture E2E via cassette interface', () => {
       await closeServer(child);
     }
 
-    expect(fs.existsSync(cassettePath)).toBe(true);
-    const records = await loadCassetteRecordsByPath(cassettePath);
+    expect(fs.existsSync(cassetteFilePath)).toBe(true);
+    const records = await loadCassetteRecordsByPath(cassetteFilePath);
     const traceRecords = byTrace(records, traceId);
 
     expect(traceRecords.length).toBeGreaterThanOrEqual(2);

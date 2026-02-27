@@ -1,7 +1,7 @@
 /**
  * Task 21.2.1: softprobe diff CLI — load cassette inbound, send request with coordination headers.
- * Design §3.1: CLI injects x-softprobe-mode, x-softprobe-trace-id, x-softprobe-cassette-path.
- * Sends cassette path as absolute so the server can load it regardless of its cwd.
+ * Design §3.1: CLI injects x-softprobe-mode and x-softprobe-trace-id (and traceparent).
+ * The target server must have cassetteDirectory set so it resolves the cassette as {cassetteDirectory}/{traceId}.ndjson.
  * Sends W3C Traceparent so the server's OTel context uses the same trace id as the cassette.
  * Task 13.10: Load via Cassette (getOrCreateCassette) only; no loadNdjson.
  */
@@ -62,8 +62,7 @@ export async function runDiff(file: string, target: string): Promise<RunDiffResu
 
   const headers: Record<string, string> = {
     'x-softprobe-mode': 'REPLAY',
-    'x-softprobe-trace-id': inbound.traceId,
-    'x-softprobe-cassette-path': cassettePath,
+    'x-softprobe-trace-id': inbound.traceId ?? '',
     traceparent: traceparentFromInbound(inbound),
   };
   if (body) headers['Content-Type'] = 'application/json';

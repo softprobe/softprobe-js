@@ -86,10 +86,20 @@ async function handleCaptureRequest(
   const spanId = ctx?.spanId ?? '';
   const parentSpanId = span && 'parentSpanId' in span ? (span as { parentSpanId?: string }).parentSpanId : undefined;
   const spanName = span && 'name' in span ? (span as { name?: string }).name : undefined;
+  // Capture cassette/traceId before any await so async callbacks (e.g. getCaptured().then) still have them (Task 13.11).
+  const cassette = SoftprobeContext.getCassette();
+  const softprobeTraceId = SoftprobeContext.getTraceId();
 
+  const urlString = typeof url === 'string' ? url : String(url);
   let response: Response;
   try {
-    response = await bypassFetch(request);
+    const input = urlString.startsWith('http:') || urlString.startsWith('https:') ? new URL(urlString) : urlString;
+    response = await bypassFetch(input, {
+      method: request.method ?? 'GET',
+      headers: request.headers,
+      body: request.body ?? undefined,
+      duplex: (request as Request & { duplex?: string }).duplex,
+    });
   } catch (err) {
     const details = err instanceof Error ? err.message : String(err);
     controller.respondWith(jsonErrorResponse('Softprobe Capture fetch failed', details));
@@ -98,7 +108,6 @@ async function handleCaptureRequest(
 
   if (!response.body) {
     controller.respondWith(response);
-    const cassette = SoftprobeContext.getCassette();
     if (SoftprobeContext.getMode() === 'CAPTURE' && cassette) {
       const rec = {
         version: '4.1' as const,
@@ -112,8 +121,7 @@ async function handleCaptureRequest(
         identifier,
         responsePayload: { statusCode: response.status },
       };
-      const tid = SoftprobeContext.getTraceId();
-      void cassette.saveRecord(tid ? { ...rec, traceId: tid } : rec).catch(() => {});
+      void cassette.saveRecord(softprobeTraceId ? { ...rec, traceId: softprobeTraceId } : rec).catch(() => {});
     }
     return;
   }
@@ -135,7 +143,6 @@ async function handleCaptureRequest(
       controller.respondWith(newResponse);
       getCaptured()
         .then((captured) => {
-          const cassette = SoftprobeContext.getCassette();
           if (SoftprobeContext.getMode() !== 'CAPTURE' || !cassette) return;
           const bodyStr = captured.body.toString('utf8');
           const rec = {
@@ -154,8 +161,7 @@ async function handleCaptureRequest(
               ...(captured.truncated && { truncated: true }),
             },
           };
-          const tid = SoftprobeContext.getTraceId();
-          void cassette.saveRecord(tid ? { ...rec, traceId: tid } : rec).catch(() => {});
+          void cassette.saveRecord(softprobeTraceId ? { ...rec, traceId: softprobeTraceId } : rec).catch(() => {});
         })
         .catch(() => {});
     } catch {
@@ -166,7 +172,6 @@ async function handleCaptureRequest(
       .clone()
       .text()
       .then((bodyText) => {
-        const cassette = SoftprobeContext.getCassette();
         if (SoftprobeContext.getMode() !== 'CAPTURE' || !cassette) return;
         const capped = bodyText.length > maxPayloadSize ? bodyText.slice(0, maxPayloadSize) : bodyText;
         const rec = {
@@ -185,8 +190,7 @@ async function handleCaptureRequest(
             ...(bodyText.length > maxPayloadSize && { truncated: true }),
           },
         };
-        const tid = SoftprobeContext.getTraceId();
-        void cassette.saveRecord(tid ? { ...rec, traceId: tid } : rec).catch(() => {});
+        void cassette.saveRecord(softprobeTraceId ? { ...rec, traceId: softprobeTraceId } : rec).catch(() => {});
       })
       .catch(() => {});
     controller.respondWith(response);
@@ -261,8 +265,18 @@ export async function handleHttpReplayRequest(
   }
 }
 
+function getBypassFetch(): HttpReplayOptions['bypassFetch'] {
+  try {
+    const undici = require('undici');
+    if (typeof undici.fetch === 'function') return undici.fetch as HttpReplayOptions['bypassFetch'];
+  } catch {
+    /* undici not available */
+  }
+  return globalThis.fetch;
+}
+
 export function setupHttpReplayInterceptor(options: HttpReplayOptions = {}) {
-  const bypassFetch = globalThis.fetch;
+  const bypassFetch = options.bypassFetch ?? getBypassFetch();
   const interceptor = new BatchInterceptor({
     name: 'softprobe-http-replay',
     interceptors: [new ClientRequestInterceptor(), new FetchInterceptor()],

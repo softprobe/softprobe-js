@@ -1,26 +1,25 @@
 import type { Cassette } from '../types/schema';
-import {
-  readCassettePathHeader,
-  resolveRequestStorage,
-} from '../core/cassette/request-storage';
+import { resolveRequestStorage } from '../core/cassette/request-storage';
 
 describe('request-storage', () => {
-  it('throws when neither header path nor configured storage is provided', () => {
+  it('throws when neither configured storage nor cassetteDirectory + traceId is provided', () => {
     expect(() => resolveRequestStorage({})).toThrow(
-      'Softprobe cassette storage is not configured. Provide x-softprobe-cassette-path or configured storage.'
+      'Softprobe cassette storage is not configured. Provide configured storage or cassetteDirectory + traceId.'
     );
   });
 
-  it('uses header cassette path when provided', async () => {
-    const { storage, cassettePathHeader } = resolveRequestStorage({
-      headers: { 'x-softprobe-cassette-path': '/from-header.ndjson' },
+  it('uses cassetteDirectory + traceId when provided', async () => {
+    const cassetteDir = __dirname;
+    const traceId = 'request-storage-trace';
+    const { storage } = resolveRequestStorage({
+      cassetteDirectory: cassetteDir,
+      traceId,
     });
-    expect(cassettePathHeader).toBe('/from-header.ndjson');
     const records = await storage.loadTrace();
     expect(Array.isArray(records)).toBe(true);
   });
 
-  it('uses configured storage when header path is absent', async () => {
+  it('uses configured storage when provided', async () => {
     const configuredStorage: Cassette = {
       loadTrace: async () => [],
       saveRecord: async () => {},
@@ -31,7 +30,7 @@ describe('request-storage', () => {
     expect(storage).toBe(configuredStorage);
   });
 
-  it('prefers existing cassette over configured cassette when header is absent', () => {
+  it('prefers existing cassette over configured cassette', () => {
     const existing: Cassette = {
       loadTrace: async () => [],
       saveRecord: async () => {},
@@ -46,10 +45,4 @@ describe('request-storage', () => {
     });
     expect(storage).toBe(existing);
   });
-
-  it('extracts cassette header value from string or first array entry', () => {
-    expect(readCassettePathHeader({ 'x-softprobe-cassette-path': '/a.ndjson' })).toBe('/a.ndjson');
-    expect(readCassettePathHeader({ 'x-softprobe-cassette-path': ['/b.ndjson', '/c.ndjson'] })).toBe('/b.ndjson');
-  });
-
 });

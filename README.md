@@ -63,17 +63,17 @@ softprobe diff <cassette.ndjson> <targetUrl>
 
 Send requests to your app with **coordination headers** so it records that traffic into an NDJSON file. No environment variables are required.
 
-1. Run your app with Softprobe middleware (Express or Fastify) and `import "softprobe/init"` at startup.
+1. Run your app with Softprobe middleware (Express or Fastify) and `import "softprobe/init"` at startup. Configure **cassetteDirectory** in config so the server knows where to read/write cassette files. Per-trace files are always `{cassetteDirectory}/{traceId}.ndjson`. (Config may still contain `cassettePath` for backward compatibility; init derives the directory from it.)
 2. For each request you want to record, send these HTTP headers:
    - **`x-softprobe-mode: CAPTURE`** — this request (and its outbound calls) will be recorded.
-   - **`x-softprobe-cassette-path: <path>`** — path where the cassette will be written (e.g. `./softprobe-cassettes.ndjson`).
-3. The middleware uses these headers and writes the inbound request/response (and any outbound records for that trace) to the given file. The cassette will contain at least one `inbound` record.
+   - **`x-softprobe-trace-id: <id>`** — trace id for this request; the cassette file will be `{cassetteDirectory}/{id}.ndjson`.
+3. The middleware uses these headers and writes the inbound request/response (and any outbound records for that trace) to `{cassetteDirectory}/{traceId}.ndjson`. The cassette will contain at least one `inbound` record.
 
-Example with curl:
+Example with curl (server must have cassetteDirectory configured, e.g. via config):
 
 ```bash
 curl -H "x-softprobe-mode: CAPTURE" \
-     -H "x-softprobe-cassette-path: ./softprobe-cassettes.ndjson" \
+     -H "x-softprobe-trace-id: my-trace-1" \
      http://localhost:3000/your-route
 ```
 
@@ -101,8 +101,7 @@ The `bin/softprobe` script uses the built CLI when present, otherwise runs from 
 2. Sends the same method and path to `<targetUrl>` with these headers:
    - `x-softprobe-mode: REPLAY`
    - `x-softprobe-trace-id: <traceId from record>`
-   - `x-softprobe-cassette-path: <path to the cassette file>`
-3. Compares the live response to the recording (the **diff reporter**). Writes **PASS** or **FAIL** to stderr; on failure, prints a colored diff of what differed. Writes the response body to stdout. Exit code 0 = pass, 1 = fail or error.
+3. The target server must have **cassetteDirectory** set (e.g. via config) so it resolves the cassette as `{cassetteDirectory}/{traceId}.ndjson`. Compares the live response to the recording (the **diff reporter**). Writes **PASS** or **FAIL** to stderr; on failure, prints a colored diff of what differed. Writes the response body to stdout. Exit code 0 = pass, 1 = fail or error.
 
 Your service must use Softprobe middleware (Express or Fastify) so it reads these headers and runs that request in replay context. See [design.md](design.md) for the full coordination flow.
 

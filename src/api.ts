@@ -3,12 +3,7 @@ import type { SemanticMatcher } from './replay/matcher';
 import { SoftprobeMatcher } from './replay/softprobe-matcher';
 import { getContextWithReplayBaggage } from './api/baggage';
 import { compareInboundWithRecord, type CompareInboundInput } from './api/compare';
-import {
-  getRecordsForTrace as getRecordsForTraceFromStore,
-  setReplayRecordsCache as setReplayRecordsCacheInStore,
-  loadReplayRecordsFromPath,
-} from './replay/store-accessor';
-import { createDefaultMatcher } from './replay/extract-key';
+import { getRecordsForTrace as getRecordsForTraceFromStore } from './replay/store-accessor';
 import { SoftprobeContext } from './context';
 
 /**
@@ -55,23 +50,16 @@ export function compareInbound(actual: CompareInboundInput): void {
 }
 
 /**
- * Sets the global replay records cache (used at REPLAY boot or tests).
- * Task 15.3.1: store lives in replay/store-accessor; middleware retrieves via getRecordsForTrace.
- */
-export function setReplayRecordsCache(records: SoftprobeCassetteRecord[]): void {
-  setReplayRecordsCacheInStore(records);
-}
-
-/**
- * Returns recorded cassette records for the given traceId from the eager-loaded global store.
- * Used by server middleware to prime the matcher for the current request. Task 15.3.1.
+ * Returns recorded cassette records for the given traceId from the active context only.
+ * Records are context-scoped (matcher is created by SoftprobeContext.run(REPLAY)). Task 15.3.1.
  */
 export function getRecordsForTrace(traceId: string): SoftprobeCassetteRecord[] {
   return getRecordsForTraceFromStore(traceId);
 }
 
 /**
- * Sets the global replay matcher (used by REPLAY init so getActiveMatcher returns it when context has no matcher).
+ * Sets the global replay matcher. For test/cleanup only; the framework creates matchers in SoftprobeContext.run(REPLAY).
+ * getMatcher() returns only the context matcher, not this global.
  */
 export function setGlobalReplayMatcher(matcher: SoftprobeMatcher | undefined): void {
   SoftprobeContext.setGlobalReplayMatcher(matcher);
@@ -79,7 +67,7 @@ export function setGlobalReplayMatcher(matcher: SoftprobeMatcher | undefined): v
 
 /**
  * Primes the active matcher with records for the given traceId.
- * Called by server middleware (Express/Fastify) when SOFTPROBE_MODE=REPLAY so subsequent outbound calls use the right cassette.
+ * Called by server middleware (Express/Fastify) after run(); the matcher was already seeded in run(), so this is a no-op when records are present.
  */
 export function activateReplayForContext(traceId: string): void {
   const matcher = getActiveMatcher();
@@ -92,19 +80,10 @@ export function activateReplayForContext(traceId: string): void {
 }
 
 /**
- * Loads the cassette from cassettePath (with cache) and sets the replay store and global matcher.
- * Called by middleware when request has x-softprobe-mode=REPLAY and x-softprobe-cassette-path
- * so replay works for that request without requiring the server to be started with SOFTPROBE_MODE=REPLAY.
+ * No-op. Replay is context-scoped; only SoftprobeContext.run(REPLAY) creates and seeds the matcher.
+ * Use cassetteDirectory + traceId and middleware so each request gets its own context and matcher.
  */
-export async function ensureReplayLoadedForRequest(cassettePath: string): Promise<void> {
-  const records = await loadReplayRecordsFromPath(cassettePath);
-  setReplayRecordsCache(records);
-  if (!getActiveMatcher()) {
-    const matcher = new SoftprobeMatcher();
-    matcher.use(createDefaultMatcher());
-    setGlobalReplayMatcher(matcher);
-  }
-}
+export async function ensureReplayLoadedForRequest(): Promise<void> {}
 
 /** Runs callback inside a scoped Softprobe context using SoftprobeRunOptions. */
 export function run<T>(options: SoftprobeRunOptions, fn: () => T | Promise<T>): T | Promise<T> {
@@ -119,7 +98,6 @@ export const softprobe = {
   getRecordedInboundResponse,
   compareInbound,
   getRecordsForTrace,
-  setReplayRecordsCache,
   setGlobalReplayMatcher,
   activateReplayForContext,
   ensureReplayLoadedForRequest,
