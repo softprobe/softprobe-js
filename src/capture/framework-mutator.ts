@@ -7,8 +7,8 @@
 
 import type { Module } from 'module';
 import shimmer from 'shimmer';
-import { softprobeExpressMiddleware } from './express';
-import { softprobeFastifyPlugin } from './fastify';
+import { softprobeExpressMiddleware } from '../instrumentations/express/capture';
+import { softprobeFastifyPlugin } from '../instrumentations/fastify/capture';
 
 const nodeRequire = (typeof require !== 'undefined' ? require : undefined) as NodeRequire | undefined;
 

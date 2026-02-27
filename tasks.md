@@ -1,20 +1,16 @@
-# Softprobe Implementation Tracker — V6 Atomic TDD Plan
+# Softprobe Refactor Tracker — OpenTelemetry-Style Layout Continuation
 
-This tracker is rebuilt for the new design docs:
-- `design.md`
-- `design-context.md`
-- `design-cassette.md`
-- `design-matcher.md`
+This tracker replaces completed history and contains only remaining refactor work.
 
 Implementation rule per task:
 1. write test
 2. run and verify fail (red)
 3. minimal implementation
 4. run and verify pass (green)
-5. mark `[x]` with short commit note
+5. mark `[x]` with short commit-style note
 6. continue to the next first unchecked task automatically (no stop-between-tasks), unless blocked by a required human decision
 
-> Do not implement ahead of the first unchecked task. Always execute tasks in order and auto-advance after each completed task.
+> Do not implement ahead of the first unchecked task. Execute in strict order.
 
 ---
 
@@ -24,87 +20,56 @@ Implementation rule per task:
 
 ---
 
-## 1) Core Contracts (Types) — Atomic
+## 1) Architecture Guard Expansion
 
-- [x] **Task 1.1 Add `SoftprobeMode` type** — `feat(types): add SoftprobeMode union and compile-time type test`
-  - **Test**: compile-time assertions allow only `CAPTURE | REPLAY | PASSTHROUGH`.
+- [x] **Task 1.1 Expand architecture guard for legacy folder retirement scope** — `test(arch): flag non-shim runtime files added under legacy folders`
+  - **Goal**: extend guard coverage to flag non-shim production runtime usage in legacy folders (`src/bindings`, `src/capture`, `src/replay`) except approved compatibility shims.
+  - **Test**: architecture guard test fails on injected non-shim runtime code in legacy folders and passes after removal.
 
-- [x] **Task 1.2 Add `Cassette` interface** — `feat(types): add Cassette contract for trace storage`
-  - **Test**: compile-time assertions for:
-    - `loadTrace(traceId): Promise<SoftprobeCassetteRecord[]>`
-    - `saveRecord(traceId, record): Promise<void>`
-    - optional `flush(): Promise<void>`
-
-- [x] **Task 1.3 Add `SoftprobeRunOptions` type** — `feat(types): add SoftprobeRunOptions contract and test`
-  - **Test**: compile-time checks require `mode`, `storage`, `traceId`; optional `matcher`.
-
-- [x] **Task 1.4 Align `SoftprobeCassetteRecord` schema to NDJSON design contract** — `feat(types): confirm cassette record identity keys are required`
-  - **Test**: type test for required identity fields (`version`, `traceId`, `spanId`, `timestamp`, `type`, `protocol`, `identifier`).
+- [x] **Task 1.2 Enforce foundation/import dependency direction for refactor targets** — `test(arch): block src/core imports from legacy runtime folders`
+  - **Goal**: enforce that shared foundation modules under `src/core` do not import from instrumentation packages or legacy folders.
+  - **Test**: architecture boundary test fails on injected forbidden import and passes when corrected.
 
 ---
 
-## 2) OpenTelemetry-Style Package Layout Refactor — Atomic
+## 2) Shared Foundation Migration
 
-Goal for this section:
-- Migrate runtime code to package-oriented structure before adding new library support.
-- Keep current feature behavior unchanged.
-- Scope to currently supported integrations only: `express`, `fastify`, `redis`, `postgres`, `fetch` (undici).
+- [x] **Task 2.1 Move span binding contracts/helpers from `src/bindings` into `src/core`** — `refactor(core): relocate span helpers and keep legacy bindings as re-export shims`
+  - **Goal**: migrate reusable span tagging/parsing primitives (HTTP/Redis/Postgres/test span helper) into `src/core` shared foundation location.
+  - **Test**: existing span helper unit tests pass unchanged through legacy re-export shims.
 
-Required dependency direction for all tasks in this section:
-- Allowed: `core -> (no instrumentation deps)`, `instrumentations/<pkg> -> core + instrumentations/common`
-- Disallowed: `core -> instrumentations/*`, `instrumentations/<pkg-a> -> instrumentations/<pkg-b>`
+- [x] **Task 2.2 Move shared identifier composition utilities into `src/core`** — `refactor(core): move identifier helpers into foundation and keep root shim exports`
+  - **Goal**: place protocol-agnostic identifier helpers in foundation area and preserve behavior.
+  - **Test**: existing identifier and matcher key derivation tests pass unchanged.
 
-- [x] **Task 2.1 Create foundation package structure under `src/core` (no behavior changes)** — `feat(core): add foundation package entry points and architecture guard test`
-  - **Deliverable**: establish folders for shared APIs/contracts/utilities used by all instrumentations.
-  - **Test**: import smoke/type test verifies core modules compile and are importable without referencing any instrumentation package.
+---
 
-- [x] **Task 2.2 Create instrumentation package folders for supported libraries** — `feat(instrumentations): add package entry points for express fastify redis postgres fetch`
-  - **Deliverable**: create `src/instrumentations/express`, `src/instrumentations/fastify`, `src/instrumentations/redis`, `src/instrumentations/postgres`, `src/instrumentations/fetch`.
-  - **Test**: compile-time path smoke test confirms each package exposes an entry module.
+## 3) Instrumentation/Common Protocol Migration
 
-- [x] **Task 2.3 Create shared protocol helper areas under `src/instrumentations/common`** — `feat(common): add shared http header helper consumed by express and fastify packages`
-  - **Deliverable**: add common helper folders for shared protocol logic (e.g. http/shared tagging/parsing helpers) used by multiple packages.
-  - **Test**: unit tests prove helpers are consumed by at least two package folders with no duplicated logic blocks.
+- [x] **Task 3.1 Move protocol-specific span adaptation helpers into `src/instrumentations/common`** — `refactor(http): share inbound identifier adaptation across express and fastify packages`
+  - **Goal**: migrate protocol-oriented helpers consumed by multiple instrumentations to `src/instrumentations/common/<domain>`.
+  - **Test**: at least two instrumentation packages consume the migrated helper without duplicated logic.
 
-- [x] **Task 2.4 Move Express instrumentation into `src/instrumentations/express`** — `refactor(express): migrate capture and replay runtime into package folder with legacy re-export shims`
-  - **Deliverable**: migrate Express middleware/patch integration files from legacy locations into package folder with unchanged behavior.
-  - **Test**: existing Express capture/replay unit/e2e tests pass without modifications to expected outputs.
+- [x] **Task 3.2 Update instrumentation packages to consume only `src/core` + `src/instrumentations/common`** — `refactor(instrumentations): remove direct imports from legacy helper paths`
+  - **Goal**: eliminate direct runtime dependency on legacy helper paths from package instrumentations.
+  - **Test**: import graph/architecture guard confirms no direct package imports from legacy folders.
 
-- [x] **Task 2.5 Move Fastify instrumentation into `src/instrumentations/fastify`** — `refactor(fastify): migrate plugin and replay hook into package folder with legacy re-export shims`
-  - **Deliverable**: migrate Fastify hook/plugin integration files into package folder with unchanged behavior.
-  - **Test**: existing Fastify capture/replay unit/e2e tests pass unchanged.
+---
 
-- [x] **Task 2.6 Move Redis instrumentation into `src/instrumentations/redis`** — `refactor(redis): migrate capture and replay runtime into package folder with legacy re-export shims`
-  - **Deliverable**: migrate Redis replay/capture integration files into package folder with unchanged behavior.
-  - **Test**: existing Redis unit/e2e replay and capture tests pass unchanged.
+## 4) Legacy Shim Finalization
 
-- [x] **Task 2.7 Move Postgres instrumentation into `src/instrumentations/postgres`** — `refactor(postgres): migrate capture and replay runtime into package folder with legacy re-export shims`
-  - **Deliverable**: migrate Postgres replay/capture integration files into package folder with unchanged behavior.
-  - **Test**: existing Postgres unit/e2e replay and capture tests pass unchanged.
+- [x] **Task 4.1 Convert remaining touched legacy runtime files to compatibility-only re-exports** — `test(arch): enforce shim-only integrity for migrated legacy files`
+  - **Goal**: ensure legacy paths touched by the migration expose only compatibility markers and re-exports.
+  - **Test**: shim integrity test verifies no runtime logic in these legacy files.
 
-- [x] **Task 2.8 Move Fetch/HTTP outbound instrumentation into `src/instrumentations/fetch`** — `refactor(fetch): migrate http replay interceptor runtime into package folder with legacy re-export shim`
-  - **Deliverable**: migrate undici/fetch replay interceptor and outbound capture integration into package folder with unchanged behavior.
-  - **Test**: existing HTTP replay/capture tests (including strict negative cases) pass unchanged.
+- [x] **Task 4.2 Verify no production imports from retired legacy targets** — `test(arch): retire bindings and stream-tap import paths from production modules`
+  - **Goal**: tighten retired path checks to include refactored binding/helper modules.
+  - **Test**: repo-wide retired-path guard test passes with zero violations.
 
-- [x] **Task 2.9 Update init/boot wiring to consume new package entry points** — `refactor(init): switch boot replay setup imports to instrumentation package entry points`
-  - **Deliverable**: `softprobe/init` imports from package folders only; behavior remains “init first, patch before OTel”.
-  - **Test**: boot/import-order guard tests remain green and still enforce pre-OTel patch ordering.
+---
 
-- [x] **Task 2.10 Add architecture guard tests for dependency direction and forbidden imports** — `test(architecture): add guard utility and tests for core/instrumentation import boundaries and legacy shim constraints`
-  - **Deliverable**: automated checks preventing:
-    - `src/core` importing `src/instrumentations/*`
-    - one instrumentation package importing another package directly
-    - new files added to legacy mixed folders when equivalent package folder exists
-  - **Test**: guard test fails on intentionally injected forbidden import and passes when removed.
+## 5) Quality Gate
 
-- [x] **Task 2.11 Remove or deprecate legacy mixed folders after migration** — `test(architecture): enforce no production imports from retired legacy capture/replay modules`
-  - **Deliverable**: eliminate duplicate runtime paths and keep single source of truth in new structure.
-  - **Test**: repo-wide grep/import graph confirms no production imports from retired legacy paths.
-
-- [x] **Task 2.12 Documentation sync for layout and contribution rules** — `docs(readme): document package-oriented layout for core, instrumentations, and common helpers`
-  - **Deliverable**: update docs to reflect new folder structure and extension workflow for future library support.
-  - **Test**: docs consistency tests pass and include references to `src/core`, `src/instrumentations/<package>`, and `src/instrumentations/common`.
-
-- [x] **Task 2.13 Validate full quality gate: all tests and examples pass** — `test(quality-gate): run full jest suite and example capture/replay validation successfully`
-  - **Deliverable**: run the full automated test suite and examples validation after migration tasks are complete.
-  - **Test**: repository test and example commands complete successfully with zero failures.
+- [x] **Task 5.1 Full refactor validation** — `test(refactor): pass targeted guard suite and full repo tests (stable with --maxWorkers=50%)`
+  - **Goal**: run targeted unit suite for migrated modules, architecture guards, and then full repository tests.
+  - **Test**: all refactor-related tests and full test suite pass with zero failures.

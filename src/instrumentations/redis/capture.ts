@@ -8,7 +8,7 @@
  */
 
 import type { SoftprobeCassetteRecord } from '../../types/schema';
-import { redisIdentifier } from '../../identifier';
+import { redisIdentifier } from '../../core/identifier';
 import { SoftprobeContext } from '../../context';
 
 export const REDIS_INSTRUMENTATION_NAME = '@opentelemetry/instrumentation-redis-4';

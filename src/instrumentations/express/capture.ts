@@ -13,6 +13,7 @@ import {
   queueInboundResponse,
   type QueueInboundResponsePayload,
 } from '../common/http/inbound-capture';
+import { buildInboundHttpIdentifier } from '../common/http/span-adapter';
 
 export { CaptureEngine, queueInboundResponse };
 export type { QueueInboundResponsePayload };
@@ -81,7 +82,7 @@ export function softprobeExpressMiddleware(
           CaptureEngine.queueInboundResponse(ctxTraceId, {
             status: res.statusCode,
             body,
-            identifier: `${req.method} ${req.path}`,
+            identifier: buildInboundHttpIdentifier(req.method, req.path),
             requestBody: req.body,
           });
           return originalSend.apply(res, arguments as any);

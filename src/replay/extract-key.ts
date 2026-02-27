@@ -8,9 +8,9 @@ import type {
   MatcherFn,
   SoftprobeCassetteRecord,
 } from '../types/schema';
-import { PostgresSpan } from '../bindings/postgres-span';
-import { RedisSpan } from '../bindings/redis-span';
-import { HttpSpan } from '../bindings/http-span';
+import { PostgresSpan } from '../core/bindings/postgres-span';
+import { RedisSpan } from '../core/bindings/redis-span';
+import { HttpSpan } from '../core/bindings/http-span';
 
 /** Key used for flat matching: protocol + identifier. */
 export type SpanKey = {

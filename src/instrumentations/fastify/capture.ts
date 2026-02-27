@@ -7,6 +7,7 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { context, trace } from '@opentelemetry/api';
 import { CaptureEngine } from '../common/http/inbound-capture';
+import { buildInboundHttpIdentifier } from '../common/http/span-adapter';
 import { softprobeFastifyReplayPreHandler } from './replay';
 import { SoftprobeContext } from '../../context';
 import { resolveRequestStorageForContext } from '../../core/cassette/context-request-storage';
@@ -70,7 +71,7 @@ export async function softprobeFastifyPlugin(fastify: FastifyInstance): Promise<
       CaptureEngine.queueInboundResponse(traceId, {
         status: reply.statusCode,
         body: payload,
-        identifier: `${request.method} ${request.url}`,
+        identifier: buildInboundHttpIdentifier(request.method, request.url),
       });
       return payload;
     });

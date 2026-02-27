@@ -5,10 +5,10 @@ import { FetchInterceptor } from '@mswjs/interceptors/fetch';
 import { trace } from '@opentelemetry/api';
 import { SoftprobeContext } from '../../context';
 import { ConfigManager } from '../../config/config-manager';
-import { httpIdentifier } from '../../identifier';
+import { httpIdentifier } from '../../core/identifier';
 import type { MatcherAction } from '../../types/schema';
-import { HttpSpan } from '../../bindings/http-span';
-import { tapReadableStream } from '../../capture/stream-tap';
+import { HttpSpan } from '../../core/bindings/http-span';
+import { tapReadableStream } from '../common/http/stream-tap';
 
 type RequestController = { respondWith: (response: Response) => void };
 type RequestEvent = { request: Request; controller: RequestController };

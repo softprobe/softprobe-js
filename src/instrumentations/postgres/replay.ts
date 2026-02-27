@@ -9,7 +9,7 @@ import { trace } from '@opentelemetry/api';
 import type { SemanticMatcher } from '../../replay/matcher';
 import type { SoftprobeMatcher } from '../../replay/softprobe-matcher';
 import { SoftprobeContext } from '../../context';
-import { PostgresSpan } from '../../bindings/postgres-span';
+import { PostgresSpan } from '../../core/bindings/postgres-span';
 
 const SOFTPROBE_WRAPPED_MARKER = '__softprobeWrapped';
 

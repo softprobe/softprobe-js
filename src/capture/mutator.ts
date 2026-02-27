@@ -11,11 +11,11 @@ import {
   PG_INSTRUMENTATION_NAME,
   buildPostgresRequestHook,
   buildPostgresResponseHook,
-} from './postgres';
+} from '../instrumentations/postgres/capture';
 import {
   REDIS_INSTRUMENTATION_NAME,
   buildRedisResponseHook,
-} from './redis';
+} from '../instrumentations/redis/capture';
 
 /** Module-like object that exposes getNodeAutoInstrumentations (for real use or tests). */
 export interface AutoInstrumentationsModule {

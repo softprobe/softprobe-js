@@ -1,7 +1,7 @@
 import { trace } from '@opentelemetry/api';
 import type { SoftprobeCassetteRecord } from '../../../types/schema';
 import { SoftprobeContext } from '../../../context';
-import { httpIdentifier } from '../../../identifier';
+import { httpIdentifier } from '../../../core/identifier';
 
 export type QueueInboundResponsePayload = {
   status: number;

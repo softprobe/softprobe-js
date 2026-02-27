@@ -10,7 +10,7 @@
 
 import { trace } from '@opentelemetry/api';
 import shimmer from 'shimmer';
-import { RedisSpan } from '../../bindings/redis-span';
+import { RedisSpan } from '../../core/bindings/redis-span';
 import type { MatcherAction } from '../../types/schema';
 import { SoftprobeContext } from '../../context';
 
