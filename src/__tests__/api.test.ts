@@ -16,7 +16,7 @@ import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 
 import { softprobe } from '../api';
 import { SOFTPROBE_CONTEXT_KEY, SoftprobeContext } from '../context';
-import type { SoftprobeMatcher } from '../replay/softprobe-matcher';
+import type { SoftprobeMatcher } from '../core/matcher/softprobe-matcher';
 import { runSoftprobeScope } from './helpers/run-softprobe-scope';
 
 describe('softprobe API (AsyncLocalStorage trace isolation)', () => {

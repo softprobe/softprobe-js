@@ -6,9 +6,9 @@
  * Design §5.3: contract alignment validation.
  */
 
-import { applyAutoInstrumentationMutator } from '../capture/mutator';
-import { PG_INSTRUMENTATION_NAME } from '../capture/postgres';
-import { REDIS_INSTRUMENTATION_NAME } from '../capture/redis';
+import { applyAutoInstrumentationMutator } from '../bootstrap/otel/mutator';
+import { PG_INSTRUMENTATION_NAME } from '../instrumentations/postgres/capture';
+import { REDIS_INSTRUMENTATION_NAME } from '../instrumentations/redis/capture';
 
 function loadAutoInstrumentations(): { getNodeAutoInstrumentations: (opts?: unknown) => unknown[] } | null {
   try {

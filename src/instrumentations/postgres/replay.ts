@@ -6,8 +6,8 @@
 
 import shimmer from 'shimmer';
 import { trace } from '@opentelemetry/api';
-import type { SemanticMatcher } from '../../replay/matcher';
-import type { SoftprobeMatcher } from '../../replay/softprobe-matcher';
+import type { SemanticMatcher } from '../../core/matcher/matcher';
+import type { SoftprobeMatcher } from '../../core/matcher/softprobe-matcher';
 import { SoftprobeContext } from '../../context';
 import { PostgresSpan } from '../../core/bindings/postgres-span';
 

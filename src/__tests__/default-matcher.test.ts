@@ -1,10 +1,10 @@
 /**
  * Task 4.4.1–4.4.2: createDefaultMatcher returns MatcherFn; MOCK with responsePayload; empty candidates => CONTINUE.
  */
-import { testSpan } from '../bindings/test-span';
-import { PostgresSpan } from '../bindings/postgres-span';
+import { testSpan } from '../core/bindings/test-span';
+import { PostgresSpan } from '../core/bindings/postgres-span';
 import type { SoftprobeCassetteRecord } from '../types/schema';
-import { createDefaultMatcher } from '../replay/extract-key';
+import { createDefaultMatcher } from '../core/matcher/extract-key';
 
 function outboundRecord(
   protocol: 'postgres' | 'redis' | 'http',

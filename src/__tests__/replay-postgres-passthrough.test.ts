@@ -6,11 +6,11 @@
 import * as otelApi from '@opentelemetry/api';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
-import { SemanticMatcher } from '../replay/matcher';
-import { SoftprobeMatcher } from '../replay/softprobe-matcher';
+import { SemanticMatcher } from '../core/matcher/matcher';
+import { SoftprobeMatcher } from '../core/matcher/softprobe-matcher';
 import { softprobe } from '../api';
 import { SoftprobeContext } from '../context';
-import { setupPostgresReplay } from '../replay/postgres';
+import { setupPostgresReplay } from '../instrumentations/postgres/replay';
 import { runSoftprobeScope } from './helpers/run-softprobe-scope';
 
 const mockQueryImpl = jest.fn().mockRejectedValue(new Error('pg not connected'));

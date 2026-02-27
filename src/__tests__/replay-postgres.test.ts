@@ -7,11 +7,11 @@
 import * as otelApi from '@opentelemetry/api';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
-import { SemanticMatcher } from '../replay/matcher';
+import { SemanticMatcher } from '../core/matcher/matcher';
 import { softprobe } from '../api';
 import { SoftprobeContext } from '../context';
-import { setupPostgresReplay } from '../replay/postgres';
-import { PostgresSpan } from '../bindings/postgres-span';
+import { setupPostgresReplay } from '../instrumentations/postgres/replay';
+import { PostgresSpan } from '../core/bindings/postgres-span';
 import { runSoftprobeScope } from './helpers/run-softprobe-scope';
 
 function mockSpan(identifier: string, responseBody: string): ReadableSpan {
@@ -188,7 +188,7 @@ describe('Task 18.1.2 Postgres query() context-matcher', () => {
   const { AsyncHooksContextManager } = require('@opentelemetry/context-async-hooks');
   const otelApi = require('@opentelemetry/api');
   const { SoftprobeContext } = require('../context');
-  const { SoftprobeMatcher } = require('../replay/softprobe-matcher');
+  const { SoftprobeMatcher } = require('../core/matcher/softprobe-matcher');
 
   beforeAll(() => {
     const contextManager = new AsyncHooksContextManager();

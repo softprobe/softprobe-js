@@ -1,5 +1,5 @@
 import { trace } from '@opentelemetry/api';
-import { SemanticMatcher } from '../replay/matcher';
+import { SemanticMatcher } from '../core/matcher/matcher';
 import type { MatchRequest } from '../types/schema';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 

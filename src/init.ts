@@ -43,8 +43,8 @@ try {
   });
 }
 
-const { applyAutoInstrumentationMutator } = require('./capture/mutator');
-const { applyFrameworkMutators } = require('./capture/framework-mutator');
+const { applyAutoInstrumentationMutator } = require('./bootstrap/otel/mutator');
+const { applyFrameworkMutators } = require('./bootstrap/otel/framework-mutator');
 const { setupHttpReplayInterceptor } = require('./instrumentations/fetch');
 const { setupPostgresReplay } = require('./instrumentations/postgres');
 const { setupRedisReplay, applyRedisReplay } = require('./instrumentations/redis');

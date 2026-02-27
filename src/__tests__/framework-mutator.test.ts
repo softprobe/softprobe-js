@@ -3,8 +3,8 @@
  * Test: require('express'); assert app.use was called internally by Softprobe.
  */
 
-import { applyFrameworkMutators, patchExpress } from '../capture/framework-mutator';
-import { softprobeExpressMiddleware } from '../capture/express';
+import { applyFrameworkMutators, patchExpress } from '../bootstrap/otel/framework-mutator';
+import { softprobeExpressMiddleware } from '../instrumentations/express/capture';
 
 describe('applyFrameworkMutators (Task 14.2.3)', () => {
   it('require("express") then app.get: Softprobe injects middleware so app.use was called internally', () => {

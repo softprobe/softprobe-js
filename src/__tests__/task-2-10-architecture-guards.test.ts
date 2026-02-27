@@ -18,6 +18,7 @@ describe('task 2.10 - architecture guards', () => {
     const fixturePath = path.resolve(__dirname, '../capture/task-1-1-guard-fixture.ts');
 
     try {
+      fs.mkdirSync(path.dirname(fixturePath), { recursive: true });
       fs.writeFileSync(
         fixturePath,
         `
@@ -31,7 +32,7 @@ describe('task 2.10 - architecture guards', () => {
       );
 
       const violations = collectArchitectureViolations();
-      expect(violations).toContain('legacy-file-not-shim: capture/task-1-1-guard-fixture.ts contains non-export runtime code');
+      expect(violations).toContain('legacy-path-retired: capture/task-1-1-guard-fixture.ts');
     } finally {
       if (fs.existsSync(fixturePath)) {
         fs.unlinkSync(fixturePath);
@@ -87,9 +88,9 @@ describe('task 2.10 - architecture guards', () => {
 
   it('enforces shim-only integrity for touched legacy runtime files', () => {
     const shimPath = path.resolve(__dirname, '../bindings/test-span.ts');
-    const original = fs.readFileSync(shimPath, 'utf8');
 
     try {
+      fs.mkdirSync(path.dirname(shimPath), { recursive: true });
       fs.writeFileSync(
         shimPath,
         `
@@ -104,9 +105,11 @@ describe('task 2.10 - architecture guards', () => {
       );
 
       const violations = collectArchitectureViolations();
-      expect(violations).toContain('legacy-file-not-shim: bindings/test-span.ts contains non-export runtime code');
+      expect(violations).toContain('legacy-path-retired: bindings/test-span.ts');
     } finally {
-      fs.writeFileSync(shimPath, original, 'utf8');
+      if (fs.existsSync(shimPath)) {
+        fs.unlinkSync(shimPath);
+      }
     }
   });
 });

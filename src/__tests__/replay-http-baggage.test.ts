@@ -5,11 +5,11 @@
  */
 import * as otelApi from '@opentelemetry/api';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
-import { handleHttpReplayRequest } from '../replay/http';
+import { handleHttpReplayRequest } from '../instrumentations/fetch/replay';
 import { setGlobalReplayMatcher } from '../api';
 import { SoftprobeContext } from '../context';
-import { SoftprobeMatcher } from '../replay/softprobe-matcher';
-import { createDefaultMatcher } from '../replay/extract-key';
+import { SoftprobeMatcher } from '../core/matcher/softprobe-matcher';
+import { createDefaultMatcher } from '../core/matcher/extract-key';
 import type { SoftprobeCassetteRecord } from '../types/schema';
 
 const { context, propagation } = otelApi;

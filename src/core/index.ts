@@ -7,3 +7,4 @@ export * from './context';
 export * from './cassette';
 export * from './bindings';
 export * from './identifier';
+export * from './matcher';

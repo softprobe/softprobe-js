@@ -6,7 +6,7 @@
 
 import { Readable } from 'stream';
 
-import { tapReadableStream } from '../capture/stream-tap';
+import { tapReadableStream } from '../instrumentations/common/http/stream-tap';
 
 describe('tapReadableStream', () => {
   /**

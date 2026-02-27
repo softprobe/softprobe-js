@@ -9,10 +9,10 @@
  */
 
 import type { Cassette } from '../types/schema';
-import { handleHttpReplayRequest } from '../replay/http';
+import { handleHttpReplayRequest } from '../instrumentations/fetch/replay';
 import { SoftprobeContext } from '../context';
 import { softprobe } from '../api';
-import { SoftprobeMatcher } from '../replay/softprobe-matcher';
+import { SoftprobeMatcher } from '../core/matcher/softprobe-matcher';
 const { context } = require('@opentelemetry/api');
 const { AsyncHooksContextManager } = require('@opentelemetry/context-async-hooks');
 const otelApi = require('@opentelemetry/api');

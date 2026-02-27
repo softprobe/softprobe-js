@@ -2,16 +2,16 @@
  * Task 4.1.1: extractKeyFromSpan uses typed bindings; pg/redis/http yield { protocol, identifier }; unknown yields null.
  */
 
-import { testSpan } from '../bindings/test-span';
-import { PostgresSpan } from '../bindings/postgres-span';
-import { RedisSpan } from '../bindings/redis-span';
-import { HttpSpan } from '../bindings/http-span';
+import { testSpan } from '../core/bindings/test-span';
+import { PostgresSpan } from '../core/bindings/postgres-span';
+import { RedisSpan } from '../core/bindings/redis-span';
+import { HttpSpan } from '../core/bindings/http-span';
 import type { SoftprobeCassetteRecord } from '../types/schema';
 import {
   extractKeyFromSpan,
   filterOutboundCandidates,
   CallSeq,
-} from '../replay/extract-key';
+} from '../core/matcher/extract-key';
 
 describe('extractKeyFromSpan', () => {
   it('maps postgres/redis/http span bindings to deterministic { protocol, identifier } keys', () => {

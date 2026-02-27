@@ -4,9 +4,9 @@
  * HTTP capture/replay is via MSW interceptor only (no undici instrumentation).
  * Design §5.3: unit tests use contract-shaped mocks and assert softprobe.* attributes.
  */
-import { applyAutoInstrumentationMutator } from '../capture/mutator';
-import { PG_INSTRUMENTATION_NAME } from '../capture/postgres';
-import { REDIS_INSTRUMENTATION_NAME } from '../capture/redis';
+import { applyAutoInstrumentationMutator } from '../bootstrap/otel/mutator';
+import { PG_INSTRUMENTATION_NAME } from '../instrumentations/postgres/capture';
+import { REDIS_INSTRUMENTATION_NAME } from '../instrumentations/redis/capture';
 
 describe('applyAutoInstrumentationMutator', () => {
   it('injects custom responseHook for @opentelemetry/instrumentation-pg in returned config', () => {

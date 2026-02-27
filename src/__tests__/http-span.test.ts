@@ -2,8 +2,8 @@
  * Task 3.4.1: HttpSpan.tagRequest uses httpIdentifier; body stored optionally.
  */
 
-import { testSpan } from '../bindings/test-span';
-import { HttpSpan } from '../bindings/http-span';
+import { testSpan } from '../core/bindings/test-span';
+import { HttpSpan } from '../core/bindings/http-span';
 
 describe('HttpSpan.tagRequest', () => {
   it('sets identifier via httpIdentifier', () => {

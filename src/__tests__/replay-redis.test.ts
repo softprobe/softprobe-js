@@ -7,11 +7,11 @@
 import * as otelApi from '@opentelemetry/api';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
-import { SemanticMatcher } from '../replay/matcher';
-import { SoftprobeMatcher } from '../replay/softprobe-matcher';
+import { SemanticMatcher } from '../core/matcher/matcher';
+import { SoftprobeMatcher } from '../core/matcher/softprobe-matcher';
 import { SoftprobeContext } from '../context';
-import { setupRedisReplay } from '../replay/redis';
-import { RedisSpan } from '../bindings/redis-span';
+import { setupRedisReplay } from '../instrumentations/redis/replay';
+import { RedisSpan } from '../core/bindings/redis-span';
 import { softprobe } from '../api';
 import { runSoftprobeScope } from './helpers/run-softprobe-scope';
 

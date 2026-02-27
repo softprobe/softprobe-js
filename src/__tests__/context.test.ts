@@ -11,7 +11,7 @@ import * as otelApi from '@opentelemetry/api';
 import { ROOT_CONTEXT, context } from '@opentelemetry/api';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import { SoftprobeContext, SOFTPROBE_CONTEXT_KEY } from '../context';
-import type { SoftprobeMatcher } from '../replay/softprobe-matcher';
+import type { SoftprobeMatcher } from '../core/matcher/softprobe-matcher';
 import type { Cassette } from '../types/schema';
 
 describe('context (SoftprobeContext)', () => {

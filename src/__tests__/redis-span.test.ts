@@ -2,8 +2,8 @@
  * Task 3.3.1: RedisSpan.tagCommand uses redisIdentifier and sets args as JSON.
  */
 
-import { testSpan } from '../bindings/test-span';
-import { RedisSpan } from '../bindings/redis-span';
+import { testSpan } from '../core/bindings/test-span';
+import { RedisSpan } from '../core/bindings/redis-span';
 
 describe('RedisSpan.tagCommand', () => {
   it('sets identifier via redisIdentifier and args_json as JSON', () => {

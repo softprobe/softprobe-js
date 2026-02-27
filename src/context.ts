@@ -7,9 +7,9 @@ import { randomBytes } from 'crypto';
 import { createContextKey, context } from '@opentelemetry/api';
 import type { Context } from '@opentelemetry/api';
 import type { Cassette, SoftprobeCassetteRecord, SoftprobeRunOptions } from './types/schema';
-import type { SemanticMatcher } from './replay/matcher';
-import { SoftprobeMatcher } from './replay/softprobe-matcher';
-import { createDefaultMatcher } from './replay/extract-key';
+import type { SemanticMatcher } from './core/matcher/matcher';
+import { SoftprobeMatcher } from './core/matcher/softprobe-matcher';
+import { createDefaultMatcher } from './core/matcher/extract-key';
 import { NdjsonCassette } from './core/cassette/ndjson-cassette';
 
 /** Context key under which softprobe state is stored in OTel Context. Exported for tests. */

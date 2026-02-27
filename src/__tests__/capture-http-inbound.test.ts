@@ -5,7 +5,7 @@
  */
 
 import type { CassetteStore } from '../store/cassette-store';
-import { writeInboundHttpRecord } from '../capture/http-inbound';
+import { writeInboundHttpRecord } from '../instrumentations/common/http/inbound-record';
 
 describe('HTTP inbound capture (Task 10.2)', () => {
   it('10.2.1 writes inbound request record (type=inbound, protocol=http)', () => {

@@ -17,6 +17,7 @@ describe('task 2.11 - retired legacy paths', () => {
         'bindings/postgres-span.ts',
         'bindings/redis-span.ts',
         'bindings/test-span.ts',
+        'identifier.ts',
         'replay/express.ts',
         'replay/fastify.ts',
         'replay/redis.ts',

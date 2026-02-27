@@ -3,7 +3,7 @@
  * Verifies that the mock span has setAttribute and an attributes bag that gets populated.
  */
 
-import { testSpan } from '../bindings/test-span';
+import { testSpan } from '../core/bindings/test-span';
 
 describe('testSpan()', () => {
   it('populates attributes when setAttribute is called', () => {

@@ -11,7 +11,7 @@ import type { Cassette } from '../types/schema';
 import {
   buildPostgresResponseHook,
   type PgResultInfo,
-} from '../capture/postgres';
+} from '../instrumentations/postgres/capture';
 
 describe('Postgres capture (Task 10.4)', () => {
   beforeAll(() => {

@@ -1,7 +1,7 @@
 import { context } from '@opentelemetry/api';
 import { SoftprobeContext } from '../../context';
-import type { SemanticMatcher } from '../../replay/matcher';
-import { SoftprobeMatcher } from '../../replay/softprobe-matcher';
+import type { SemanticMatcher } from '../../core/matcher/matcher';
+import { SoftprobeMatcher } from '../../core/matcher/softprobe-matcher';
 import type { Cassette, SoftprobeCassetteRecord, SoftprobeMode } from '../../types/schema';
 
 type ScopeOptions = {

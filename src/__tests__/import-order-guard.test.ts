@@ -3,7 +3,7 @@
  * When OTel has already wrapped pg (e.g. after sdk.start()), we wrap on top instead of throwing.
  */
 
-import { setupPostgresReplay } from '../replay/postgres';
+import { setupPostgresReplay } from '../instrumentations/postgres/replay';
 
 describe('Import-order guard (pg)', () => {
   it('does not throw when pg.Client.prototype.query is already __wrapped (wraps on top)', () => {

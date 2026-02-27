@@ -2,8 +2,8 @@
  * Task 3.2.1: PostgresSpan.tagQuery sets protocol and identifier on span.
  */
 
-import { testSpan } from '../bindings/test-span';
-import { PostgresSpan } from '../bindings/postgres-span';
+import { testSpan } from '../core/bindings/test-span';
+import { PostgresSpan } from '../core/bindings/postgres-span';
 
 describe('PostgresSpan.tagQuery', () => {
   it('sets protocol attr and identifier attr', () => {

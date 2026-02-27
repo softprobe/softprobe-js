@@ -1,7 +1,7 @@
 /**
  * Identifier builders (pure): httpIdentifier, redisIdentifier, pgIdentifier.
  */
-import { httpIdentifier, redisIdentifier, pgIdentifier } from '../identifier';
+import { httpIdentifier, redisIdentifier, pgIdentifier } from '../core/identifier';
 
 describe('identifier builders', () => {
   describe('httpIdentifier', () => {

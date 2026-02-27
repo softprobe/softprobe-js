@@ -1,9 +1,9 @@
 import type { SoftprobeCassetteRecord, SoftprobeRunOptions } from './types/schema';
-import type { SemanticMatcher } from './replay/matcher';
-import { SoftprobeMatcher } from './replay/softprobe-matcher';
+import type { SemanticMatcher } from './core/matcher/matcher';
+import { SoftprobeMatcher } from './core/matcher/softprobe-matcher';
 import { getContextWithReplayBaggage } from './api/baggage';
 import { compareInboundWithRecord, type CompareInboundInput } from './api/compare';
-import { getRecordsForTrace as getRecordsForTraceFromStore } from './replay/store-accessor';
+import { getRecordsForTrace as getRecordsForTraceFromStore } from './core/matcher/store-accessor';
 import { SoftprobeContext } from './context';
 
 /**

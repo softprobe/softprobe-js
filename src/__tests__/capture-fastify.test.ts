@@ -13,8 +13,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import type { Cassette } from '../types/schema';
-import { CaptureEngine } from '../capture/express';
-import { softprobeFastifyPlugin } from '../capture/fastify';
+import { CaptureEngine } from '../instrumentations/express/capture';
+import { softprobeFastifyPlugin } from '../instrumentations/fastify/capture';
 import { softprobe } from '../api';
 import { SoftprobeContext } from '../context';
 

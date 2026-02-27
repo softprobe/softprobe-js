@@ -6,7 +6,7 @@
 
 import * as otelApi from '@opentelemetry/api';
 import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
-import { buildRedisResponseHook } from '../capture/redis';
+import { buildRedisResponseHook } from '../instrumentations/redis/capture';
 import { SoftprobeContext } from '../context';
 import type { Cassette } from '../types/schema';
 

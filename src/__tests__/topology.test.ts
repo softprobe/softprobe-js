@@ -6,18 +6,18 @@
  * Task 5.4.1: createTopologyMatcher returns MOCK from selected candidate (seq key includes parent).
  */
 
-import { testSpan } from '../bindings/test-span';
-import { PostgresSpan } from '../bindings/postgres-span';
+import { testSpan } from '../core/bindings/test-span';
+import { PostgresSpan } from '../core/bindings/postgres-span';
 import type { SoftprobeCassetteRecord } from '../types/schema';
-import { filterOutboundCandidates } from '../replay/extract-key';
-import type { SpanKey } from '../replay/extract-key';
+import { filterOutboundCandidates } from '../core/matcher/extract-key';
+import type { SpanKey } from '../core/matcher/extract-key';
 import {
   getLiveParentName,
   buildBySpanIdIndex,
   filterCandidatesByKey,
   selectLineagePool,
   createTopologyMatcher,
-} from '../replay/topology';
+} from '../core/matcher/topology';
 
 describe('getLiveParentName', () => {
   it('returns _parentSpanName when span has it', () => {

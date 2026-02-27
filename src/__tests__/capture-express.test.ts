@@ -12,7 +12,7 @@ import os from 'os';
 import path from 'path';
 
 import type { Cassette } from '../types/schema';
-import { CaptureEngine, softprobeExpressMiddleware } from '../capture/express';
+import { CaptureEngine, softprobeExpressMiddleware } from '../instrumentations/express/capture';
 import { softprobe } from '../api';
 import { SoftprobeContext } from '../context';
 

@@ -2,7 +2,7 @@
  * V4 SoftprobeMatcher tests (use, clear, _setRecords, match).
  * Task 2.2.1: use(fn) appends matcher fns; public check via match order.
  */
-import { SoftprobeMatcher } from '../replay/softprobe-matcher';
+import { SoftprobeMatcher } from '../core/matcher/softprobe-matcher';
 import type { MatcherFn, SoftprobeCassetteRecord } from '../types/schema';
 
 function cassetteRecord(identifier: string): SoftprobeCassetteRecord {
