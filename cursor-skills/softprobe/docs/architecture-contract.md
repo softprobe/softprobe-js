@@ -6,6 +6,7 @@ Use these constraints when applying Softprobe in any codebase.
 
 - `softprobe/init` must run before OpenTelemetry auto-instrumentation wraps dependency modules.
 - Softprobe stores state using a dedicated OpenTelemetry context key.
+- Canonical startup is bootstrap preload (`node -r ./instrumentation.js server.js`) where bootstrap requires `@softprobe/softprobe-js/init`, initializes `NodeSDK` with `getNodeAutoInstrumentations()`, and starts the SDK.
 
 ## Dependency Direction
 
@@ -18,6 +19,12 @@ Use these constraints when applying Softprobe in any codebase.
 - Cassette instances are created in context setup flow only.
 - Middleware/wrappers must use active context; they do not construct cassettes.
 - One cassette file per trace id: `{cassetteDirectory}/{traceId}.ndjson`.
+
+## Integration API Boundary
+
+- Use package public entry points (`@softprobe/softprobe-js`, `@softprobe/softprobe-js/init`).
+- Do not import internal distribution paths (`@softprobe/softprobe-js/dist/...`).
+- If a needed integration API is not publicly exported, stop and ask whether to add that export.
 
 ## Replay Flow Contract
 

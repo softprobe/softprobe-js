@@ -8,16 +8,25 @@ Before executing any Softprobe task in any repository, read:
 
 1. `docs/softprobe-spec.md`
 2. `docs/architecture-contract.md`
-3. `docs/workflow-contract.md`
-4. `docs/compatibility-matrix.md`
-5. `docs/do-not-infer.md`
+3. `docs/integration-runbook.md`
+4. `docs/workflow-contract.md`
+5. `docs/compatibility-matrix.md`
+6. `docs/do-not-infer.md`
 
 Do not guess behavior outside these docs. If required details are missing in the target repo, stop and ask.
 
 ## Prerequisites
 
 - Global CLI installed: `npm install -g @softprobe/softprobe-js`
-- Target app runs with Softprobe init + middleware and cassette directory configured
+- Target bootstrap loads `@softprobe/softprobe-js/init`, initializes OTel NodeSDK, and calls `sdk.start()`
+- Cassette directory configured in `.softprobe/config.yml`
+
+## Critical Integration Rules
+
+- Prefer `node -r ./instrumentation.js server.js` with bootstrap that loads `@softprobe/softprobe-js/init` and starts OTel NodeSDK.
+- Do not deep import internal package files such as `@softprobe/softprobe-js/dist/...`.
+- Do not add manual middleware imports unless there is an explicit public export and user request.
+- If init ordering or config is unclear, stop and ask instead of guessing.
 
 ## Inputs
 
@@ -28,7 +37,7 @@ Do not guess behavior outside these docs. If required details are missing in the
 
 ## Workflow
 
-1. Confirm target repo wiring matches the architecture contract.
+1. Run integration preflight from `docs/integration-runbook.md`.
 2. Capture baseline request.
 3. Replay and diff against target.
 4. Report PASS/FAIL and mismatched fields.

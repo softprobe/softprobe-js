@@ -40,3 +40,9 @@ Implementation rule per task:
 - [x] **Task 4.1 Package portable Softprobe knowledge docs for external repos** — `docs(skill): bundle portable product spec and constraints for cross-repo Cursor skill installs`
   - **Goal**: ensure users installing the skill outside this repository get explicit Softprobe architecture and operation knowledge.
   - **Verification**: `cursor-skills/softprobe/docs` contains product spec, architecture contract, workflow contract, compatibility matrix, and do-not-infer guidance; `SKILL.md` requires reading these docs.
+- [x] **Task 4.2 Add anti-misuse integration runbook and no-deep-import guardrails** — `docs(skill): add canonical bootstrap runbook and forbid internal dist import workarounds`
+  - **Goal**: prevent agents from misintegrating Softprobe by path-importing internal package files or guessing middleware wiring.
+  - **Verification**: skill docs include required preflight checks, explicit forbidden patterns, and canonical `@softprobe/softprobe-js/init` bootstrap flow.
+- [x] **Task 4.3 Require OTel NodeSDK startup in canonical skill integration flow** — `docs(skill): require NodeSDK init/start after softprobe init in integration runbook`
+  - **Goal**: prevent partial integrations where Softprobe is loaded but OpenTelemetry runtime is never started.
+  - **Verification**: runbook and skill prerequisites explicitly require `NodeSDK` + `getNodeAutoInstrumentations()` + `sdk.start()` and preflight checks assert presence.

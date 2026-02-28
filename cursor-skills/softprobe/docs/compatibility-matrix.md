@@ -18,6 +18,7 @@ This matrix defines current baseline expectations for portable usage.
 
 - OpenTelemetry context available
 - Softprobe init loaded before OTel auto-instrumentation
+- OTel NodeSDK initialized and started in bootstrap
 - Request middleware/interceptor that can read coordination headers
 - Cassette directory configured and writable by process
 

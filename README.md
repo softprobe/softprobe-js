@@ -218,6 +218,7 @@ This repo ships a ready-to-use Cursor Skill at:
 - `cursor-skills/softprobe/SKILL.md`
 - `cursor-skills/softprobe/docs/softprobe-spec.md`
 - `cursor-skills/softprobe/docs/architecture-contract.md`
+- `cursor-skills/softprobe/docs/integration-runbook.md`
 - `cursor-skills/softprobe/docs/workflow-contract.md`
 - `cursor-skills/softprobe/docs/compatibility-matrix.md`
 - `cursor-skills/softprobe/docs/do-not-infer.md`

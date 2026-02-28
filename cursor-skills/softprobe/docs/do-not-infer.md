@@ -9,6 +9,8 @@ Agents using this skill must not infer or invent behavior outside declared desig
 - protocol support not explicitly implemented
 - new runtime flags/options not requested by the user
 - middleware behavior when headers are absent or invalid
+- internal package deep imports as a substitute for missing public APIs
+- rewriting app startup to `node_modules/.../dist/...` path-based requires
 
 ## Always Ask
 
@@ -18,6 +20,7 @@ Ask the user before proceeding when:
 - cassette storage strategy is undocumented
 - strict replay policy is ambiguous
 - expected protocol instrumentation is missing
+- a required middleware/helper is not publicly exported by the package
 
 ## Response Discipline
 

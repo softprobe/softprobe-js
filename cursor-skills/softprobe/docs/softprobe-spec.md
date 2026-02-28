@@ -19,6 +19,11 @@ Softprobe centers around four units:
 3. `Matcher`: resolves outbound calls during replay (`MOCK`, `PASSTHROUGH`, `CONTINUE`).
 4. `Wrappers/Interceptors`: protocol integrations (HTTP/Postgres/Redis).
 
+Portable integration default:
+
+- initialize with `@softprobe/softprobe-js/init` loaded before app/server code
+- avoid internal package path imports; use public package entry points only
+
 ## Modes
 
 - `CAPTURE`: writes inbound/outbound records to cassette.
