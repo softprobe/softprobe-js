@@ -174,6 +174,37 @@ describe('Task 14.3.1: inbound request record contains parsed JSON body when mid
     expect(record.requestPayload).toBeDefined();
     expect((record.requestPayload as { body?: unknown })?.body).toEqual(parsedBody);
   });
+
+  it('GET request captures requestPayload.body when content length is unknown', () => {
+    const saveRecord = jest.fn<ReturnType<Cassette['saveRecord']>, Parameters<Cassette['saveRecord']>>(async () => {});
+    const cassette: Cassette = {
+      loadTrace: async () => [],
+      saveRecord,
+    };
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE', storage: cassette });
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
+      spanContext: () => ({ traceId: 'trace-get-body-1', spanId: 'span-get-body-1' }),
+    } as ReturnType<typeof trace.getActiveSpan>);
+
+    const req = {
+      method: 'GET',
+      path: '/api/products',
+      body: {},
+      headers: {},
+    };
+    const originalSend = jest.fn();
+    const res = { statusCode: 200, send: originalSend };
+    const next = jest.fn();
+
+    softprobeExpressMiddleware(req as any, res as any, next as any);
+    res.send({ ok: true });
+
+    expect(saveRecord).toHaveBeenCalledTimes(1);
+    expect(saveRecord.mock.calls[0]).toHaveLength(1);
+    const record = saveRecord.mock.calls[0][0];
+    expect(record.type).toBe('inbound');
+    expect(record.requestPayload).toEqual({ body: {} });
+  });
 });
 
 describe('Task 17.3.2: middleware sets OTel context for downstream SoftprobeContext.active()', () => {

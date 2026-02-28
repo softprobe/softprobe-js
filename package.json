@@ -55,7 +55,8 @@
     "example:kill": "(lsof -ti :3000; lsof -ti :3010) 2>/dev/null | xargs kill -9 2>/dev/null; echo Done",
     "example:kill-e2e": "pkill -f 'express-inbound-worker|fastify-inbound-worker|diff-headers-server' 2>/dev/null; echo Done",
     "diff": "node dist/cli.js diff",
-    "diff:dev": "npx ts-node --transpile-only src/cli.ts diff"
+    "diff:dev": "npx ts-node --transpile-only src/cli.ts diff",
+    "release:create": "bash scripts/create-release.sh"
   },
   "dependencies": {
     "@mswjs/interceptors": "^0.39.8",

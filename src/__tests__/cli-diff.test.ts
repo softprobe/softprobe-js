@@ -62,6 +62,38 @@ describe('Task 21.2.1: softprobe diff CLI', () => {
     }
   }, 15000);
 
+  it('ignores request body for GET cassette identifiers so diff does not throw', async () => {
+    const port = 39700 + (Date.now() % 1000);
+    const child = runServer(
+      DIFF_HEADERS_SERVER,
+      { PORT: String(port) },
+      { useTsNode: true }
+    );
+    await waitForServer(port, 5000);
+
+    const cassettePath = path.join(PROJECT_ROOT, `diff-cli-get-body-${Date.now()}.ndjson`);
+    const inboundRecord: SoftprobeCassetteRecord = {
+      version: '4.1',
+      traceId: 'trace-diff-get-body',
+      spanId: 'span1',
+      timestamp: new Date().toISOString(),
+      type: 'inbound',
+      protocol: 'http',
+      identifier: 'GET /diff-headers',
+      requestPayload: { body: { unexpected: true } },
+    };
+    fs.writeFileSync(cassettePath, JSON.stringify(inboundRecord) + '\n');
+
+    try {
+      await expect(runDiff(cassettePath, `http://127.0.0.1:${port}`)).resolves.toMatchObject({
+        response: expect.objectContaining({ status: 200 }),
+      });
+    } finally {
+      await closeServer(child);
+      if (fs.existsSync(cassettePath)) fs.unlinkSync(cassettePath);
+    }
+  }, 15000);
+
   it('Task 21.3.1: on status/body mismatch CLI shows colored diff and exits with code 1', async () => {
     const port = 39600 + (Date.now() % 1000);
     const child = runServer(

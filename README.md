@@ -202,7 +202,9 @@ Reference:
 Release flow:
 
 1. Merge changes to `main`.
-2. Create and push a version tag, for example `v2.0.1`.
+2. After pushing the version bump commit, run:
+   - `npm run release:create`
+   This creates and pushes tag `v<package.json version>` (for example `v2.0.1`).
 3. GitHub Action builds and publishes automatically.
 
 Manual validation flow:

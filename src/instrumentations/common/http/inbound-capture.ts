@@ -2,6 +2,7 @@ import { trace } from '@opentelemetry/api';
 import type { SoftprobeCassetteRecord } from '../../../types/schema';
 import { SoftprobeContext } from '../../../context';
 import { httpIdentifier } from '../../../core/identifier';
+import { shouldCaptureBody } from '../../../core/runtime/http-body';
 
 export type QueueInboundResponsePayload = {
   status: number;
@@ -9,6 +10,10 @@ export type QueueInboundResponsePayload = {
   identifier: string;
   /** Parsed request body when middleware is placed after body-parser (Task 14.3.1). */
   requestBody?: unknown;
+  /** Request body size in bytes when known from transport headers. */
+  requestBodyBytes?: number;
+  /** Response body size in bytes when known from transport headers. */
+  responseBodyBytes?: number;
 };
 
 /**
@@ -36,9 +41,11 @@ export function queueInboundResponse(
     identifier: httpIdentifier(method, url),
     responsePayload: {
       statusCode: payload.status,
-      body: payload.body,
+      ...(shouldCaptureBody(payload.body, payload.responseBodyBytes) && { body: payload.body }),
     },
-    ...(payload.requestBody !== undefined && { requestPayload: { body: payload.requestBody } }),
+    ...(shouldCaptureBody(payload.requestBody, payload.requestBodyBytes) && {
+      requestPayload: { body: payload.requestBody },
+    }),
   };
   const tid = SoftprobeContext.getTraceId();
   void cassette.saveRecord(tid ? { ...record, traceId: tid } : record).catch(() => {});

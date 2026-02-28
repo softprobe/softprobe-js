@@ -33,17 +33,16 @@ export function collectArchitectureViolations(): string[] {
     for (const specifier of imports) {
       if (!specifier.startsWith('.')) continue;
       const resolved = resolveToTsPath(file, specifier);
-      if (resolved) {
-        const normalizedPath = normalized(resolved);
-        if (normalizedPath.includes('/src/instrumentations/')) {
-          violations.push(`core-imports-instrumentation: ${relative(file)} -> ${specifier}`);
-        } else if (
-          normalizedPath.includes('/src/capture/')
-          || normalizedPath.includes('/src/replay/')
-          || normalizedPath.includes('/src/bindings/')
-        ) {
-          violations.push(`core-imports-legacy: ${relative(file)} -> ${specifier}`);
-        }
+      const candidatePath = normalized(path.resolve(path.dirname(file), specifier));
+      const normalizedPath = normalized(resolved ?? candidatePath);
+      if (normalizedPath.includes('/src/instrumentations/')) {
+        violations.push(`core-imports-instrumentation: ${relative(file)} -> ${specifier}`);
+      } else if (
+        normalizedPath.includes('/src/capture/')
+        || normalizedPath.includes('/src/replay/')
+        || normalizedPath.includes('/src/bindings/')
+      ) {
+        violations.push(`core-imports-legacy: ${relative(file)} -> ${specifier}`);
       }
     }
   }
@@ -61,8 +60,8 @@ export function collectArchitectureViolations(): string[] {
       for (const specifier of imports) {
         if (!specifier.startsWith('.')) continue;
         const resolved = resolveToTsPath(file, specifier);
-        if (!resolved) continue;
-        const normalizedPath = normalized(resolved);
+        const candidatePath = normalized(path.resolve(path.dirname(file), specifier));
+        const normalizedPath = normalized(resolved ?? candidatePath);
         if (
           normalizedPath.includes('/src/bindings/')
           || normalizedPath.includes('/src/capture/')
@@ -71,6 +70,7 @@ export function collectArchitectureViolations(): string[] {
           violations.push(`instrumentation-imports-legacy-helper: ${relative(file)} -> ${specifier}`);
           continue;
         }
+        if (!resolved) continue;
         if (!normalizedPath.includes('/src/instrumentations/')) continue;
         if (normalizedPath.includes('/src/instrumentations/common/')) continue;
         if (normalizedPath.includes(`/src/instrumentations/${packageName}/`)) continue;

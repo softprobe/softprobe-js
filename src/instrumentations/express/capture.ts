@@ -8,6 +8,7 @@ import { context, trace } from '@opentelemetry/api';
 import { activateReplayForContext } from './replay';
 import { SoftprobeContext } from '../../context';
 import { resolveRequestStorageForContext } from '../../core/cassette/context-request-storage';
+import { parseContentLengthHeader } from '../../core/runtime/http-body';
 import {
   CaptureEngine,
   queueInboundResponse,
@@ -84,6 +85,7 @@ export function softprobeExpressMiddleware(
             body,
             identifier: buildInboundHttpIdentifier(req.method, req.path),
             requestBody: req.body,
+            requestBodyBytes: parseContentLengthHeader(req.headers),
           });
           return originalSend.apply(res, arguments as any);
         };

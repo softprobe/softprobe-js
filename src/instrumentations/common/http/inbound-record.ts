@@ -9,6 +9,7 @@
 import type { CassetteStore } from '../../../store/cassette-store';
 import type { SoftprobeCassetteRecord } from '../../../types/schema';
 import { httpIdentifier } from '../../../core/identifier';
+import { shouldCaptureBody } from '../../../core/runtime/http-body';
 
 export type WriteInboundHttpOptions = {
   traceId: string;
@@ -19,10 +20,14 @@ export type WriteInboundHttpOptions = {
   url: string;
   /** Request body (optional). */
   requestBody?: unknown;
+  /** Request body size in bytes when known from transport headers. */
+  requestBodyBytes?: number;
   /** Response status code (optional). */
   statusCode?: number;
   /** Response body (optional). */
   responseBody?: unknown;
+  /** Response body size in bytes when known from transport headers. */
+  responseBodyBytes?: number;
 };
 
 /**
@@ -41,8 +46,10 @@ export function writeInboundHttpRecord(
     method,
     url,
     requestBody,
+    requestBodyBytes,
     statusCode,
     responseBody,
+    responseBodyBytes,
   } = options;
 
   const record: SoftprobeCassetteRecord = {
@@ -57,14 +64,17 @@ export function writeInboundHttpRecord(
     identifier: httpIdentifier(method, url),
   };
 
-  if (requestBody !== undefined) {
+  if (shouldCaptureBody(requestBody, requestBodyBytes)) {
     record.requestPayload = { body: requestBody };
   }
   if (statusCode !== undefined) {
-    record.responsePayload = {
+    const responsePayload: { statusCode: number; body?: unknown } = {
       statusCode,
-      body: responseBody,
     };
+    if (shouldCaptureBody(responseBody, responseBodyBytes)) {
+      responsePayload.body = responseBody;
+    }
+    record.responsePayload = responsePayload;
   }
 
   store.saveRecord(record);

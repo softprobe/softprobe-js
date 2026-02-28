@@ -29,6 +29,12 @@ function parseHttpIdentifier(identifier: string): { method: string; url: string 
   };
 }
 
+/** GET/HEAD requests cannot include body in undici/fetch. */
+function methodAllowsBody(method: string): boolean {
+  const normalized = method.trim().toUpperCase();
+  return normalized !== 'GET' && normalized !== 'HEAD';
+}
+
 export type RunDiffResult = { response: Response; inbound: SoftprobeCassetteRecord };
 
 /**
@@ -54,7 +60,7 @@ export async function runDiff(file: string, target: string): Promise<RunDiffResu
 
   const requestPayload = inbound.requestPayload as { body?: unknown } | undefined;
   const body =
-    requestPayload?.body !== undefined
+    methodAllowsBody(method) && requestPayload?.body !== undefined
       ? (typeof requestPayload.body === 'string'
           ? requestPayload.body
           : JSON.stringify(requestPayload.body))
