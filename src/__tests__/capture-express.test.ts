@@ -66,6 +66,66 @@ describe('softprobeExpressMiddleware capture path (Task 14.1.1)', () => {
     );
     expect(originalSend).toHaveBeenCalledWith({ id: 1, name: 'alice' });
   });
+
+  it('captures mounted router request path using originalUrl, not req.path slash root', () => {
+    const cassetteDir = path.join(os.tmpdir(), `softprobe-capture-express-mounted-${Date.now()}`);
+    fs.mkdirSync(cassetteDir, { recursive: true });
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE', cassetteDirectory: cassetteDir });
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
+      spanContext: () => ({ traceId: 'trace-express-mounted-1', spanId: 'span-express-mounted-1' }),
+    } as ReturnType<typeof trace.getActiveSpan>);
+
+    const queueSpy = jest.spyOn(CaptureEngine, 'queueInboundResponse');
+    const originalSend = jest.fn();
+    const req = {
+      method: 'GET',
+      path: '/',
+      originalUrl: '/products',
+      headers: {},
+    };
+    const res = { statusCode: 200, send: originalSend };
+    const next = jest.fn();
+
+    softprobeExpressMiddleware(req as any, res as any, next as any);
+    res.send({ ok: true });
+
+    expect(queueSpy).toHaveBeenCalledWith(
+      'trace-express-mounted-1',
+      expect.objectContaining({
+        identifier: 'GET /products',
+      })
+    );
+  });
+
+  it('captures mounted router request path including query parameters from originalUrl', () => {
+    const cassetteDir = path.join(os.tmpdir(), `softprobe-capture-express-mounted-query-${Date.now()}`);
+    fs.mkdirSync(cassetteDir, { recursive: true });
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE', cassetteDirectory: cassetteDir });
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
+      spanContext: () => ({ traceId: 'trace-express-mounted-query-1', spanId: 'span-express-mounted-query-1' }),
+    } as ReturnType<typeof trace.getActiveSpan>);
+
+    const queueSpy = jest.spyOn(CaptureEngine, 'queueInboundResponse');
+    const originalSend = jest.fn();
+    const req = {
+      method: 'GET',
+      path: '/',
+      originalUrl: '/products?page=2',
+      headers: {},
+    };
+    const res = { statusCode: 200, send: originalSend };
+    const next = jest.fn();
+
+    softprobeExpressMiddleware(req as any, res as any, next as any);
+    res.send({ ok: true });
+
+    expect(queueSpy).toHaveBeenCalledWith(
+      'trace-express-mounted-query-1',
+      expect.objectContaining({
+        identifier: 'GET /products?page=2',
+      })
+    );
+  });
 });
 
 describe('softprobeExpressMiddleware replay trigger (Task 14.1.2)', () => {

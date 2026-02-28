@@ -74,6 +74,37 @@ describe('softprobeFastifyPlugin capture path (Task 14.2.1)', () => {
       })
     );
   });
+
+  it('onSend captures canonical path with query string in inbound identifier', async () => {
+    const saveRecord = jest.fn<ReturnType<Cassette['saveRecord']>, Parameters<Cassette['saveRecord']>>(async () => {});
+    const cassette: Cassette = {
+      loadTrace: async () => [],
+      saveRecord,
+    };
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE', storage: cassette });
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
+      spanContext: () => ({ traceId: 'trace-fastify-query-1', spanId: 'span-fastify-query-1' }),
+    } as ReturnType<typeof trace.getActiveSpan>);
+
+    const app = Fastify();
+    await app.register(fp(softprobeFastifyPlugin));
+    app.get('/products', async () => ({ ok: true }));
+
+    const queueSpy = jest.spyOn(CaptureEngine, 'queueInboundResponse');
+    const res = await app.inject({
+      method: 'GET',
+      url: '/products?source=ui',
+      headers: {},
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(queueSpy).toHaveBeenCalledWith(
+      'trace-fastify-query-1',
+      expect.objectContaining({
+        identifier: 'GET /products?source=ui',
+      })
+    );
+  });
 });
 
 describe('softprobeFastifyPlugin replay preHandler (Task 14.2.2)', () => {

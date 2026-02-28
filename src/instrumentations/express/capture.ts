@@ -15,9 +15,19 @@ import {
   type QueueInboundResponsePayload,
 } from '../common/http/inbound-capture';
 import { buildInboundHttpIdentifier } from '../common/http/span-adapter';
+import { resolveInboundPath } from '../common/http/inbound-path';
 
 export { CaptureEngine, queueInboundResponse };
 export type { QueueInboundResponsePayload };
+
+type ExpressInboundRequest = {
+  method: string;
+  path: string;
+  originalUrl?: string;
+  url?: string;
+  body?: unknown;
+  headers?: Record<string, string | string[] | undefined>;
+};
 
 /**
  * Environment-aware Express middleware. Replay uses cassetteDirectory + traceId (from context/headers);
@@ -28,7 +38,7 @@ export type { QueueInboundResponsePayload };
  * downstream code (route handlers, MSW fetch listener) sees the same SoftprobeContext state.
  */
 export function softprobeExpressMiddleware(
-  req: { method: string; path: string; body?: unknown; headers?: Record<string, string | string[] | undefined> },
+  req: ExpressInboundRequest,
   res: { statusCode: number; send: (body?: unknown) => unknown },
   next: (err?: unknown) => void
 ): void | Promise<void> {
@@ -83,7 +93,7 @@ export function softprobeExpressMiddleware(
           CaptureEngine.queueInboundResponse(ctxTraceId, {
             status: res.statusCode,
             body,
-            identifier: buildInboundHttpIdentifier(req.method, req.path),
+            identifier: buildInboundHttpIdentifier(req.method, resolveInboundPath(req)),
             requestBody: req.body,
             requestBodyBytes: parseContentLengthHeader(req.headers),
           });
