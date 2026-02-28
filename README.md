@@ -202,9 +202,11 @@ Reference:
 Release flow:
 
 1. Merge changes to `main`.
-2. After pushing the version bump commit, run:
-   - `npm run release:create`
-   This creates and pushes tag `v<package.json version>` (for example `v2.0.1`).
+2. Run one command to bump version, push commit, and push matching tag:
+   - Patch release: `npm run release:create`
+   - Explicit bump: `npm run release:create -- --bump minor`
+   - Explicit version: `npm run release:create -- --set-version 2.1.0`
+   This keeps `package.json` and tag `v*` consistent because the tag is derived from the new `package.json` version.
 3. GitHub Action builds and publishes automatically.
 
 Manual validation flow:
