@@ -202,6 +202,67 @@ describe('Task 6.2 Redis replay wrapper uses active context matcher only', () =>
   });
 });
 
+/**
+ * Redis connect/quit in REPLAY: callback style must be invoked (settleAsync).
+ */
+describe('Redis replay connect/quit callback style', () => {
+  beforeAll(() => {
+    const contextManager = new AsyncHooksContextManager();
+    contextManager.enable();
+    otelApi.context.setGlobalContextManager(contextManager);
+    setupRedisReplay();
+  });
+
+  afterEach(() => {
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH', strictReplay: false });
+  });
+
+  it('when REPLAY, client.connect(callback) invokes callback with (null, undefined)', async () => {
+    SoftprobeContext.initGlobal({ mode: 'REPLAY' });
+
+    const { createClient } = require('redis');
+    const client = createClient();
+
+    const result = await new Promise<undefined>((resolve, reject) => {
+      client.connect((err: Error | null, value?: undefined) => {
+        if (err) return reject(err);
+        resolve(value);
+      });
+    });
+    expect(result).toBeUndefined();
+  });
+
+  it('when REPLAY, client.quit(callback) invokes callback with (null, "OK")', async () => {
+    SoftprobeContext.initGlobal({ mode: 'REPLAY' });
+
+    const { createClient } = require('redis');
+    const client = createClient();
+
+    const result = await new Promise<string | undefined>((resolve, reject) => {
+      client.quit((err: Error | null, value?: string) => {
+        if (err) return reject(err);
+        resolve(value);
+      });
+    });
+    expect(result).toBe('OK');
+  });
+
+  it('when REPLAY, client.QUIT(callback) invokes callback with (null, "OK")', async () => {
+    SoftprobeContext.initGlobal({ mode: 'REPLAY' });
+
+    const { createClient } = require('redis');
+    const client = createClient();
+
+    const result = await new Promise<string | undefined>((resolve, reject) => {
+      (client.QUIT as (cb: (err: Error | null, value?: string) => void) => void)((err: Error | null, value?: string) => {
+        if (err) return reject(err);
+        resolve(value);
+      });
+    });
+    expect(result).toBe('OK');
+  });
+});
+
 describe('Task 6.4: Wrapper strict/dev behavior remains wrapper-owned (Redis)', () => {
   beforeAll(() => {
     const contextManager = new AsyncHooksContextManager();

@@ -13,6 +13,7 @@ import shimmer from 'shimmer';
 import { RedisSpan } from '../../core/bindings/redis-span';
 import type { MatcherAction } from '../../types/schema';
 import { SoftprobeContext } from '../../context';
+import { settleAsync } from '../common/utils/callback';
 
 /**
  * Builds the same identifier string as the Redis capture hook (capture/redis.ts):
@@ -174,13 +175,13 @@ function applyInstanceNoops(client: RedisClientLike): void {
   if (typeof client.connect === 'function') {
     const orig = client.connect;
     client.connect = function (this: unknown, ...args: unknown[]): unknown {
-      if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve();
+      if (SoftprobeContext.getMode() === 'REPLAY') return settleAsync(args);
       return orig.apply(this, args);
     };
   }
   const noopQuitFn = (orig: (...args: unknown[]) => unknown) =>
     function (this: unknown, ...args: unknown[]): unknown {
-      if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve('OK');
+      if (SoftprobeContext.getMode() === 'REPLAY') return settleAsync(args, 'OK');
       return orig.apply(this, args);
     };
   if (typeof client.quit === 'function') client.quit = noopQuitFn(client.quit);

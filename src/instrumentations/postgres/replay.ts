@@ -10,6 +10,7 @@ import type { SemanticMatcher } from '../../core/matcher/matcher';
 import type { SoftprobeMatcher } from '../../core/matcher/softprobe-matcher';
 import { SoftprobeContext } from '../../context';
 import { PostgresSpan } from '../../core/bindings/postgres-span';
+import { settleAsync } from '../common/utils/callback';
 
 const SOFTPROBE_WRAPPED_MARKER = '__softprobeWrapped';
 
@@ -29,7 +30,7 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
     // OTel's isWrapped() checks __wrapped; without it, OTel wraps our function instead of
     // replacing it. Call chain: OTel wrapper → our wrapper → original connect.
     const patchedConnect = function wrappedConnect(this: unknown, ...args: unknown[]): unknown {
-      if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve();
+      if (SoftprobeContext.getMode() === 'REPLAY') return settleAsync(args);
       return origConnect.apply(this, args);
     };
     (patchedConnect as unknown as { __softprobeConnect: boolean }).__softprobeConnect = true;
@@ -49,7 +50,7 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
       endKey,
       (originalEnd: (...args: unknown[]) => unknown) =>
         function wrappedEnd(this: unknown, ...args: unknown[]): unknown {
-          if (SoftprobeContext.getMode() === 'REPLAY') return Promise.resolve();
+          if (SoftprobeContext.getMode() === 'REPLAY') return settleAsync(args);
           return (originalEnd as (...a: unknown[]) => unknown).apply(this, args);
         }
     );

@@ -178,6 +178,45 @@ describe('Task 18.1.1 Postgres connect() context-lookup', () => {
 
     SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH' });
   });
+
+  it('when REPLAY, client.connect(callback) invokes callback with (null, undefined)', async () => {
+    SoftprobeContext.initGlobal({ mode: 'REPLAY' });
+
+    const { Client } = require('pg');
+    const client = new Client();
+
+    const result = await new Promise<undefined>((resolve, reject) => {
+      client.connect((err: Error | null, value?: undefined) => {
+        if (err) return reject(err);
+        resolve(value);
+      });
+    });
+    expect(result).toBeUndefined();
+
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH' });
+  });
+});
+
+/**
+ * Postgres end() in REPLAY: callback style must be invoked (settleAsync).
+ */
+describe('Postgres replay connect/end callback style', () => {
+  it('when REPLAY, client.end(callback) invokes callback with (null, undefined)', async () => {
+    SoftprobeContext.initGlobal({ mode: 'REPLAY' });
+
+    const { Client } = require('pg');
+    const client = new Client();
+
+    const result = await new Promise<undefined>((resolve, reject) => {
+      client.end((err: Error | null, value?: undefined) => {
+        if (err) return reject(err);
+        resolve(value);
+      });
+    });
+    expect(result).toBeUndefined();
+
+    SoftprobeContext.initGlobal({ mode: 'PASSTHROUGH' });
+  });
 });
 
 /**
