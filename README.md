@@ -46,9 +46,7 @@ node -r ./instrumentation.ts ./server.ts
 
 ```bash
 TRACE_ID=11111111111111111111111111111111
-curl -H "x-softprobe-mode: CAPTURE" \
-     -H "x-softprobe-trace-id: ${TRACE_ID}" \
-     http://localhost:3000/your-route
+softprobe capture "http://localhost:3000/your-route" --trace-id "${TRACE_ID}"
 ```
 
 4. Replay in tests with `run({ mode, storage, traceId }, fn)`:
@@ -85,7 +83,34 @@ softprobe diff ./cassettes/11111111111111111111111111111111.ndjson http://localh
 
 For a full walkthrough, see [examples/basic-app/README.md](examples/basic-app/README.md) and [examples/pricing-regression-demo/README.md](examples/pricing-regression-demo/README.md).
 
-## CLI — `softprobe diff`
+## CLI — `softprobe capture` and `softprobe diff`
+
+Use `softprobe capture` to record via HTTP headers, and `softprobe diff` to replay + compare.
+
+### Capture usage
+
+```bash
+softprobe capture <url> --trace-id <traceId> [--method <METHOD>] [--data <body>] [--header <k:v> ...] [--output <file>]
+```
+
+`softprobe capture` invokes `curl` and always sends:
+
+- `x-softprobe-mode: CAPTURE`
+- `x-softprobe-trace-id: <traceId>`
+
+Example:
+
+```bash
+softprobe capture "http://localhost:3000/orders/42" \
+  --trace-id 11111111111111111111111111111111 \
+  --method POST \
+  --header "content-type: application/json" \
+  --data '{"quantity":2}'
+```
+
+This confirms: yes, capture mode can be turned on by HTTP headers, and this command standardizes it.
+
+### Diff usage
 
 Replay the recorded inbound request against a running service and compare. The CLI sends the request with **coordination headers** so the service can run in replay mode for that request.
 
@@ -185,6 +210,32 @@ Manual validation flow:
 1. Run the `Release` workflow with `dry_run=true` to verify publish steps without publishing.
 
 No `NPM_TOKEN` repository secret is required for this workflow.
+
+## Cursor Skills
+
+This repo ships a ready-to-use Cursor Skill at:
+
+- `cursor-skills/softprobe/SKILL.md`
+- `cursor-skills/softprobe/templates/capture.sh`
+- `cursor-skills/softprobe/templates/diff.sh`
+- `cursor-skills/softprobe/templates/demo-pricing.sh`
+
+### Install into Cursor
+
+1. Open Cursor Settings.
+2. Open Skills management.
+3. Add/import the skill from this repo path: `cursor-skills/softprobe`.
+4. Ensure global CLI is installed: `npm install -g @softprobe/softprobe-js`.
+5. Reload Cursor window.
+
+### Use in Cursor
+
+1. Ask Cursor to run the Softprobe skill workflow.
+2. Provide `TARGET_URL`, `ROUTE`, `TRACE_ID`, and cassette directory.
+3. Use the templates directly or let Cursor fill them in:
+   - capture: `templates/capture.sh`
+   - replay compare: `templates/diff.sh`
+   - demo flow: `templates/demo-pricing.sh`
 
 ## Package Layout
 
