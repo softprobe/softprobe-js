@@ -216,15 +216,23 @@ No `NPM_TOKEN` repository secret is required for this workflow.
 This repo ships a ready-to-use Cursor Skill at:
 
 - `cursor-skills/softprobe/SKILL.md`
+- `cursor-skills/softprobe/docs/softprobe-spec.md`
+- `cursor-skills/softprobe/docs/architecture-contract.md`
+- `cursor-skills/softprobe/docs/workflow-contract.md`
+- `cursor-skills/softprobe/docs/compatibility-matrix.md`
+- `cursor-skills/softprobe/docs/do-not-infer.md`
 - `cursor-skills/softprobe/templates/capture.sh`
 - `cursor-skills/softprobe/templates/diff.sh`
 - `cursor-skills/softprobe/templates/demo-pricing.sh`
+
+For external repositories, install/copy the entire `cursor-skills/softprobe` folder so the skill includes both instructions and product knowledge.
 
 ### Install into Cursor
 
 1. Open Cursor Settings.
 2. Open Skills management.
 3. Add/import the skill from this repo path: `cursor-skills/softprobe`.
+   - If importing to another repo, copy the full folder (including `docs/` and `templates/`).
 4. Ensure global CLI is installed: `npm install -g @softprobe/softprobe-js`.
 5. Reload Cursor window.
 

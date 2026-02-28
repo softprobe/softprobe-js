@@ -34,3 +34,9 @@ Implementation rule per task:
 - [x] **Task 3.1 Document Cursor integration and skill installation** — `docs(cursor): add skill install steps and capture/diff template usage`
   - **Goal**: explain exactly how to install this repo’s Softprobe Skill into Cursor and run it with the global CLI.
   - **Verification**: README includes a “Cursor Skills” section with setup steps and template usage instructions.
+
+## 4) Portable Skill Knowledge Bundle
+
+- [x] **Task 4.1 Package portable Softprobe knowledge docs for external repos** — `docs(skill): bundle portable product spec and constraints for cross-repo Cursor skill installs`
+  - **Goal**: ensure users installing the skill outside this repository get explicit Softprobe architecture and operation knowledge.
+  - **Verification**: `cursor-skills/softprobe/docs` contains product spec, architecture contract, workflow contract, compatibility matrix, and do-not-infer guidance; `SKILL.md` requires reading these docs.
