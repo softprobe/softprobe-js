@@ -4,64 +4,59 @@
  * Task 4.2; identifier = query text per design §3.1, §6.
  */
 
-import shimmer from 'shimmer';
 import { trace } from '@opentelemetry/api';
 import type { SemanticMatcher } from '../../core/matcher/matcher';
 import type { SoftprobeMatcher } from '../../core/matcher/softprobe-matcher';
 import { SoftprobeContext } from '../../context';
 import { PostgresSpan } from '../../core/bindings/postgres-span';
 import { settleAsync } from '../common/utils/callback';
+import { isMethodWrappedWithMarker, wrapMethodNoConflict } from '../../core/runtime/wrap';
 
-const SOFTPROBE_WRAPPED_MARKER = '__softprobeWrapped';
+const QUERY_WRAPPED_MARKER = 'postgres.replay.query';
+const CONNECT_WRAPPED_MARKER = 'postgres.replay.connect';
+const END_WRAPPED_MARKER = 'postgres.replay.end';
 
 /**
  * Patches a pg module so connect is no-op and query uses matcher. Idempotent.
  * Exported so init can call it from a require hook and patch whichever module first requires 'pg' (Task 16.3.1).
  */
 export function applyPostgresReplay(pg: { Client: { prototype: Record<string, unknown> } }): void {
-  const existingQuery = pg.Client.prototype.query as { [SOFTPROBE_WRAPPED_MARKER]?: boolean };
-  if (existingQuery[SOFTPROBE_WRAPPED_MARKER]) return;
+  if (isMethodWrappedWithMarker(pg.Client.prototype, 'query', QUERY_WRAPPED_MARKER)) return;
 
   const connectKey = 'connect' as const;
-  const existingConnect = pg.Client.prototype[connectKey] as { __softprobeConnect?: boolean };
-  if (typeof pg.Client.prototype[connectKey] === 'function' && !existingConnect?.__softprobeConnect) {
-    const origConnect = pg.Client.prototype[connectKey] as (...args: unknown[]) => unknown;
-    // Use Object.defineProperty (NOT shimmer.wrap) so OTel does NOT detect __wrapped and strip us.
-    // OTel's isWrapped() checks __wrapped; without it, OTel wraps our function instead of
-    // replacing it. Call chain: OTel wrapper → our wrapper → original connect.
-    const patchedConnect = function wrappedConnect(this: unknown, ...args: unknown[]): unknown {
-      if (SoftprobeContext.getMode() === 'REPLAY') return settleAsync(args);
-      return origConnect.apply(this, args);
-    };
-    (patchedConnect as unknown as { __softprobeConnect: boolean }).__softprobeConnect = true;
-    Object.defineProperty(pg.Client.prototype, connectKey, {
-      configurable: true,
-      writable: true,
-      value: patchedConnect,
-    });
-  }
-  // end() must not touch the network when we never connected (Task 16.3.1). OTel does not wrap
-  // end(), so shimmer is safe here.
-  const endKey = 'end' as const;
-  const existingEnd = pg.Client.prototype[endKey] as { __softprobeEndNoop?: boolean };
-  if (typeof pg.Client.prototype[endKey] === 'function' && !existingEnd?.__softprobeEndNoop) {
-    shimmer.wrap(
-      pg.Client.prototype,
-      endKey,
-      (originalEnd: (...args: unknown[]) => unknown) =>
-        function wrappedEnd(this: unknown, ...args: unknown[]): unknown {
-          if (SoftprobeContext.getMode() === 'REPLAY') return settleAsync(args);
-          return (originalEnd as (...a: unknown[]) => unknown).apply(this, args);
-        }
-    );
-    (pg.Client.prototype[endKey] as { __softprobeEndNoop?: boolean }).__softprobeEndNoop = true;
-  }
+  wrapMethodNoConflict(
+    pg.Client.prototype,
+    connectKey,
+    CONNECT_WRAPPED_MARKER,
+    (origConnect: (...args: unknown[]) => unknown) =>
+      function wrappedConnect(this: unknown, ...args: unknown[]): unknown {
+        if (SoftprobeContext.getMode() === 'REPLAY') return settleAsync(args);
+        return origConnect.apply(this, args);
+      }
+  );
 
-  // Use Object.defineProperty (NOT shimmer.wrap) so OTel does NOT detect __wrapped and strip us.
-  // OTel wraps our patchedQuery with its span-creating wrapper; our wrapper stays in the chain.
-  // Call chain: OTel query wrapper → our patchedQuery → original query.
-  const origQuery = pg.Client.prototype.query as (...args: unknown[]) => unknown;
-  const patchedQuery = function wrappedQuery(this: unknown, ...args: unknown[]): unknown {
+  // end() must not touch the network when we never connected (Task 16.3.1). OTel does not wrap
+  // end(), but we still use no-conflict wrapper metadata for consistency.
+  const endKey = 'end' as const;
+  wrapMethodNoConflict(
+    pg.Client.prototype,
+    endKey,
+    END_WRAPPED_MARKER,
+    (originalEnd: (...args: unknown[]) => unknown) =>
+      function wrappedEnd(this: unknown, ...args: unknown[]): unknown {
+        if (SoftprobeContext.getMode() === 'REPLAY') return settleAsync(args);
+        return originalEnd.apply(this, args);
+      }
+  );
+
+  // Use no-conflict metadata so OTel's __wrapped checks never treat Softprobe as wrapped.
+  // OTel wraps our query wrapper with its span-creating wrapper; our wrapper stays in the chain.
+  wrapMethodNoConflict(
+    pg.Client.prototype,
+    'query',
+    QUERY_WRAPPED_MARKER,
+    (origQuery: (...args: unknown[]) => unknown) =>
+      function wrappedQuery(this: unknown, ...args: unknown[]): unknown {
         const matcher = SoftprobeContext.active().matcher;
         const mode = SoftprobeContext.getMode();
         const strictReplay = SoftprobeContext.getStrictReplay();
@@ -146,13 +141,8 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
           return undefined;
         }
         return Promise.resolve(mockedResult);
-  };
-  (patchedQuery as unknown as Record<string, unknown>)[SOFTPROBE_WRAPPED_MARKER] = true;
-  Object.defineProperty(pg.Client.prototype, 'query', {
-    configurable: true,
-    writable: true,
-    value: patchedQuery,
-  });
+      }
+  );
 }
 
 /**
@@ -161,10 +151,6 @@ export function applyPostgresReplay(pg: { Client: { prototype: Record<string, un
  */
 export function setupPostgresReplay(): void {
   const pg = require('pg');
-  const existingQuery = pg.Client.prototype.query as {
-    __wrapped?: boolean;
-    [SOFTPROBE_WRAPPED_MARKER]?: boolean;
-  };
-  if (existingQuery[SOFTPROBE_WRAPPED_MARKER]) return;
+  if (isMethodWrappedWithMarker(pg.Client.prototype, 'query', QUERY_WRAPPED_MARKER)) return;
   applyPostgresReplay(pg);
 }

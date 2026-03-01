@@ -9,11 +9,11 @@
  */
 
 import { trace } from '@opentelemetry/api';
-import shimmer from 'shimmer';
 import { RedisSpan } from '../../core/bindings/redis-span';
 import type { MatcherAction } from '../../types/schema';
 import { SoftprobeContext } from '../../context';
 import { settleAsync } from '../common/utils/callback';
+import { isMethodWrappedWithMarker, wrapMethodNoConflict } from '../../core/runtime/wrap';
 
 /**
  * Builds the same identifier string as the Redis capture hook (capture/redis.ts):
@@ -36,11 +36,12 @@ export function setupRedisReplay(): void {
   const { transformCommandArguments, transformCommandReply } = commanderModule;
   if (!transformCommandArguments || !transformCommandReply) return;
 
-  shimmer.wrap(
-    commanderModule,
+  wrapMethodNoConflict(
+    commanderModule as Record<string, unknown>,
     'attachCommands',
+    'redis.replay.attachCommands',
     (originalAttachCommands: (...args: unknown[]) => unknown) =>
-      (config: unknown) => {
+      function patchedAttachCommands(config: unknown): unknown {
         const cfg = config as { BaseClass: unknown; commands: unknown; executor: (this: unknown, command: unknown, args: unknown[], name: string) => unknown };
         const originalExecutor = cfg.executor;
         const wrappedConfig = {
@@ -147,7 +148,7 @@ export function setupRedisReplay(): void {
             return Promise.resolve(transformCommandReply(command, payload, preserved));
           },
         };
-        return (originalAttachCommands as (c: unknown) => void)(wrappedConfig);
+        return originalAttachCommands(wrappedConfig);
       }
   );
 
@@ -188,7 +189,7 @@ function applyInstanceNoops(client: RedisClientLike): void {
   if (typeof client.QUIT === 'function') client.QUIT = noopQuitFn(client.QUIT);
 }
 
-const SOFTPROBE_CREATE_CLIENT_WRAPPED = '__softprobeCreateClientWrapped';
+const SOFTPROBE_CREATE_CLIENT_WRAPPED = 'redis.replay.createClient';
 
 /**
  * Wraps createClient so every new client gets connect/quit no-ops as instance own-properties.
@@ -200,11 +201,12 @@ const SOFTPROBE_CREATE_CLIENT_WRAPPED = '__softprobeCreateClientWrapped';
 export function applyRedisReplay(redis: Record<string, unknown>): void {
   const target = redis.createClient != null ? redis : (redis.default as Record<string, unknown> | undefined);
   if (!target) return;
-  if ((target.createClient as { [SOFTPROBE_CREATE_CLIENT_WRAPPED]?: boolean })?.[SOFTPROBE_CREATE_CLIENT_WRAPPED]) return;
+  if (isMethodWrappedWithMarker(target, 'createClient', SOFTPROBE_CREATE_CLIENT_WRAPPED)) return;
 
-  shimmer.wrap(
+  wrapMethodNoConflict(
     target,
     'createClient',
+    SOFTPROBE_CREATE_CLIENT_WRAPPED,
     (original: (...args: unknown[]) => unknown) =>
       function (this: unknown, ...args: unknown[]): unknown {
         const client = (original as (...a: unknown[]) => RedisClientLike).apply(this, args);
@@ -212,5 +214,4 @@ export function applyRedisReplay(redis: Record<string, unknown>): void {
         return client;
       }
   );
-  (target.createClient as { [SOFTPROBE_CREATE_CLIENT_WRAPPED]?: boolean })[SOFTPROBE_CREATE_CLIENT_WRAPPED] = true;
 }

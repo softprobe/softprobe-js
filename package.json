@@ -66,7 +66,6 @@
     "express": "^5.2.1",
     "fastify": "^5.1.0",
     "fastify-plugin": "^5.0.1",
-    "shimmer": "^1.2.0",
     "undici": "^6.0.0",
     "yaml": "^2.6.0"
   },

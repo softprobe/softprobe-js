@@ -6,9 +6,9 @@
  */
 
 import type { Module } from 'module';
-import shimmer from 'shimmer';
 import { softprobeExpressMiddleware } from '../../instrumentations/express/capture';
 import { softprobeFastifyPlugin } from '../../instrumentations/fastify/capture';
+import { wrapMethodNoConflict } from '../../core/runtime/wrap';
 
 const nodeRequire = (typeof require !== 'undefined' ? require : undefined) as NodeRequire | undefined;
 
@@ -48,12 +48,16 @@ export function patchExpress(express: (req?: unknown) => unknown): void {
   const patchOnce = (method: string): void => {
     const fn = proto[method];
     if (typeof fn !== 'function') return;
-    shimmer.wrap(proto, method, (original: (...args: unknown[]) => unknown) => {
-      return function expressPatched(this: ExpressPatchedApp, ...args: unknown[]) {
-        ensureInjected.call(this);
-        return original.apply(this, args);
-      };
-    });
+    wrapMethodNoConflict(
+      proto as unknown as Record<string, unknown>,
+      method,
+      `express.inject.${method}`,
+      (original: (...args: unknown[]) => unknown) =>
+        function expressPatched(this: ExpressPatchedApp, ...args: unknown[]) {
+          ensureInjected.call(this);
+          return original.apply(this, args);
+        }
+    );
   };
 
   const methods = ['route', 'use', 'all', 'get', 'post', 'put', 'delete', 'patch', 'options', 'head'];

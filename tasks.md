@@ -42,3 +42,10 @@ Implementation rule per task:
 - [x] Add regression test proving inbound capture still writes when `res.send()` executes after an async boundary. - `test(express): add async-boundary inbound capture regression with cassetteDirectory-only config`
 - [x] Fix inbound response capture to use request-scoped snapshot data instead of `context.active()` lookup at send-time. - `fix(http): pass request-scoped capture snapshot into inbound response writer`
 - [x] Verify focused Express mutator/capture test suites pass. - `test(express): pass framework-mutator and capture-express focused suites`
+
+## Wrapper Metadata Conflict Hardening (`wrapper-runtime-001`)
+
+- [x] Add regression tests proving Softprobe wrappers avoid `__wrapped` and expose Softprobe-owned wrapper metadata (marker + original name). - `test(runtime): add no-conflict wrapper metadata regression coverage`
+- [x] Add shared no-conflict wrapper utility in foundation runtime and document marker semantics. - `feat(runtime): add wrapMethodNoConflict with softprobe marker and original-name metadata`
+- [x] Migrate all current `shimmer.wrap` usage and ad-hoc wrapper markers to the shared wrapper utility. - `refactor(wrapping): replace mutator/framework/postgres/redis wrapping with runtime no-conflict utility`
+- [x] Verify focused wrapper/mutator/replay test suites pass after migration. - `test(wrapping): pass wrap-runtime mutator framework-mutator replay-postgres replay-redis import-order-guard suites`

@@ -5,8 +5,8 @@
  * Design §5.2, §5.3.
  */
 
-import shimmer from 'shimmer';
 import { injectResponseHook, injectHook } from './inject';
+import { wrapMethodNoConflict } from '../../core/runtime/wrap';
 import {
   PG_INSTRUMENTATION_NAME,
   buildPostgresRequestHook,
@@ -33,9 +33,10 @@ export function applyAutoInstrumentationMutator(
   const moduleExport =
     target ?? require('@opentelemetry/auto-instrumentations-node');
 
-  shimmer.wrap(
-    moduleExport,
+  wrapMethodNoConflict(
+    moduleExport as unknown as Record<string, unknown>,
     'getNodeAutoInstrumentations',
+    'otel.auto-instrumentations.getNodeAutoInstrumentations',
     ((original: (options?: unknown) => unknown[]) => {
       return function wrappedGetNodeAutoInstrumentations(
         this: AutoInstrumentationsModule,

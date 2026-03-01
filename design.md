@@ -102,6 +102,17 @@ Express is the first framework target for multi-version support hardening:
 - injection must occur for both Express 4 and Express 5 route registration flows
 - inbound capture must use request-scoped snapshot data at response write time so capture does not depend on late `context.active()` continuity across async boundaries
 
+### 4.3 Wrapper Metadata Rules
+
+Softprobe wrappers must not expose shimmer/OTel-style `__wrapped` metadata.
+
+- Wrapper metadata keys are Softprobe-owned:
+  - `__softprobeWrapped`: wrapper marker id (idempotency key)
+  - `__softprobeOriginalName`: original function name for diagnostics
+- Wrapping is applied through a shared runtime utility so all instrumentations follow one behavior.
+- Wrapper replacement preserves call semantics and attempts to preserve the original function name.
+- Goal: prevent wrapper conflicts where external instrumentation checks `__wrapped` and strips or rewires Softprobe wrappers.
+
 ---
 
 ## 5) Design Doc Convention
