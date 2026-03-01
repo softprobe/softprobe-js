@@ -1,6 +1,6 @@
 {
   "name": "@softprobe/softprobe-js",
-  "version": "2.0.7",
+  "version": "2.0.8",
   "description": "Topology-aware record & replay testing framework via OpenTelemetry",
   "keywords": [
     "softprobe",
