@@ -19,6 +19,7 @@ Do not guess behavior outside these docs. If required details are missing in the
 
 - Global CLI installed: `npm install -g @softprobe/softprobe-js`
 - Target bootstrap loads `@softprobe/softprobe-js/init`, initializes OTel NodeSDK, and calls `sdk.start()`
+- Create default Softprobe configure file `.softprobe/config.yml` with PASSTHROUGH MODE
 - Cassette directory configured in `.softprobe/config.yml`
 
 ## Critical Integration Rules

@@ -34,3 +34,11 @@ Implementation rule per task:
 - [x] Add exhaustive resolver tests for mounted routers, query strings, absolute URLs, fallback precedence, and empty inputs. - `test(http): add resolveInboundPath matrix coverage for edge-case URL shapes`
 - [x] Update shared resolver and framework expectations to preserve query parameters while keeping canonical replay-safe paths. - `fix(http): normalize inbound URLs with query preservation and fragment stripping`
 - [x] Verify resolver + Express + Fastify capture suites pass with the expanded matrix. - `test(http): pass inbound-path, capture-express, and capture-fastify suites`
+
+## Express 4 Injection + Async Response Capture (`express-compat-001`)
+
+- [x] Add regression test proving Express 4 style `app.get()` route registration (`_router.route`) still injects Softprobe middleware. - `test(express): add express4 app.get->_router.route mutator regression`
+- [x] Fix Express mutator injection so middleware is guaranteed for Express 4 and Express 5 route registration flows. - `fix(express): inject middleware from verb and route registration hooks with idempotent guard`
+- [x] Add regression test proving inbound capture still writes when `res.send()` executes after an async boundary. - `test(express): add async-boundary inbound capture regression with cassetteDirectory-only config`
+- [x] Fix inbound response capture to use request-scoped snapshot data instead of `context.active()` lookup at send-time. - `fix(http): pass request-scoped capture snapshot into inbound response writer`
+- [x] Verify focused Express mutator/capture test suites pass. - `test(express): pass framework-mutator and capture-express focused suites`

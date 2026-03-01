@@ -20,21 +20,46 @@ const nodeRequire = (typeof require !== 'undefined' ? require : undefined) as No
  */
 export function patchExpress(express: (req?: unknown) => unknown): void {
   if (typeof express !== 'function') return;
-  const exp = express as { application?: { route?: (...args: unknown[]) => unknown; _softprobeRoutePatched?: boolean } };
+  const exp = express as {
+    application?: {
+      route?: (...args: unknown[]) => unknown;
+      use?: (...args: unknown[]) => unknown;
+      _softprobeRoutePatched?: boolean;
+      [key: string]: unknown;
+    };
+  };
   const proto = exp.application ?? Object.getPrototypeOf(express());
-  if (!proto || typeof proto.route !== 'function') return;
+  if (!proto || typeof proto.route !== 'function' || typeof proto.use !== 'function') return;
   if (proto._softprobeRoutePatched) return;
   proto._softprobeRoutePatched = true;
 
-  shimmer.wrap(proto, 'route', (original: (...args: unknown[]) => unknown) => {
-    return function route(this: { use: (fn: unknown) => unknown; _softprobeMiddlewareAdded?: boolean }, ...args: unknown[]) {
-      if (!this._softprobeMiddlewareAdded) {
-        this._softprobeMiddlewareAdded = true;
-        this.use(softprobeExpressMiddleware);
-      }
-      return original.apply(this, args);
-    };
-  });
+  type ExpressPatchedApp = {
+    _softprobeMiddlewareAdded?: boolean;
+    use?: (...args: unknown[]) => unknown;
+    [key: string]: unknown;
+  };
+  const originalUse = proto.use as (...args: unknown[]) => unknown;
+  const ensureInjected = function (this: ExpressPatchedApp): void {
+    if (this._softprobeMiddlewareAdded) return;
+    this._softprobeMiddlewareAdded = true;
+    originalUse.call(this, softprobeExpressMiddleware);
+  };
+
+  const patchOnce = (method: string): void => {
+    const fn = proto[method];
+    if (typeof fn !== 'function') return;
+    shimmer.wrap(proto, method, (original: (...args: unknown[]) => unknown) => {
+      return function expressPatched(this: ExpressPatchedApp, ...args: unknown[]) {
+        ensureInjected.call(this);
+        return original.apply(this, args);
+      };
+    });
+  };
+
+  const methods = ['route', 'use', 'all', 'get', 'post', 'put', 'delete', 'patch', 'options', 'head'];
+  for (const method of methods) {
+    patchOnce(method);
+  }
 }
 
 /**

@@ -96,6 +96,10 @@ export function softprobeExpressMiddleware(
             identifier: buildInboundHttpIdentifier(req.method, resolveInboundPath(req)),
             requestBody: req.body,
             requestBodyBytes: parseContentLengthHeader(req.headers),
+          }, {
+            mode,
+            traceId: ctxTraceId,
+            cassette: storage,
           });
           return originalSend.apply(res, arguments as any);
         };

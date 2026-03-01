@@ -24,4 +24,47 @@ describe('applyFrameworkMutators (Task 14.2.3)', () => {
     );
     expect(hasSoftprobeMiddleware).toBe(true);
   });
+
+  it('injects middleware when Express 4 style app.get delegates to _router.route', () => {
+    type TestApp = {
+      _router: { route: (path: string) => unknown };
+      use: jest.Mock;
+      get: (path: string, handler: (req: unknown, res: unknown) => unknown) => unknown;
+      _softprobeMiddlewareAdded?: boolean;
+    };
+    type TestProto = {
+      route: (path: string) => unknown;
+      use: (fn: unknown) => unknown;
+      get: (path: string, handler: (req: unknown, res: unknown) => unknown) => unknown;
+      _softprobeRoutePatched?: boolean;
+    };
+
+    const proto: TestProto = {
+      route(this: TestApp, path: string) {
+        return this._router.route(path);
+      },
+      use(this: TestApp, fn: unknown) {
+        return this.use(fn);
+      },
+      get(this: TestApp, path: string, _handler: (req: unknown, res: unknown) => unknown) {
+        return this._router.route(path);
+      },
+    };
+    const mockExpress = Object.assign(
+      () => {
+        const app = Object.create(proto) as TestApp;
+        app.use = jest.fn();
+        app._router = { route: jest.fn() };
+        return app;
+      },
+      { application: proto }
+    ) as unknown as (req?: unknown) => unknown;
+
+    patchExpress(mockExpress);
+
+    const app = mockExpress() as TestApp;
+    app.get('/v4', () => undefined);
+
+    expect(app.use).toHaveBeenCalledWith(softprobeExpressMiddleware);
+  });
 });

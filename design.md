@@ -42,6 +42,23 @@ Detailed specs are in:
 - [design-cassette.md](./design-cassette.md)
 - [design-matcher.md](./design-matcher.md)
 
+### 2.1 Instrumentation Package Strategy (OTel-style)
+
+To scale to OTel-level ecosystem coverage, Softprobe uses package-specific instrumentations.
+
+- `src/core/*`: framework-agnostic runtime contracts and shared execution context.
+- `src/instrumentations/common/*`: protocol/domain helpers shared by multiple packages.
+- `src/instrumentations/<package>/*`: package-specific patch/hook/wrapper logic.
+
+Dependency direction is strict:
+- allowed: `core -> (none)`, `instrumentations/<package> -> core + instrumentations/common`
+- disallowed: `core -> instrumentations/<package>`, `instrumentations/<a> -> instrumentations/<b>`
+
+Version support policy:
+- each instrumentation declares and tests an explicit compatibility range
+- behavior differences across major versions are handled in package-local branches/adapters
+- no cross-package coupling for version-specific behavior
+
 ---
 
 ## 3) Runtime Flow
@@ -78,6 +95,12 @@ Detailed specs are in:
 Init loads config from `SOFTPROBE_CONFIG_PATH` or default `./.softprobe/config.yml`, seeds global defaults (`mode`, `cassetteDirectory`, strict flags), then patches pg, redis, undici, and the HTTP interceptor before OTel runs.
 
 The app loads `softprobe/init` once (e.g. first in instrumentation or `node -r softprobe/init`). When OTel later runs `sdk.start()`, it gets cached modules and wraps on top of our layer. No post-`sdk.start()` calls are required.
+
+### 4.2 Express-first rollout
+
+Express is the first framework target for multi-version support hardening:
+- injection must occur for both Express 4 and Express 5 route registration flows
+- inbound capture must use request-scoped snapshot data at response write time so capture does not depend on late `context.active()` continuity across async boundaries
 
 ---
 

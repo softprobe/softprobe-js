@@ -62,6 +62,10 @@ describe('softprobeExpressMiddleware capture path (Task 14.1.1)', () => {
         status: 200,
         body: { id: 1, name: 'alice' },
         identifier: 'GET /users/1',
+      }),
+      expect.objectContaining({
+        mode: 'CAPTURE',
+        traceId: 'trace-express-1',
       })
     );
     expect(originalSend).toHaveBeenCalledWith({ id: 1, name: 'alice' });
@@ -93,6 +97,10 @@ describe('softprobeExpressMiddleware capture path (Task 14.1.1)', () => {
       'trace-express-mounted-1',
       expect.objectContaining({
         identifier: 'GET /products',
+      }),
+      expect.objectContaining({
+        mode: 'CAPTURE',
+        traceId: 'trace-express-mounted-1',
       })
     );
   });
@@ -123,8 +131,45 @@ describe('softprobeExpressMiddleware capture path (Task 14.1.1)', () => {
       'trace-express-mounted-query-1',
       expect.objectContaining({
         identifier: 'GET /products?page=2',
+      }),
+      expect.objectContaining({
+        mode: 'CAPTURE',
+        traceId: 'trace-express-mounted-query-1',
       })
     );
+  });
+
+  it('captures inbound response when res.send runs after an async boundary with cassetteDirectory-only config', async () => {
+    const cassetteDir = path.join(os.tmpdir(), `softprobe-capture-express-async-${Date.now()}`);
+    fs.mkdirSync(cassetteDir, { recursive: true });
+    SoftprobeContext.initGlobal({ mode: 'CAPTURE', cassetteDirectory: cassetteDir });
+    const traceId = 'trace-express-async-boundary-1';
+    jest.spyOn(trace, 'getActiveSpan').mockReturnValue({
+      spanContext: () => ({ traceId, spanId: 'span-express-async-boundary-1' }),
+    } as ReturnType<typeof trace.getActiveSpan>);
+
+    const req = {
+      method: 'GET',
+      path: '/async-users/1',
+      headers: {},
+    };
+    const res = { statusCode: 200, send: jest.fn() };
+    const next = jest.fn();
+
+    softprobeExpressMiddleware(req as any, res as any, next as any);
+    await Promise.resolve();
+    res.send({ id: 1, name: 'alice' });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    const cassetteFile = path.join(cassetteDir, `${traceId}.ndjson`);
+    expect(fs.existsSync(cassetteFile)).toBe(true);
+    const lines = fs.readFileSync(cassetteFile, 'utf8')
+      .split('\n')
+      .filter(Boolean);
+    expect(lines.length).toBeGreaterThan(0);
+    const record = JSON.parse(lines[0]);
+    expect(record.type).toBe('inbound');
+    expect(record.identifier).toBe('GET /async-users/1');
   });
 });
 
