@@ -1,0 +1,131 @@
+name: Publish npm packages
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  id-token: write
+  contents: write
+
+concurrency:
+  group: npm-publish-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Validate and extract version
+        id: version
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release tag must match vX.Y.Z (got '$TAG')"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Publishing version $VERSION from tag $TAG"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - name: Ensure npm supports Trusted Publishing
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Set package versions
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          for dir in \
+            packages/tracing \
+            packages/langchain \
+            packages/vercel-ai-sdk \
+            packages/opencode-plugin
+          do
+            npm pkg set "version=$VERSION" --prefix "$dir"
+            echo "Set $dir -> $VERSION"
+          done
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Publish to npm (OIDC Trusted Publishing)
+        run: |
+          # Do not set NODE_AUTH_TOKEN — OIDC Trusted Publishing must be used.
+          # Remove any empty authToken line setup-node may have written.
+          if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
+            sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG" || true
+          fi
+
+          for pkg in \
+            @softprobe/tracing \
+            @softprobe/langchain \
+            @softprobe/vercel-ai-sdk \
+            @softprobe/opencode-plugin
+          do
+            echo "Publishing ${pkg}..."
+            pnpm --filter "${pkg}" publish --access public --no-git-checks
+          done
+
+      - name: Sync package versions to main
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -- \
+            packages/tracing/package.json \
+            packages/langchain/package.json \
+            packages/vercel-ai-sdk/package.json \
+            packages/opencode-plugin/package.json
+
+          git fetch origin main
+          git checkout -B main origin/main
+
+          for dir in \
+            packages/tracing \
+            packages/langchain \
+            packages/vercel-ai-sdk \
+            packages/opencode-plugin
+          do
+            npm pkg set "version=$VERSION" --prefix "$dir"
+          done
+
+          if git diff --quiet -- \
+            packages/tracing/package.json \
+            packages/langchain/package.json \
+            packages/vercel-ai-sdk/package.json \
+            packages/opencode-plugin/package.json
+          then
+            echo "main already at version $VERSION"
+            exit 0
+          fi
+
+          git add \
+            packages/tracing/package.json \
+            packages/langchain/package.json \
+            packages/vercel-ai-sdk/package.json \
+            packages/opencode-plugin/package.json
+          git commit -m "chore: sync package versions to ${VERSION}"
+          git push origin main
