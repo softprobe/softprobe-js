@@ -13,7 +13,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
-const fixtures = join(root, "contracts/fixtures");
+/** Prefer authoritative fixtures from sp-llm when SOFTPROBE_CONTRACTS_ROOT is set. */
+const contractsRoot = process.env.SOFTPROBE_CONTRACTS_ROOT
+  ? process.env.SOFTPROBE_CONTRACTS_ROOT
+  : join(root, "contracts");
+const fixtures = join(contractsRoot, "fixtures");
 
 class MemoryScoreTransport implements ScoreTransport {
   requests: ScoreRequest[] = [];
