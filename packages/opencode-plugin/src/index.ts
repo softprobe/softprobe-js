@@ -7,11 +7,24 @@ import {
   createSoftprobeSessionTracer,
   SoftprobeSessionTracer,
 } from "./softprobe.js";
-import type { MessagePart, SessionNextEvent, SessionLookup } from "./types.js";
+import { BoundedMap } from "./bounded.js";
+import type {
+  MessagePart,
+  SessionLifecycleEvent,
+  SessionLookup,
+  SessionNextEvent,
+} from "./types.js";
 
 type OpencodeEvent =
   | Parameters<NonNullable<Hooks["event"]>>[0]["event"]
-  | SessionNextEvent;
+  | SessionNextEvent
+  | SessionLifecycleEvent;
+
+/** Properties of a lifecycle event, by event type. */
+type LifecycleProps<T extends SessionLifecycleEvent["type"]> = Extract<
+  SessionLifecycleEvent,
+  { type: T }
+>["properties"];
 
 function log(level: "info" | "warn" | "error", message: string): void {
   const line = `[softprobe-opencode] ${message}`;
@@ -116,11 +129,12 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
   const shutdownOnce = createShutdownOnce(tracer);
 
   // session.status {type:"idle"} and the deprecated session.idle fire
-  // back-to-back for the same transition — coalesce per session. The mark
-  // is reset on any new activity (busy status or a new user message) so a
-  // genuinely new idle is never swallowed.
+  // back-to-back for the same transition — coalesce per session. The mark is
+  // reset on any new activity (busy status, a new user message, a new
+  // generation step) so a genuinely new idle is never swallowed.
   const IDLE_COALESCE_MS = 2000;
-  const idleHandledAt = new Map<string, number>();
+  const IDLE_MARK_CAP = 500;
+  const idleHandledAt = new BoundedMap<number>(IDLE_MARK_CAP);
 
   const handleSessionIdle = async (sessionID?: string): Promise<void> => {
     if (sessionID) {
@@ -139,20 +153,17 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
 
   const handleEvent = async (event: OpencodeEvent): Promise<void> => {
     if (event.type === "session.idle") {
-      const props = ("properties" in event ? event.properties : {}) as {
-        sessionID?: string;
-      };
-      await handleSessionIdle(props.sessionID);
+      const props = ("properties" in event
+        ? event.properties
+        : undefined) as LifecycleProps<"session.idle">;
+      await handleSessionIdle(props?.sessionID);
     }
 
     if (event.type === "session.status" && "properties" in event) {
-      const props = event.properties as {
-        sessionID?: string;
-        status?: { type?: string };
-      };
-      if (props.status?.type === "idle") {
+      const props = event.properties as LifecycleProps<"session.status">;
+      if (props?.status?.type === "idle") {
         await handleSessionIdle(props.sessionID);
-      } else if (props.sessionID && props.status?.type) {
+      } else if (props?.sessionID && props.status?.type) {
         // New activity: the next idle is a fresh transition, not a duplicate.
         idleHandledAt.delete(props.sessionID);
       }
@@ -162,15 +173,15 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
       (event.type === "session.created" || event.type === "session.updated") &&
       "properties" in event
     ) {
-      const info = (
-        event.properties as { info?: { id?: string; parentID?: string | null } }
-      ).info;
+      const info = (event.properties as LifecycleProps<"session.created">)
+        ?.info;
       // Session genealogy: task-tool child sessions carry parentID here.
       if (info?.id) tracer.registerSessionInfo(info.id, info.parentID);
     }
 
     if (event.type === "session.deleted" && "properties" in event) {
-      const info = (event.properties as { info?: { id?: string } }).info;
+      const info = (event.properties as LifecycleProps<"session.deleted">)
+        ?.info;
       if (info?.id) {
         // End the deleted session's in-flight spans before dropping its
         // relationship data, so nothing leaks open until dispose.
@@ -186,11 +197,8 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
     }
 
     if (event.type === "session.error" && "properties" in event) {
-      const props = event.properties as {
-        sessionID?: string;
-        error?: { name: string; message?: string };
-      };
-      if (props.sessionID) {
+      const props = event.properties as LifecycleProps<"session.error">;
+      if (props?.sessionID) {
         tracer.traceSessionError({
           sessionID: props.sessionID,
           error: props.error,
@@ -206,6 +214,12 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
     }
 
     if (event.type === "session.next.step.started") {
+      // Activity without a chat.message (queued work, sub-agent turns): the
+      // next idle is a fresh transition, not a duplicate of the last one.
+      // If a step.started were ever delivered *between* the paired idle
+      // events, this defeats their coalescing — costing one extra forceFlush,
+      // not a span, since the first finalize already cleared the turn.
+      idleHandledAt.delete(event.properties.sessionID);
       tracer.startActiveGenerationStep({
         sessionID: event.properties.sessionID,
         agent: event.properties.agent,

@@ -6,6 +6,7 @@ import {
   type Observation,
   type SoftprobeClientOptions,
 } from "@softprobe/tracing";
+import { BoundedSet } from "./bounded.js";
 import {
   SessionGraph,
   parseTaskCallArgs,
@@ -64,6 +65,18 @@ function scopedKey(sessionID: string, id: string): string {
 
 /** Cap on remembered ended task spans (attachment targets for late children). */
 const ENDED_TASK_SPAN_CAP = 200;
+
+/**
+ * Cap per dedup set.
+ *
+ * This bounds memory but does not make eviction free: if an evicted callID
+ * later receives a duplicate delivery, its span is recreated — two spans for
+ * one tool call, the exact failure the dedup set exists to prevent. The cap
+ * raises the threshold rather than removing the failure, so it is set far
+ * above what any live session produces; reaching it needs thousands of calls
+ * between a span's force-end and a late duplicate for that same call.
+ */
+const TRACED_ID_CAP = 10_000;
 
 function formatUserParts(parts: MessagePart[]): JsonValue {
   const formatted: JsonValue[] = parts.map((part) => {
@@ -142,15 +155,22 @@ export class SoftprobeSessionTracer {
   private readonly messageSession = new Map<string, string>();
 
   private readonly abortedSessions = new Set<string>();
-  private readonly tracedMessageIds = new Set<string>();
-  private readonly tracedGenerationIds = new Set<string>();
-  private readonly tracedEventIds = new Set<string>();
-  private readonly tracedReasoningIds = new Set<string>();
-  private readonly tracedToolCallIds = new Set<string>();
+  // Dedup keys outlive every scoped finalize (see clearTraceState), so they
+  // are capped rather than cleared. Only ids far past their session's end can
+  // fall out, and re-tracing one of those is harmless.
+  private readonly tracedMessageIds = new BoundedSet(TRACED_ID_CAP);
+  private readonly tracedGenerationIds = new BoundedSet(TRACED_ID_CAP);
+  private readonly tracedEventIds = new BoundedSet(TRACED_ID_CAP);
+  private readonly tracedReasoningIds = new BoundedSet(TRACED_ID_CAP);
+  private readonly tracedToolCallIds = new BoundedSet(TRACED_ID_CAP);
   private readonly pendingReasoningByMessageId = new Map<
     string,
     Map<string, MessagePart>
   >();
+  // Deliberately unbounded: every SDK part shape declares sessionID, so every
+  // entry is indexed in messageSession and cleared with its session. A cap
+  // here could only drop parts a pending traceGeneration still needs — losing
+  // the turn's and the generation's output — never save memory.
   private readonly assistantParts = new Map<string, Map<string, MessagePart>>();
   private readonly generationByMessageId = new Map<string, Generation>();
   private readonly turnByMessageId = new Map<string, TurnObservation>();
@@ -171,17 +191,17 @@ export class SoftprobeSessionTracer {
   /**
    * Clear bookkeeping for ended spans. With a sessionID, only that session's
    * state is cleared (a sub-agent session going idle must not disturb the
-   * parent session's in-flight spans). Only payload caches are scoped —
-   * all dedup sets are process-lifetime so late duplicate deliveries after
-   * an idle can never recreate spans.
+   * parent session's in-flight spans).
+   *
+   * Only payload caches are cleared, in both the scoped and the global path.
+   * Dedup sets are never cleared here — they are capped instead (see
+   * {@link BoundedSet}) — so a late duplicate delivery can never recreate a
+   * span that was already force-ended, on scoped and legacy hosts alike.
    */
   clearTraceState(sessionID?: string): void {
     if (!sessionID) {
       this.assistantParts.clear();
       this.abortedSessions.clear();
-      this.tracedEventIds.clear();
-      this.tracedReasoningIds.clear();
-      this.tracedToolCallIds.clear();
       this.pendingReasoningByMessageId.clear();
       this.generationByMessageId.clear();
       this.generationParents.clear();
@@ -416,26 +436,22 @@ export class SoftprobeSessionTracer {
   }
 
   /**
-   * Locate the span of the task call that dispatched a child session. Falls
-   * back to a unique active task span in the parent session (the @command
-   * subtask path can key a task span by part.id rather than the callID the
-   * binding carries); never guesses among several candidates.
+   * Locate the span of the task call that dispatched a child session.
+   *
+   * Direct lookup only. A previous version fell back to "the unique active
+   * task span in the parent session" when the bound call had no span, which
+   * could parent a child under an unrelated sibling task. Its justification —
+   * a path keying the task span by part.id while the binding carries a
+   * different callID — does not exist: `ToolPart.callID` is required in the
+   * SDK, and traceToolPart and captureTaskBinding derive the id from the same
+   * expression, so the two can never diverge. Callers fall back to the parent
+   * session's turn when this returns undefined.
    */
   private taskSpanFor(binding: TaskBinding): Observation | undefined {
-    const direct =
+    return (
       this.activeTools.get(binding.taskCallID)?.observation ??
-      this.endedTaskSpans.get(binding.taskCallID)?.observation;
-    if (direct) return direct;
-    const candidates: Observation[] = [];
-    for (const active of this.activeTools.values()) {
-      if (
-        active.sessionID === binding.parentSessionID &&
-        active.tool === "task"
-      ) {
-        candidates.push(active.observation);
-      }
-    }
-    return candidates.length === 1 ? candidates[0] : undefined;
+      this.endedTaskSpans.get(binding.taskCallID)?.observation
+    );
   }
 
   async forceFlush(): Promise<void> {
@@ -1084,6 +1100,13 @@ export class SoftprobeSessionTracer {
     if (!active) return;
 
     const toolStatus = input.status ?? "ok";
+    // Best-effort: the link is read once, here at end, and the ended span is
+    // never revisited. A task that finishes before OpenCode publishes its
+    // child session ships without this attribute. The child turn carries the
+    // reverse edge (sp.metadata.opencode.parentTaskCallID) in most cases but
+    // not all — an ambiguous dispatch leaves the turn with only
+    // sp.metadata.opencode.parentSessionID, which links the sessions but not
+    // the specific task call.
     const childSessionID =
       input.tool === "task"
         ? this.sessionGraph.childForTaskCall(input.callID)

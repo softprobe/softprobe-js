@@ -498,8 +498,117 @@ describe("sub-agent nesting via OpenCode hooks", () => {
   });
 });
 
+describe("binding and lifecycle edge cases", () => {
+  it("never substitutes a sibling task span for a bound call whose span was never created", async () => {
+    const { tracer, exporter, client } = await createTracer();
+    // Task A is dispatched before PARENT has a turn (plugin loaded mid-session,
+    // or the turn was cleared by a session error): the call is registered but
+    // no span can be created for it.
+    startTaskCall(tracer, PARENT, "call-a", {
+      prompt: "a",
+      subagent_type: "verify",
+    });
+    emitTaskPartMetadata(tracer, PARENT, "call-a", CHILD);
 
-describe("review hardening", () => {
+    // A turn opens and an UNRELATED task B runs — this one does get a span.
+    startTurn(tracer, PARENT, "u-parent", "go");
+    startTaskCall(tracer, PARENT, "call-b", {
+      prompt: "b",
+      subagent_type: "explore",
+    });
+
+    await tracer.ensureSessionClassified(CHILD, {});
+    startTurn(tracer, CHILD, "u-child", "a");
+
+    tracer.finalizeSessionTracing();
+    await client.forceFlush();
+
+    const raw = exporter.getFinishedSpans();
+    const childTurn = turnSpan(raw, CHILD)!;
+    // Task A's span does not exist; task B is somebody else's sub-agent.
+    // Fall back to the parent turn rather than mis-parenting under B.
+    expect(childTurn.parentSpanId).not.toBe(
+      taskSpan(raw, "call-b")!.spanContext().spanId,
+    );
+    expect(childTurn.parentSpanId).toBe(
+      turnSpan(raw, PARENT)!.spanContext().spanId,
+    );
+
+    await client.shutdown();
+  });
+
+  it("keeps dedup keys across a global finalize (dispose, or an idle with no sessionID)", async () => {
+    const { tracer, exporter, client } = await createTracer();
+    startTurn(tracer, PARENT, "u-1", "go");
+    tracer.traceToolStart({
+      sessionID: PARENT,
+      callID: "call-l1",
+      tool: "bash",
+      args: { command: "ls" },
+    });
+    // Legacy host: idle carries no sessionID, so everything is finalized.
+    tracer.finalizeSessionTracing();
+    startTurn(tracer, PARENT, "u-2", "again");
+    // The completed part arrives after the global finalize.
+    tracer.traceToolPart({
+      id: "part-l1",
+      type: "tool",
+      sessionID: PARENT,
+      messageID: "asst-l1",
+      callID: "call-l1",
+      tool: "bash",
+      state: {
+        status: "completed",
+        output: "late",
+        time: { start: Date.now(), end: Date.now() },
+      },
+    });
+
+    tracer.finalizeSessionTracing();
+    await client.forceFlush();
+
+    const tools = exporter
+      .getFinishedSpans()
+      .filter((s) => attr(s, "gen_ai.tool.call.id") === "call-l1");
+    expect(tools).toHaveLength(1);
+
+    await client.shutdown();
+  });
+
+  it("omits sp.child.session.id when the task span ends before the child link lands", async () => {
+    const { tracer, exporter, client } = await createTracer();
+    startTurn(tracer, PARENT, "u-parent", "go");
+    startTaskCall(tracer, PARENT, "call-t1", {
+      prompt: "fast",
+      subagent_type: "verify",
+    });
+    tracer.traceToolEnd({
+      sessionID: PARENT,
+      callID: "call-t1",
+      tool: "task",
+      args: {},
+      title: "task",
+      output: "failed fast",
+      status: "error",
+    });
+    // The link arrives after the span is closed — OTEL drops attributes set
+    // on an ended span, so the forward edge is lost by construction.
+    emitTaskPartMetadata(tracer, PARENT, "call-t1", CHILD);
+    startTurn(tracer, CHILD, "u-child", "fast");
+
+    tracer.finalizeSessionTracing();
+    await client.forceFlush();
+
+    const raw = exporter.getFinishedSpans();
+    expect(attr(taskSpan(raw, "call-t1"), "sp.child.session.id")).toBeUndefined();
+    // The reverse edge still records the relationship.
+    expect(attr(turnSpan(raw, CHILD), "sp.metadata.opencode.parentTaskCallID")).toBe(
+      "call-t1",
+    );
+
+    await client.shutdown();
+  });
+
   it("resume disorder: task_id binds at tool start, before the child message", async () => {
     const { tracer, exporter, client } = await createTracer();
     startTurn(tracer, PARENT, "u-parent", "do the thing");
@@ -643,7 +752,7 @@ describe("review hardening", () => {
   });
 });
 
-describe("review hardening via OpenCode hooks", () => {
+describe("session lifecycle via OpenCode hooks", () => {
   async function createHookedTracer() {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
@@ -719,6 +828,39 @@ describe("review hardening via OpenCode hooks", () => {
       event: {
         type: "session.status",
         properties: { sessionID: PARENT, status: { type: "busy" } },
+      },
+    } as never);
+    await hooks.event?.({
+      event: { type: "session.idle", properties: { sessionID: PARENT } },
+    } as never);
+
+    expect(flushSpy).toHaveBeenCalledTimes(2);
+    await hooks.dispose?.();
+  });
+
+  it("a new generation step resets the idle coalescing mark", async () => {
+    const { client, hooks } = await createHookedTracer();
+    const flushSpy = vi.spyOn(client, "forceFlush");
+
+    await hooks["chat.message"]?.(
+      { sessionID: PARENT, messageID: "u-1", agent: "build" } as never,
+      { parts: [{ type: "text", text: "one" }] } as never,
+    );
+    await hooks.event?.({
+      event: { type: "session.idle", properties: { sessionID: PARENT } },
+    } as never);
+    // Work resumes without a chat.message and without a busy status — only
+    // session.next.step.started marks the new activity.
+    await hooks.event?.({
+      event: {
+        id: "evt-step",
+        type: "session.next.step.started",
+        properties: {
+          sessionID: PARENT,
+          timestamp: Date.now(),
+          agent: "build",
+          model: { providerID: "anthropic", id: "claude" },
+        },
       },
     } as never);
     await hooks.event?.({
