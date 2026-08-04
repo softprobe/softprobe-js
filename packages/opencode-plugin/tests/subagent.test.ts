@@ -3,7 +3,7 @@ import {
   type ReadableSpan,
 } from "@opentelemetry/sdk-trace-base";
 import { SoftprobeClient } from "@softprobe/tracing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createHooksFromTracer } from "../src/index.js";
 import { SoftprobeSessionTracer } from "../src/softprobe.js";
 import type { SessionLookup } from "../src/types.js";
@@ -493,6 +493,263 @@ describe("sub-agent nesting via OpenCode hooks", () => {
       taskSpan(raw, "call-t1")!.spanContext().spanId,
     );
     expect(attr(taskSpan(raw, "call-t1"), "sp.output")).toContain("verified");
+
+    await hooks.dispose?.();
+  });
+});
+
+
+describe("review hardening", () => {
+  it("resume disorder: task_id binds at tool start, before the child message", async () => {
+    const { tracer, exporter, client } = await createTracer();
+    startTurn(tracer, PARENT, "u-parent", "do the thing");
+    startTaskCall(tracer, PARENT, "call-t1", {
+      prompt: "verify it",
+      subagent_type: "verify",
+    });
+    emitTaskPartMetadata(tracer, PARENT, "call-t1", CHILD);
+    startTurn(tracer, CHILD, "u-child-1", "verify it");
+    tracer.traceToolEnd({
+      sessionID: PARENT,
+      callID: "call-t1",
+      tool: "task",
+      args: {},
+      title: "task",
+      output: "done",
+    });
+
+    // Resume: the new task call names the child via task_id. The child's
+    // message arrives BEFORE the call's part metadata (bus lag) — the
+    // task_id binding made at tool start must win over the stale call-t1
+    // binding.
+    startTaskCall(tracer, PARENT, "call-t2", {
+      prompt: "keep going",
+      subagent_type: "verify",
+      task_id: CHILD,
+    });
+    await tracer.ensureSessionClassified(CHILD, {
+      agent: "verify",
+      promptText: "keep going",
+    });
+    startTurn(tracer, CHILD, "u-child-2", "keep going");
+
+    tracer.finalizeSessionTracing();
+    await client.forceFlush();
+
+    const raw = exporter.getFinishedSpans();
+    const resumed = raw.find(
+      (s) =>
+        s.name === "opencode.turn" &&
+        attr(s, "sp.session.id") === CHILD &&
+        String(attr(s, "sp.input")).includes("keep going"),
+    )!;
+    expect(resumed.parentSpanId).toBe(
+      taskSpan(raw, "call-t2")!.spanContext().spanId,
+    );
+
+    await client.shutdown();
+  });
+
+  it("does not recreate a ghost span for a part arriving after scoped idle + new turn", async () => {
+    const { tracer, exporter, client } = await createTracer();
+    startTurn(tracer, PARENT, "u-1", "go");
+    tracer.traceToolStart({
+      sessionID: PARENT,
+      callID: "call-g1",
+      tool: "bash",
+      args: { command: "ls" },
+    });
+
+    // Idle force-ends the tool and clears the session's payload caches…
+    tracer.finalizeSessionTracing(PARENT);
+    // …a new turn starts…
+    startTurn(tracer, PARENT, "u-2", "again");
+    // …and only then the completed part arrives late.
+    tracer.traceToolPart({
+      id: "part-g1",
+      type: "tool",
+      sessionID: PARENT,
+      messageID: "asst-g1",
+      callID: "call-g1",
+      tool: "bash",
+      state: {
+        status: "completed",
+        output: "late",
+        time: { start: Date.now(), end: Date.now() },
+      },
+    });
+
+    tracer.finalizeSessionTracing();
+    await client.forceFlush();
+
+    const tools = exporter
+      .getFinishedSpans()
+      .filter((s) => attr(s, "gen_ai.tool.call.id") === "call-g1");
+    expect(tools).toHaveLength(1);
+
+    await client.shutdown();
+  });
+
+  it("binds via part metadata without parentSessionId (falls back to the part's session)", async () => {
+    const { tracer, exporter, client } = await createTracer();
+    startTurn(tracer, PARENT, "u-parent", "do the thing");
+    startTaskCall(tracer, PARENT, "call-t1", {
+      prompt: "verify it",
+      subagent_type: "verify",
+    });
+    tracer.traceToolPart({
+      id: "part-t1",
+      type: "tool",
+      sessionID: PARENT,
+      messageID: "asst-t1",
+      callID: "call-t1",
+      tool: "task",
+      state: {
+        status: "running",
+        metadata: { sessionId: CHILD },
+        time: { start: Date.now() },
+      },
+    });
+    startTurn(tracer, CHILD, "u-child", "verify it");
+
+    tracer.finalizeSessionTracing();
+    await client.forceFlush();
+
+    const raw = exporter.getFinishedSpans();
+    expect(turnSpan(raw, CHILD)!.parentSpanId).toBe(
+      taskSpan(raw, "call-t1")!.spanContext().spanId,
+    );
+
+    await client.shutdown();
+  });
+
+  it("classifies as root when the lookup fails", async () => {
+    const { tracer, exporter, client } = await createTracer({
+      sessionLookup: async () => {
+        throw new Error("lookup boom");
+      },
+    });
+    await tracer.ensureSessionClassified(CHILD, { agent: "verify" });
+    startTurn(tracer, CHILD, "u-child", "verify it");
+
+    tracer.finalizeSessionTracing();
+    await client.forceFlush();
+
+    const raw = exporter.getFinishedSpans();
+    const childTurn = turnSpan(raw, CHILD)!;
+    expect(childTurn.parentSpanId).toBeUndefined();
+
+    await client.shutdown();
+  });
+});
+
+describe("review hardening via OpenCode hooks", () => {
+  async function createHookedTracer() {
+    const exporter = new InMemorySpanExporter();
+    const client = new SoftprobeClient({
+      publicKey: "pk",
+      baseUrl: "http://127.0.0.1:8091",
+      otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
+      serviceName: "opencode",
+      environment: "test",
+      spanExporter: exporter,
+      useSimpleProcessor: true,
+      registerProvider: false,
+    });
+    const tracer = new SoftprobeSessionTracer(client);
+    const hooks = createHooksFromTracer(tracer);
+    return { exporter, client, tracer, hooks };
+  }
+
+  it("coalesces duplicate idle events but never swallows a fresh idle", async () => {
+    const { exporter, client, hooks } = await createHookedTracer();
+    const flushSpy = vi.spyOn(client, "forceFlush");
+
+    // Turn 1 ends: session.status idle + session.idle are one transition.
+    await hooks["chat.message"]?.(
+      { sessionID: PARENT, messageID: "u-1", agent: "build" } as never,
+      { parts: [{ type: "text", text: "one" }] } as never,
+    );
+    await hooks.event?.({
+      event: {
+        type: "session.status",
+        properties: { sessionID: PARENT, status: { type: "idle" } },
+      },
+    } as never);
+    await hooks.event?.({
+      event: { type: "session.idle", properties: { sessionID: PARENT } },
+    } as never);
+    expect(flushSpy).toHaveBeenCalledTimes(1);
+
+    // Turn 2 starts and finishes quickly — its idle is a fresh transition
+    // and must be processed despite falling inside the coalescing window.
+    await hooks["chat.message"]?.(
+      { sessionID: PARENT, messageID: "u-2", agent: "build" } as never,
+      { parts: [{ type: "text", text: "two" }] } as never,
+    );
+    await hooks.event?.({
+      event: { type: "session.idle", properties: { sessionID: PARENT } },
+    } as never);
+    expect(flushSpy).toHaveBeenCalledTimes(2);
+
+    await client.forceFlush();
+    const turns = exporter
+      .getFinishedSpans()
+      .filter(
+        (s) => s.name === "opencode.turn" && attr(s, "sp.session.id") === PARENT,
+      );
+    expect(turns).toHaveLength(2);
+
+    await hooks.dispose?.();
+  });
+
+  it("busy status resets the idle coalescing mark", async () => {
+    const { client, hooks } = await createHookedTracer();
+    const flushSpy = vi.spyOn(client, "forceFlush");
+
+    await hooks["chat.message"]?.(
+      { sessionID: PARENT, messageID: "u-1", agent: "build" } as never,
+      { parts: [{ type: "text", text: "one" }] } as never,
+    );
+    await hooks.event?.({
+      event: { type: "session.idle", properties: { sessionID: PARENT } },
+    } as never);
+    // Activity resumes without a chat.message (e.g. queued assistant work).
+    await hooks.event?.({
+      event: {
+        type: "session.status",
+        properties: { sessionID: PARENT, status: { type: "busy" } },
+      },
+    } as never);
+    await hooks.event?.({
+      event: { type: "session.idle", properties: { sessionID: PARENT } },
+    } as never);
+
+    expect(flushSpy).toHaveBeenCalledTimes(2);
+    await hooks.dispose?.();
+  });
+
+  it("session.deleted finalizes the session's in-flight spans", async () => {
+    const { exporter, client, hooks } = await createHookedTracer();
+
+    await hooks["chat.message"]?.(
+      { sessionID: PARENT, messageID: "u-1", agent: "build" } as never,
+      { parts: [{ type: "text", text: "one" }] } as never,
+    );
+    await hooks["tool.execute.before"]?.(
+      { sessionID: PARENT, callID: "call-d1", tool: "bash" } as never,
+      { args: { command: "ls" } } as never,
+    );
+    await hooks.event?.({
+      event: { type: "session.deleted", properties: { info: { id: PARENT } } },
+    } as never);
+
+    await client.forceFlush();
+    const raw = exporter.getFinishedSpans();
+    // Both the turn and the in-flight tool span were ended, not leaked.
+    expect(turnSpan(raw, PARENT)).toBeDefined();
+    const tool = raw.find((s) => attr(s, "gen_ai.tool.call.id") === "call-d1");
+    expect(tool).toBeDefined();
 
     await hooks.dispose?.();
   });

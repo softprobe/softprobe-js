@@ -6,7 +6,11 @@ import {
   type Observation,
   type SoftprobeClientOptions,
 } from "@softprobe/tracing";
-import { SessionGraph, type TaskBinding } from "./session-graph.js";
+import {
+  SessionGraph,
+  parseTaskCallArgs,
+  type TaskBinding,
+} from "./session-graph.js";
 import { inferToolKind } from "./tool-kind.js";
 import type {
   AssistantGenerationInput,
@@ -56,23 +60,6 @@ function asJson(value: unknown): JsonValue {
 /** Dedup-set key scoped to a session so per-session cleanup stays precise. */
 function scopedKey(sessionID: string, id: string): string {
   return `${sessionID}:${id}`;
-}
-
-/** Extract the task-tool arguments used to bind task calls to child sessions. */
-function extractTaskArgs(args: unknown): {
-  prompt?: string;
-  subagent_type?: string;
-  task_id?: string;
-} {
-  if (!args || typeof args !== "object") return {};
-  const record = args as Record<string, unknown>;
-  return {
-    ...(typeof record.prompt === "string" ? { prompt: record.prompt } : {}),
-    ...(typeof record.subagent_type === "string"
-      ? { subagent_type: record.subagent_type }
-      : {}),
-    ...(typeof record.task_id === "string" ? { task_id: record.task_id } : {}),
-  };
 }
 
 /** Cap on remembered ended task spans (attachment targets for late children). */
@@ -184,8 +171,9 @@ export class SoftprobeSessionTracer {
   /**
    * Clear bookkeeping for ended spans. With a sessionID, only that session's
    * state is cleared (a sub-agent session going idle must not disturb the
-   * parent session's in-flight spans). Message/generation dedup sets are
-   * process-lifetime by design and are never cleared here.
+   * parent session's in-flight spans). Only payload caches are scoped —
+   * all dedup sets are process-lifetime so late duplicate deliveries after
+   * an idle can never recreate spans.
    */
   clearTraceState(sessionID?: string): void {
     if (!sessionID) {
@@ -205,7 +193,6 @@ export class SoftprobeSessionTracer {
 
     this.abortedSessions.delete(sessionID);
     this.generationParents.delete(sessionID);
-    this.activeGenerations.delete(sessionID);
     this.latestTurnBySession.delete(sessionID);
     for (const [messageID, turn] of this.turnByMessageId) {
       if (turn.sessionID === sessionID) this.turnByMessageId.delete(messageID);
@@ -216,16 +203,6 @@ export class SoftprobeSessionTracer {
       this.assistantParts.delete(messageID);
       this.pendingReasoningByMessageId.delete(messageID);
       this.generationByMessageId.delete(messageID);
-    }
-    const prefix = `${sessionID}:`;
-    for (const set of [
-      this.tracedEventIds,
-      this.tracedReasoningIds,
-      this.tracedToolCallIds,
-    ]) {
-      for (const key of set) {
-        if (key.startsWith(prefix)) set.delete(key);
-      }
     }
   }
 
@@ -1017,11 +994,24 @@ export class SoftprobeSessionTracer {
       return;
     }
     if (input.tool === "task") {
+      const taskArgs = parseTaskCallArgs(input.args);
       this.sessionGraph.registerTaskCall(
         input.callID,
         input.sessionID,
-        extractTaskArgs(input.args),
+        taskArgs,
       );
+      if (taskArgs.task_id) {
+        // task_id names the resumed child session explicitly — same
+        // authority as part metadata, and always precedes the child's next
+        // message, so stale bindings from an earlier dispatch are replaced
+        // before they can be consumed.
+        this.sessionGraph.bind({
+          childSessionID: taskArgs.task_id,
+          parentSessionID: input.sessionID,
+          taskCallID: input.callID,
+          source: "metadata",
+        });
+      }
     }
     const existing = this.activeTools.get(input.callID);
     if (existing) {

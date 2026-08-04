@@ -48,11 +48,16 @@ const ENDED_TASK_CALL_TTL_MS = 24 * 60 * 60 * 1000;
 /** Safety cap on remembered task calls (active + recently ended). */
 const MAX_TASK_CALLS = 500;
 
-function definedArgs(args: TaskCallArgs): TaskCallArgs {
+/** Extract the task-tool args relevant for child-session binding. */
+export function parseTaskCallArgs(args: unknown): TaskCallArgs {
+  if (!args || typeof args !== "object") return {};
+  const record = args as Record<string, unknown>;
   const out: TaskCallArgs = {};
-  if (typeof args.prompt === "string") out.prompt = args.prompt;
-  if (typeof args.subagent_type === "string") out.subagent_type = args.subagent_type;
-  if (typeof args.task_id === "string") out.task_id = args.task_id;
+  if (typeof record.prompt === "string") out.prompt = record.prompt;
+  if (typeof record.subagent_type === "string") {
+    out.subagent_type = record.subagent_type;
+  }
+  if (typeof record.task_id === "string") out.task_id = record.task_id;
   return out;
 }
 
@@ -90,13 +95,13 @@ export class SessionGraph {
   registerTaskCall(callID: string, sessionID: string, args: TaskCallArgs): void {
     const existing = this.taskCalls.get(callID);
     if (existing) {
-      existing.args = { ...existing.args, ...definedArgs(args) };
+      existing.args = { ...existing.args, ...parseTaskCallArgs(args) };
       return;
     }
     this.taskCalls.set(callID, {
       callID,
       sessionID,
-      args: definedArgs(args),
+      args: parseTaskCallArgs(args),
       startedAt: Date.now(),
     });
     this.pruneTaskCalls();
@@ -108,6 +113,7 @@ export class SessionGraph {
   }
 
   bind(binding: TaskBinding): void {
+    if (binding.childSessionID === binding.parentSessionID) return;
     const existing = this.bindings.get(binding.childSessionID);
     if (existing?.source === "metadata" && binding.source === "inferred") {
       return;
@@ -155,7 +161,22 @@ export class SessionGraph {
         .callID;
     }
 
-    if (candidates.length === 1) return candidates[0]!.callID;
+    if (candidates.length === 1) {
+      const only = candidates[0]!;
+      // A lone candidate that contradicts the hints is not a match — the
+      // child was likely dispatched by a call we never saw.
+      if (
+        hints.agent &&
+        only.args.subagent_type &&
+        only.args.subagent_type !== hints.agent
+      ) {
+        return undefined;
+      }
+      if (hints.prompt && only.args.prompt && only.args.prompt !== hints.prompt) {
+        return undefined;
+      }
+      return only.callID;
+    }
 
     if (hints.agent) {
       const byAgent = candidates.filter(
@@ -181,6 +202,10 @@ export class SessionGraph {
     this.parents.delete(sessionID);
     this.roots.delete(sessionID);
     this.dropBinding(sessionID);
+    // Children of the deleted session lose their dispatcher and parent link.
+    for (const [child, parent] of this.parents) {
+      if (parent === sessionID) this.parents.delete(child);
+    }
     for (const binding of [...this.bindings.values()]) {
       if (binding.parentSessionID === sessionID) {
         this.dropBinding(binding.childSessionID);

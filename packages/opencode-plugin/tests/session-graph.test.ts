@@ -143,6 +143,37 @@ describe("SessionGraph.resolveTaskCall", () => {
     expect(graph.resolveTaskCall("child", "parent", {})).toBeUndefined();
   });
 
+  it("returns undefined when a lone candidate contradicts the hints", () => {
+    const graph = new SessionGraph();
+    graph.registerTaskCall("call-1", "parent", {
+      prompt: "one",
+      subagent_type: "verify",
+    });
+    expect(
+      graph.resolveTaskCall("child", "parent", { agent: "explore" }),
+    ).toBeUndefined();
+    expect(
+      graph.resolveTaskCall("child", "parent", { prompt: "two" }),
+    ).toBeUndefined();
+    // Matching (or absent) hints still resolve.
+    expect(graph.resolveTaskCall("child", "parent", { agent: "verify" })).toBe(
+      "call-1",
+    );
+    expect(graph.resolveTaskCall("child", "parent", {})).toBe("call-1");
+  });
+
+  it("ignores self-referential bindings", () => {
+    const graph = new SessionGraph();
+    graph.bind({
+      childSessionID: "same",
+      parentSessionID: "same",
+      taskCallID: "call-1",
+      source: "metadata",
+    });
+    expect(graph.bindingFor("same")).toBeUndefined();
+    expect(graph.parentOf("same")).toBeUndefined();
+  });
+
   it("still considers recently ended calls", () => {
     const graph = new SessionGraph();
     graph.registerTaskCall("call-1", "parent", { prompt: "a" });

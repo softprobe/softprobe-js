@@ -116,7 +116,9 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
   const shutdownOnce = createShutdownOnce(tracer);
 
   // session.status {type:"idle"} and the deprecated session.idle fire
-  // back-to-back for the same transition — coalesce per session.
+  // back-to-back for the same transition — coalesce per session. The mark
+  // is reset on any new activity (busy status or a new user message) so a
+  // genuinely new idle is never swallowed.
   const IDLE_COALESCE_MS = 2000;
   const idleHandledAt = new Map<string, number>();
 
@@ -150,6 +152,9 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
       };
       if (props.status?.type === "idle") {
         await handleSessionIdle(props.sessionID);
+      } else if (props.sessionID && props.status?.type) {
+        // New activity: the next idle is a fresh transition, not a duplicate.
+        idleHandledAt.delete(props.sessionID);
       }
     }
 
@@ -166,7 +171,13 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
 
     if (event.type === "session.deleted" && "properties" in event) {
       const info = (event.properties as { info?: { id?: string } }).info;
-      if (info?.id) tracer.evictSession(info.id);
+      if (info?.id) {
+        // End the deleted session's in-flight spans before dropping its
+        // relationship data, so nothing leaks open until dispose.
+        tracer.finalizeSessionTracing(info.id);
+        tracer.evictSession(info.id);
+        idleHandledAt.delete(info.id);
+      }
     }
 
     if (event.type === "server.instance.disposed") {
@@ -328,12 +339,19 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
     "chat.message": (input, output) =>
       safeRun("chat.message", async () => {
         const parts = output.parts as MessagePart[];
+        // A new turn is fresh activity — the next idle is not a duplicate.
+        idleHandledAt.delete(input.sessionID);
         // Classify (root vs sub-agent child) before the turn span is created;
-        // spans cannot be re-parented afterwards.
-        await tracer.ensureSessionClassified(input.sessionID, {
-          agent: input.agent,
-          promptText: firstTextPart(parts),
-        });
+        // spans cannot be re-parented afterwards. Classification is a pure
+        // enhancement: its failure must never cost the turn itself.
+        try {
+          await tracer.ensureSessionClassified(input.sessionID, {
+            agent: input.agent,
+            promptText: firstTextPart(parts),
+          });
+        } catch (error) {
+          log("warn", `session classification failed: ${formatHookError(error)}`);
+        }
         tracer.traceUserMessage({
           sessionID: input.sessionID,
           messageID: input.messageID,
@@ -415,8 +433,9 @@ export {
   SoftprobeSessionTracer,
   createSoftprobeSessionTracer,
 } from "./softprobe.js";
-export { SessionGraph } from "./session-graph.js";
+export { SessionGraph, parseTaskCallArgs } from "./session-graph.js";
 export type { TaskBinding, TaskCallArgs } from "./session-graph.js";
+export type { SessionLookup } from "./types.js";
 export {
   loadSoftprobeCredentials,
   MissingSoftprobeCredentialsError,
