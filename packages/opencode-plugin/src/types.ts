@@ -82,6 +82,12 @@ export type MessagePart = {
     error?: string;
     input?: unknown;
     output?: string;
+    /**
+     * Tool-state metadata. OpenCode's task tool publishes
+     * `{ sessionId, parentSessionId }` here while the part is still running —
+     * the authoritative link between a task call and its child session.
+     */
+    metadata?: Record<string, unknown>;
     time?: { start?: number; end?: number };
   };
   time?: { completed?: number; end?: number };
@@ -92,6 +98,12 @@ export type SessionErrorInfo = {
   message?: string;
   data?: { message?: string };
 };
+
+/**
+ * Resolves a session's parent sessionID via the OpenCode client API.
+ * Returns undefined when the session is a root, unknown, or the lookup fails.
+ */
+export type SessionLookup = (sessionID: string) => Promise<string | undefined>;
 
 export type UserMessageInput = {
   sessionID: string;
