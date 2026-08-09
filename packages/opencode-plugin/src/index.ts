@@ -7,6 +7,7 @@ import {
   createSoftprobeSessionTracer,
   SoftprobeSessionTracer,
 } from "./softprobe.js";
+import { normalizeToolExecuteAfterOutput } from "./tool-result.js";
 import type { MessagePart, SessionNextEvent } from "./types.js";
 
 type OpencodeEvent =
@@ -256,13 +257,17 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
 
     "tool.execute.after": (input, output) =>
       safeRun("tool.execute.after", () => {
+        // OpenCode MCP tools fire this hook with raw CallToolResult
+        // ({ content }) before normalizing to { title, output }.
+        const result = normalizeToolExecuteAfterOutput(output);
         tracer.traceToolEnd({
           sessionID: input.sessionID,
           callID: input.callID,
           tool: input.tool,
           args: input.args,
-          title: output.title,
-          output: output.output,
+          title: result.title || input.tool,
+          output: result.output,
+          status: result.status,
         });
       }),
   };
@@ -315,3 +320,8 @@ export {
   type SoftprobePluginCredentials,
 } from "./config.js";
 export { inferToolKind } from "./tool-kind.js";
+export {
+  normalizeToolExecuteAfterOutput,
+  type ToolExecuteAfterOutput,
+  type NormalizedToolResult,
+} from "./tool-result.js";

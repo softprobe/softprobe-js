@@ -67,4 +67,9 @@ credentials when `SPCODE_MODE` is on (see softprobe-code
 - Retries, reasoning, compaction events
 - Failed steps and session errors / aborts
 
+MCP tools: OpenCode currently fires `tool.execute.after` with the raw MCP
+`CallToolResult` (`{ content: [...] }`) before it normalizes to
+`{ title, output }`. This plugin extracts text from `content` so `sp.output`
+is not recorded as `"{}"`.
+
 See [Coding agents](../../docs/integrations/coding-agents.md).
