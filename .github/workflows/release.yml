@@ -1,15 +1,15 @@
-name: Publish npm packages
+name: Release
 
 on:
   release:
     types: [published]
 
 permissions:
-  id-token: write
+  id-token: write # required for npm Trusted Publishing (OIDC)
   contents: write
 
 concurrency:
-  group: npm-publish-${{ github.event.release.tag_name }}
+  group: release-${{ github.event.release.tag_name }}
   cancel-in-progress: false
 
 jobs:
@@ -34,57 +34,63 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Publishing version $VERSION from tag $TAG"
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.9
-
+      # Do NOT set registry-url: setup-node would inject a placeholder
+      # NODE_AUTH_TOKEN and skip OIDC Trusted Publishing (ENEEDAUTH).
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
-          cache: pnpm
+          cache: npm
 
       - name: Ensure npm supports Trusted Publishing
-        run: npm install -g npm@latest
+        run: |
+          npm install -g npm@latest
+          npm --version
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm ci
 
       - name: Set package versions
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          npm pkg set "version=$VERSION" --prefix packages/tracing
+          for dir in \
+            packages/langchain \
+            packages/vercel-ai-sdk \
+            packages/opencode-plugin
+          do
+            npm pkg set "version=$VERSION" --prefix "$dir"
+            # npm does not rewrite "*" / workspace: on publish — pin the dep.
+            npm pkg set "dependencies.@softprobe/tracing=$VERSION" --prefix "$dir"
+            echo "Set $dir -> $VERSION (depends on @softprobe/tracing@$VERSION)"
+          done
+          echo "Set packages/tracing -> $VERSION"
+
+      - name: Build packages
+        run: npm run build
+
+      - name: Publish to npm (OIDC Trusted Publishing)
+        env:
+          NODE_AUTH_TOKEN: ""
+        run: |
+          unset NODE_AUTH_TOKEN
+          if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
+            sed -i '/_authToken/d;/always-auth/d' "$NPM_CONFIG_USERCONFIG" || true
+          fi
+          if [ -f "$HOME/.npmrc" ]; then
+            sed -i '/_authToken/d;/always-auth/d' "$HOME/.npmrc" || true
+          fi
+
+          # tracing first — dependents pin @softprobe/tracing=$VERSION above
           for dir in \
             packages/tracing \
             packages/langchain \
             packages/vercel-ai-sdk \
             packages/opencode-plugin
           do
-            npm pkg set "version=$VERSION" --prefix "$dir"
-            echo "Set $dir -> $VERSION"
-          done
-
-      - name: Build packages
-        run: pnpm build
-
-      - name: Publish to npm (OIDC Trusted Publishing)
-        run: |
-          # Do not set NODE_AUTH_TOKEN — OIDC Trusted Publishing must be used.
-          # Remove any empty authToken line setup-node may have written.
-          if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
-            sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG" || true
-          fi
-
-          for pkg in \
-            @softprobe/tracing \
-            @softprobe/langchain \
-            @softprobe/vercel-ai-sdk \
-            @softprobe/opencode-plugin
-          do
-            echo "Publishing ${pkg}..."
-            pnpm --filter "${pkg}" publish --access public --no-git-checks
+            echo "Publishing ${dir}..."
+            (cd "$dir" && npm publish --access public)
           done
 
       - name: Sync package versions to main
@@ -110,6 +116,13 @@ jobs:
             packages/opencode-plugin
           do
             npm pkg set "version=$VERSION" --prefix "$dir"
+          done
+          for dir in \
+            packages/langchain \
+            packages/vercel-ai-sdk \
+            packages/opencode-plugin
+          do
+            npm pkg set "dependencies.@softprobe/tracing=*" --prefix "$dir"
           done
 
           if git diff --quiet -- \

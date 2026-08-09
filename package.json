@@ -1,15 +1,17 @@
 {
   "name": "softprobe-js",
   "private": true,
-  "packageManager": "pnpm@9.15.9",
+  "workspaces": [
+    "packages/*"
+  ],
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "build": "pnpm -r --filter './packages/*' build",
-    "test": "pnpm -r --filter './packages/*' --if-present test",
-    "typecheck": "pnpm -r --filter './packages/*' --if-present typecheck",
-    "lint": "pnpm -r --filter './packages/*' --if-present lint"
+    "build": "npm run build -w @softprobe/tracing && npm run build -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin",
+    "test": "npm run test -w @softprobe/tracing && npm run test -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin",
+    "typecheck": "npm run typecheck -w @softprobe/tracing && npm run typecheck -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin",
+    "lint": "npm run lint -w @softprobe/tracing && npm run lint -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin"
   },
   "devDependencies": {
     "typescript": "^5.8.2"
