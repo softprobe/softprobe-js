@@ -25,7 +25,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@softprobe/tracing": "workspace:*"
+    "@softprobe/tracing": "*"
   },
   "peerDependencies": {
     "@ai-sdk/otel": ">=0.0.1",
