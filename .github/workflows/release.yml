@@ -73,6 +73,7 @@ jobs:
       - name: Publish to npm (OIDC Trusted Publishing)
         env:
           NODE_AUTH_TOKEN: ""
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           unset NODE_AUTH_TOKEN
           if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
@@ -89,6 +90,11 @@ jobs:
             packages/vercel-ai-sdk \
             packages/opencode-plugin
           do
+            name="$(node -p "require('./${dir}/package.json').name")"
+            if npm view "${name}@${VERSION}" version >/dev/null 2>&1; then
+              echo "Skip ${name}@${VERSION} (already on npm)"
+              continue
+            fi
             echo "Publishing ${dir}..."
             (cd "$dir" && npm publish --access public)
           done
