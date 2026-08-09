@@ -261,7 +261,7 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
         // OpenCode normalizes/truncates — ending here would record
         // `sp.output: "{}"` and block message.part.updated (canonical
         // truncated `part.state.output`) via tracedToolCallIds. Defer when
-        // `output` is missing so traceToolPart owns the end.
+        // `output` is not a string so traceToolPart owns the end.
         if (typeof output?.output !== "string") return;
         tracer.traceToolEnd({
           sessionID: input.sessionID,

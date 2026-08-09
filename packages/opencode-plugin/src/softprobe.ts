@@ -667,8 +667,10 @@ export class SoftprobeSessionTracer {
   }
 
   /**
-   * Capture tool observations from message.part.updated when tool.execute.*
-   * hooks are missed (or spans from those hooks were dropped on export).
+   * Capture tool observations from message.part.updated.
+   * Also the canonical end path for MCP tools: tool.execute.after often
+   * receives raw CallToolResult without `output`, so we leave the span
+   * open until this completed/error part update arrives.
    */
   traceToolPart(part: MessagePart): void {
     if (part.type !== "tool" || !part.tool || !part.sessionID) return;
