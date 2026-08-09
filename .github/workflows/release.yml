@@ -1,15 +1,15 @@
-name: Publish npm packages
+name: Release
 
 on:
   release:
     types: [published]
 
 permissions:
-  id-token: write
+  id-token: write # required for npm Trusted Publishing (OIDC)
   contents: write
 
 concurrency:
-  group: npm-publish-${{ github.event.release.tag_name }}
+  group: release-${{ github.event.release.tag_name }}
   cancel-in-progress: false
 
 jobs:
@@ -39,15 +39,20 @@ jobs:
         with:
           version: 9.15.9
 
+      # Do NOT set registry-url here: actions/setup-node then writes
+      # //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN} and exports a
+      # placeholder NODE_AUTH_TOKEN, which makes npm skip OIDC Trusted
+      # Publishing and fail with ENEEDAUTH.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
           cache: pnpm
 
       - name: Ensure npm supports Trusted Publishing
-        run: npm install -g npm@latest
+        run: |
+          npm install -g npm@latest
+          npm --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -70,21 +75,29 @@ jobs:
         run: pnpm build
 
       - name: Publish to npm (OIDC Trusted Publishing)
+        env:
+          # Empty string beats any inherited placeholder from setup-node.
+          NODE_AUTH_TOKEN: ""
         run: |
-          # Do not set NODE_AUTH_TOKEN — OIDC Trusted Publishing must be used.
-          # Remove any empty authToken line setup-node may have written.
+          unset NODE_AUTH_TOKEN
+          # Strip any auth lines that would force classic token auth.
           if [ -n "${NPM_CONFIG_USERCONFIG:-}" ] && [ -f "$NPM_CONFIG_USERCONFIG" ]; then
-            sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG" || true
+            sed -i '/_authToken/d;/always-auth/d' "$NPM_CONFIG_USERCONFIG" || true
+          fi
+          if [ -f "$HOME/.npmrc" ]; then
+            sed -i '/_authToken/d;/always-auth/d' "$HOME/.npmrc" || true
           fi
 
-          for pkg in \
-            @softprobe/tracing \
-            @softprobe/langchain \
-            @softprobe/vercel-ai-sdk \
-            @softprobe/opencode-plugin
+          # npm CLI owns the OIDC exchange for Trusted Publishing.
+          # publishConfig.provenance in each package.json enables attestations.
+          for dir in \
+            packages/tracing \
+            packages/langchain \
+            packages/vercel-ai-sdk \
+            packages/opencode-plugin
           do
-            echo "Publishing ${pkg}..."
-            pnpm --filter "${pkg}" publish --access public --no-git-checks
+            echo "Publishing ${dir}..."
+            (cd "$dir" && npm publish --access public)
           done
 
       - name: Sync package versions to main
