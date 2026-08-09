@@ -8,10 +8,10 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present"
+    "build": "npm run build -w @softprobe/tracing && npm run build -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin",
+    "test": "npm run test -w @softprobe/tracing && npm run test -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin",
+    "typecheck": "npm run typecheck -w @softprobe/tracing && npm run typecheck -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin",
+    "lint": "npm run lint -w @softprobe/tracing && npm run lint -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin"
   },
   "devDependencies": {
     "typescript": "^5.8.2"
