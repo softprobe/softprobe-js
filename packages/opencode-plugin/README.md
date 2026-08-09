@@ -67,10 +67,20 @@ credentials when `SPCODE_MODE` is on (see softprobe-code
 - Retries, reasoning, compaction events
 - Failed steps and session errors / aborts
 
-MCP tools: OpenCode currently fires `tool.execute.after` with the raw MCP
-`CallToolResult` (`{ content: [...] }`) before it normalizes to
-`{ title, output }`. This plugin waits for `message.part.updated` (completed)
-in that case so `sp.output` gets the truncated `part.state.output` instead of
-`"{}"`.
+### Sub-agent sessions
+
+OpenCode runs sub-agents (the `task` tool) in child sessions. The plugin nests
+each child session's turn under the dispatching task span, so a whole agent
+run — root session plus any sub-agents, recursively — forms a single trace
+instead of several disconnected ones. The link comes from the task part's
+`state.metadata.sessionId` (authoritative), with `task_id` resume and
+parentID + task-call inference as fallbacks; ambiguous dispatches (e.g.
+parallel identical task calls) are left unnested rather than guessed. Each
+span keeps its own `sp.session.id`; the parent side is recorded as
+`sp.metadata.opencode.parentSessionID` / `sp.metadata.opencode.parentTaskCallID`
+on the child turn and `sp.child.session.id` on the task span.
+
+Session lifecycle is isolated per session: a sub-agent session going idle
+finalizes only its own spans, never the parent session's in-flight work.
 
 See [Coding agents](../../docs/integrations/coding-agents.md).

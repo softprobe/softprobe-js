@@ -62,6 +62,13 @@ export interface StartObservationOptions {
     traceId: string;
     spanId: string;
   };
+  /**
+   * Start a brand-new trace even when an ambient span is active on
+   * `context.active()` (e.g. a host application's OTEL context adopting this
+   * span into its own trace). Ignored when `parent` or `parentSpanContext`
+   * is set.
+   */
+  root?: boolean;
   /** Historical span start (Date or epoch millis). */
   startTime?: Date | number;
 }
