@@ -387,12 +387,19 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
 
     "tool.execute.after": (input, output) =>
       safeRun("tool.execute.after", () => {
+        // Registry tools pass `{ title, output }`. MCP tools currently fire
+        // this hook with raw CallToolResult (`{ content }`) *before*
+        // OpenCode normalizes/truncates — ending here would record
+        // `sp.output: "{}"` and block message.part.updated (canonical
+        // truncated `part.state.output`) via tracedToolCallIds. Defer when
+        // `output` is not a string so traceToolPart owns the end.
+        if (typeof output?.output !== "string") return;
         tracer.traceToolEnd({
           sessionID: input.sessionID,
           callID: input.callID,
           tool: input.tool,
           args: input.args,
-          title: output.title,
+          title: output.title || input.tool,
           output: output.output,
         });
       }),
