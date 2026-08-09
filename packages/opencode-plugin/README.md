@@ -69,7 +69,8 @@ credentials when `SPCODE_MODE` is on (see softprobe-code
 
 MCP tools: OpenCode currently fires `tool.execute.after` with the raw MCP
 `CallToolResult` (`{ content: [...] }`) before it normalizes to
-`{ title, output }`. This plugin extracts text from `content` so `sp.output`
-is not recorded as `"{}"`.
+`{ title, output }`. This plugin waits for `message.part.updated` (completed)
+in that case so `sp.output` gets the truncated `part.state.output` instead of
+`"{}"`.
 
 See [Coding agents](../../docs/integrations/coding-agents.md).

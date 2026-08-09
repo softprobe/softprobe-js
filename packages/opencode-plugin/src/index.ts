@@ -7,7 +7,6 @@ import {
   createSoftprobeSessionTracer,
   SoftprobeSessionTracer,
 } from "./softprobe.js";
-import { normalizeToolExecuteAfterOutput } from "./tool-result.js";
 import type { MessagePart, SessionNextEvent } from "./types.js";
 
 type OpencodeEvent =
@@ -257,17 +256,20 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
 
     "tool.execute.after": (input, output) =>
       safeRun("tool.execute.after", () => {
-        // OpenCode MCP tools fire this hook with raw CallToolResult
-        // ({ content }) before normalizing to { title, output }.
-        const result = normalizeToolExecuteAfterOutput(output);
+        // Registry tools pass `{ title, output }`. MCP tools currently fire
+        // this hook with raw CallToolResult (`{ content }`) *before*
+        // OpenCode normalizes/truncates — ending here would record
+        // `sp.output: "{}"` and block message.part.updated (canonical
+        // truncated `part.state.output`) via tracedToolCallIds. Defer when
+        // `output` is missing so traceToolPart owns the end.
+        if (typeof output?.output !== "string") return;
         tracer.traceToolEnd({
           sessionID: input.sessionID,
           callID: input.callID,
           tool: input.tool,
           args: input.args,
-          title: result.title || input.tool,
-          output: result.output,
-          status: result.status,
+          title: output.title || input.tool,
+          output: output.output,
         });
       }),
   };
@@ -320,8 +322,3 @@ export {
   type SoftprobePluginCredentials,
 } from "./config.js";
 export { inferToolKind } from "./tool-kind.js";
-export {
-  normalizeToolExecuteAfterOutput,
-  type ToolExecuteAfterOutput,
-  type NormalizedToolResult,
-} from "./tool-result.js";
