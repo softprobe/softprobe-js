@@ -181,6 +181,109 @@ describe("createHooksFromTracer", () => {
 
     await hooks.dispose?.();
   });
+
+  it("defers MCP tool end to message.part.updated for sp.output", async () => {
+    const exporter = new InMemorySpanExporter();
+    const client = new SoftprobeClient({
+      publicKey: "pk",
+      baseUrl: "http://127.0.0.1:8091",
+      otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
+      serviceName: "opencode",
+      spanExporter: exporter,
+      useSimpleProcessor: true,
+      registerProvider: false,
+    });
+    const sessionTracer = new SoftprobeSessionTracer(client);
+    const hooks = createHooksFromTracer(sessionTracer);
+    const sessionID = "sess-mcp-1";
+    const t0 = Date.parse("2024-07-19T12:00:00.000Z");
+
+    await hooks["chat.message"]?.(
+      {
+        sessionID,
+        messageID: "msg-user",
+        agent: "build",
+        model: { providerID: "openai", modelID: "gpt-4.1" },
+      } as never,
+      { parts: [{ type: "text", text: "read doc" }] } as never,
+    );
+    await hooks.event?.({
+      event: {
+        id: "step-1",
+        type: "session.next.step.started",
+        properties: {
+          sessionID,
+          timestamp: t0,
+          agent: "build",
+          model: { providerID: "openai", id: "gpt-4.1" },
+        },
+      },
+    } as never);
+
+    await hooks["tool.execute.before"]?.(
+      {
+        sessionID,
+        callID: "call-mcp-1",
+        tool: "lark-mcp_docx_v1_document_rawContent",
+      } as never,
+      {
+        args: { path: { document_id: "DJQr" } },
+      } as never,
+    );
+    // OpenCode MCP path currently passes raw CallToolResult here — must not
+    // end the span yet or part.updated cannot fill truncated output.
+    await hooks["tool.execute.after"]?.(
+      {
+        sessionID,
+        callID: "call-mcp-1",
+        tool: "lark-mcp_docx_v1_document_rawContent",
+        args: { path: { document_id: "DJQr" } },
+      } as never,
+      {
+        content: [{ type: "text", text: "# Raw MCP body (pre-truncate)" }],
+      } as never,
+    );
+
+    await client.forceFlush();
+    expect(
+      normalizeReadableSpans(exporter.getFinishedSpans()).filter(
+        (s) => s.observation_type === "tool",
+      ),
+    ).toHaveLength(0);
+
+    await hooks.event?.({
+      event: {
+        type: "message.part.updated",
+        properties: {
+          part: {
+            id: "part-mcp-1",
+            callID: "call-mcp-1",
+            sessionID,
+            type: "tool",
+            messageID: "msg-asst",
+            tool: "lark-mcp_docx_v1_document_rawContent",
+            state: {
+              status: "completed",
+              title: "docx",
+              input: { path: { document_id: "DJQr" } },
+              output: "# Truncated document body",
+              time: { start: t0, end: t0 + 1100 },
+            },
+          },
+        },
+      },
+    } as never);
+
+    await client.forceFlush();
+    const spans = normalizeReadableSpans(exporter.getFinishedSpans());
+    const tool = spans.find((s) => s.observation_type === "tool")!;
+    expect(tool.attributes["sp.output"]).toContain("# Truncated document body");
+    expect(tool.attributes["sp.output"]).not.toBe("{}");
+    expect(tool.attributes["sp.tool.kind"]).toBe("mcp");
+    expect(tool.attributes["sp.tool.status"]).toBe("ok");
+
+    await hooks.dispose?.();
+  });
 });
 
 describe("SoftprobePlugin", () => {
