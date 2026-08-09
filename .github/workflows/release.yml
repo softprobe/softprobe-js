@@ -82,7 +82,7 @@ jobs:
             sed -i '/_authToken/d;/always-auth/d' "$HOME/.npmrc" || true
           fi
 
-          # tracing first — dependents declare workspace:* on it
+          # tracing first — dependents pin @softprobe/tracing=$VERSION above
           for dir in \
             packages/tracing \
             packages/langchain \
