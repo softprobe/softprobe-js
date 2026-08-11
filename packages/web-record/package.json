@@ -1,0 +1,56 @@
+{
+  "name": "@softprobe/web-record",
+  "version": "0.1.0",
+  "description": "Browser session recording SDK that exports rrweb batches to Softprobe via OTLP",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@rrweb/types": "2.0.0-alpha.4",
+    "@softprobe/tracing": "file:../tracing",
+    "rrweb": "2.0.0-alpha.4",
+    "ua-parser-js": "^2.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "jsdom": "^26.0.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "softprobe",
+    "session-replay",
+    "rrweb",
+    "opentelemetry",
+    "otlp"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/softprobe/softprobe-js.git",
+    "directory": "packages/web-record"
+  },
+  "license": "MIT"
+}
