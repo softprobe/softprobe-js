@@ -376,12 +376,15 @@ export function createHooksFromTracer(tracer: SoftprobeSessionTracer): Hooks {
       }),
 
     "tool.execute.before": (input, output) =>
-      safeRun("tool.execute.before", () => {
-        tracer.traceToolStart({
-          sessionID: input.sessionID,
-          callID: input.callID,
-          tool: input.tool,
-          args: output.args,
+      Promise.resolve().then(() => {
+        tracer.assertToolAllowed(input.sessionID, input.tool);
+        return safeRun("tool.execute.before", () => {
+          tracer.traceToolStart({
+            sessionID: input.sessionID,
+            callID: input.callID,
+            tool: input.tool,
+            args: output.args,
+          });
         });
       }),
 
@@ -454,6 +457,7 @@ export {
   SoftprobeSessionTracer,
   createSoftprobeSessionTracer,
 } from "./softprobe.js";
+export type { EvaluationContext } from "./softprobe.js";
 export { SessionGraph, parseTaskCallArgs } from "./session-graph.js";
 export type { TaskBinding, TaskCallArgs } from "./session-graph.js";
 export type { SessionLookup } from "./types.js";

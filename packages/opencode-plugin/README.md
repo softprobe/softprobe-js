@@ -84,3 +84,22 @@ Session lifecycle is isolated per session: a sub-agent session going idle
 finalizes only its own spans, never the parent session's in-flight work.
 
 See [Coding agents](../../docs/integrations/coding-agents.md).
+
+## Evaluator integration (Phase 1)
+
+The evaluator service can pass an optional `evaluation` context to
+`createSoftprobeSessionTracer` (or `SoftprobeSessionTracer`). The plugin uses
+the existing session graph to mark the configured root and task-created
+verifier children, then propagates `evaluationId`, `sopId`, `sopVersion`, and
+`sourceTraceId` as `sp.metadata.*` on evaluator observations. Subject sessions
+without an evaluator role are left unchanged.
+
+The existing `tool.execute.before` boundary can enforce an optional
+`allowedTools` list in evaluator sessions. Scorecards are captured with
+`tracer.traceScorecard(sessionID, output)` as the existing event observation
+`opencode.evaluation.scorecard`; malformed and missing output is recorded with
+`scorecardStatus` rather than scored or repaired.
+
+Reasoning/orchestration, SOP execution, generic scoring, and a scorecard
+protocol are not implemented by this plugin. Those capabilities remain in the
+evaluator service.

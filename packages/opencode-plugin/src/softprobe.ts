@@ -128,6 +128,21 @@ function getCompletedReasoningTimestamp(part: MessagePart): number | undefined {
 export type SoftprobeSessionTracerOptions = SoftprobeClientOptions & {
   /** OpenCode client API lookup used to classify unknown sessions lazily. */
   sessionLookup?: SessionLookup;
+  /** Optional evaluator correlation supplied by the evaluator service. */
+  evaluation?: EvaluationContext;
+};
+
+export type EvaluationContext = {
+  evaluationId: string;
+  sopId: string;
+  sopVersion: string;
+  sourceTraceId: string;
+  /** Explicit evaluator root; omitted roots are inferred from first activity. */
+  evaluatorRootSessionID?: string;
+  /** Agents whose task-created child sessions are verifier sessions. */
+  verifierAgents?: readonly string[];
+  /** When set, only these tools are executable in evaluator sessions. */
+  allowedTools?: readonly string[];
 };
 
 /**
@@ -138,6 +153,10 @@ export class SoftprobeSessionTracer {
   readonly client: SoftprobeClient;
   private readonly userId?: string;
   private readonly sessionLookup?: SessionLookup;
+  private readonly evaluation?: EvaluationContext;
+  private readonly verifierSessions = new Set<string>();
+  private inferredEvaluationRootSessionID?: string;
+  private scorecardSequence = 0;
 
   /** Sub-agent session relationships (parent links + task-call bindings). */
   private readonly sessionGraph = new SessionGraph();
@@ -181,11 +200,16 @@ export class SoftprobeSessionTracer {
 
   constructor(
     client: SoftprobeClient,
-    options: { userId?: string; sessionLookup?: SessionLookup } = {},
+    options: {
+      userId?: string;
+      sessionLookup?: SessionLookup;
+      evaluation?: EvaluationContext;
+    } = {},
   ) {
     this.client = client;
     this.userId = options.userId;
     this.sessionLookup = options.sessionLookup;
+    this.evaluation = options.evaluation;
   }
 
   /**
@@ -336,6 +360,7 @@ export class SoftprobeSessionTracer {
       this.sessionGraph.bindingFor(sessionID) ||
       this.sessionGraph.isRoot(sessionID)
     ) {
+      this.markVerifierSession(sessionID, hints);
       return;
     }
     const pending = this.classifying.get(sessionID);
@@ -367,6 +392,24 @@ export class SoftprobeSessionTracer {
       return;
     }
     this.tryBindTask(sessionID, parentID, hints);
+    this.markVerifierSession(sessionID, hints);
+  }
+
+  private markVerifierSession(
+    sessionID: string,
+    hints: { agent?: string; promptText?: string },
+  ): void {
+    const binding = this.sessionGraph.bindingFor(sessionID);
+    const taskAgent = binding
+      ? this.sessionGraph.taskCallArgs(binding.taskCallID)?.subagent_type
+      : undefined;
+    const verifierAgents = this.evaluation?.verifierAgents ?? ["verifier"];
+    if (
+      (hints.agent && verifierAgents.includes(hints.agent)) ||
+      (taskAgent && verifierAgents.includes(taskAgent))
+    ) {
+      this.verifierSessions.add(sessionID);
+    }
   }
 
   /**
@@ -487,6 +530,93 @@ export class SoftprobeSessionTracer {
     };
   }
 
+  private evaluatorRole(sessionID: string): "evaluator" | "verifier" | undefined {
+    if (!this.evaluation) return undefined;
+    const root =
+      this.evaluation.evaluatorRootSessionID ??
+      this.inferredEvaluationRootSessionID;
+    if (root === sessionID) return "evaluator";
+    return this.verifierSessions.has(sessionID) ? "verifier" : undefined;
+  }
+
+  private evaluationMetadata(
+    sessionID: string,
+    metadata: Record<string, JsonValue> = {},
+  ): Record<string, JsonValue> {
+    if (!this.evaluation) return metadata;
+    const role = this.evaluatorRole(sessionID);
+    // A tracer may observe subject sessions alongside an evaluator run. Do
+    // not leak evaluator correlation into those subject observations.
+    if (!role) return metadata;
+    return {
+      ...metadata,
+      evaluationId: this.evaluation.evaluationId,
+      sopId: this.evaluation.sopId,
+      sopVersion: this.evaluation.sopVersion,
+      sourceTraceId: this.evaluation.sourceTraceId,
+      ...(role ? { evaluatorRole: role } : {}),
+    };
+  }
+
+  /** Throw at OpenCode's existing before-tool boundary when restricted. */
+  assertToolAllowed(sessionID: string, tool: string): void {
+    const allowed = this.evaluation?.allowedTools;
+    if (!allowed || !this.evaluatorRole(sessionID)) return;
+    if (!allowed.includes(tool)) {
+      throw new Error(`tool "${tool}" is not permitted in evaluator mode`);
+    }
+  }
+
+  /** Capture evaluator-produced scorecard output as an ordinary event span. */
+  traceScorecard(sessionID: string, scorecard?: unknown): void {
+    const id = `scorecard:${++this.scorecardSequence}`;
+    if (scorecard === undefined) {
+      this.traceEvent({
+        id,
+        sessionID,
+        name: "opencode.evaluation.scorecard",
+        timestamp: Date.now(),
+        output: { status: "missing" },
+        metadata: this.evaluationMetadata(sessionID, {
+          scorecardStatus: "missing",
+        }),
+      });
+      return;
+    }
+
+    let output: JsonValue;
+    let status: "valid" | "malformed" = "valid";
+    if (typeof scorecard === "string") {
+      try {
+        output = JSON.parse(scorecard) as JsonValue;
+        if (!output || typeof output !== "object" || Array.isArray(output)) {
+          status = "malformed";
+        }
+      } catch {
+        output = { raw: scorecard };
+        status = "malformed";
+      }
+    } else if (
+      typeof scorecard === "object" &&
+      scorecard !== null &&
+      !Array.isArray(scorecard)
+    ) {
+      output = scorecard as JsonValue;
+    } else {
+      output = { raw: asJson(scorecard) };
+      status = "malformed";
+    }
+
+    this.traceEvent({
+      id,
+      sessionID,
+      name: "opencode.evaluation.scorecard",
+      timestamp: Date.now(),
+      output,
+      metadata: this.evaluationMetadata(sessionID, { scorecardStatus: status }),
+    });
+  }
+
   traceUserMessage(input: UserMessageInput): void {
     if (
       input.messageID &&
@@ -496,6 +626,14 @@ export class SoftprobeSessionTracer {
     }
 
     this.abortedSessions.delete(input.sessionID);
+    if (
+      this.evaluation &&
+      !this.evaluation.evaluatorRootSessionID &&
+      !this.inferredEvaluationRootSessionID &&
+      !this.sessionGraph.bindingFor(input.sessionID)
+    ) {
+      this.inferredEvaluationRootSessionID = input.sessionID;
+    }
     const formattedInput = formatUserParts(input.parts);
 
     if (input.messageID) {
@@ -529,7 +667,7 @@ export class SoftprobeSessionTracer {
       ...(parentObservation
         ? { parent: parentObservation }
         : { root: true }),
-      metadata: {
+      metadata: this.evaluationMetadata(input.sessionID, {
         messageID: input.messageID ?? null,
         agent: input.agent ?? null,
         providerID: input.model?.providerID ?? null,
@@ -540,7 +678,7 @@ export class SoftprobeSessionTracer {
         ...(binding
           ? { "opencode.parentTaskCallID": binding.taskCallID }
           : {}),
-      },
+      }),
     });
 
     const observation: TurnObservation = {
@@ -559,12 +697,12 @@ export class SoftprobeSessionTracer {
       parent: turn,
       ...this.sessionAttrs(input.sessionID),
       input: formattedInput,
-      metadata: {
+      metadata: this.evaluationMetadata(input.sessionID, {
         messageID: input.messageID ?? null,
         agent: input.agent ?? null,
         providerID: input.model?.providerID ?? null,
         modelID: input.model?.modelID ?? null,
-      },
+      }),
     });
     userEvent.end();
   }
@@ -616,12 +754,12 @@ export class SoftprobeSessionTracer {
       model: input.model.id,
       provider: input.model.providerID,
       operationName: "chat",
-      metadata: {
+      metadata: this.evaluationMetadata(input.sessionID, {
         agent: input.agent,
         providerID: input.model.providerID,
         variant: input.model.variant ?? null,
         snapshot: input.snapshot ?? null,
-      },
+      }),
     });
 
     this.activeGenerations.set(input.sessionID, {
@@ -762,7 +900,7 @@ export class SoftprobeSessionTracer {
       cost: { total: input.cost },
       output,
       completionEvent: output,
-      metadata: {
+        metadata: this.evaluationMetadata(input.sessionID, {
         messageID: input.messageID,
         parentID: input.parentID,
         agent: input.agent ?? null,
@@ -772,7 +910,7 @@ export class SoftprobeSessionTracer {
         reasoningTokens: input.tokens.reasoning,
         cacheRead: input.tokens.cache.read,
         cacheWrite: input.tokens.cache.write,
-      },
+        }),
     });
     if (input.finish) {
       generation.update({ finishReasons: [input.finish] });
@@ -820,6 +958,7 @@ export class SoftprobeSessionTracer {
       ...this.sessionAttrs(input.sessionID),
       startTime: input.completed,
       output: { error: input.error },
+      metadata: this.evaluationMetadata(input.sessionID),
     });
     generation.recordException(new Error(input.error.message));
     this.generationParents.set(input.sessionID, generation);
@@ -852,7 +991,7 @@ export class SoftprobeSessionTracer {
       startTime: input.timestamp,
       input: input.input === undefined ? undefined : asJson(input.input),
       output: input.output === undefined ? undefined : asJson(input.output),
-      metadata: input.metadata,
+      metadata: this.evaluationMetadata(input.sessionID, input.metadata),
     });
     event.end({ endTime: input.timestamp });
   }
@@ -884,11 +1023,11 @@ export class SoftprobeSessionTracer {
       name: "opencode.generation.reasoning",
       timestamp: input.timestamp,
       output: { text: input.text },
-      metadata: {
+      metadata: this.evaluationMetadata(input.sessionID, {
         reasoningID: input.reasoningID,
         messageID: input.messageID ?? null,
         source: input.source,
-      },
+      }),
       parent,
     });
   }
@@ -940,6 +1079,7 @@ export class SoftprobeSessionTracer {
       parent: turn.observation,
       ...this.sessionAttrs(sessionID),
       operationName: "chat",
+      metadata: this.evaluationMetadata(sessionID),
     });
     this.activeGenerations.set(sessionID, {
       observation: generation,
@@ -1059,10 +1199,10 @@ export class SoftprobeSessionTracer {
       kind: inferToolKind(input.tool),
       status: "ok",
       input: asJson(input.args),
-      metadata: {
+      metadata: this.evaluationMetadata(input.sessionID, {
         callID: input.callID,
         tool: input.tool,
-      },
+      }),
     });
 
     this.activeTools.set(input.callID, {
@@ -1168,7 +1308,7 @@ export class SoftprobeSessionTracer {
 export function createSoftprobeSessionTracer(
   options: SoftprobeSessionTracerOptions,
 ): SoftprobeSessionTracer {
-  const { sessionLookup, ...clientOptions } = options;
+  const { sessionLookup, evaluation, ...clientOptions } = options;
   const client = new SoftprobeClient({
     ...clientOptions,
     serviceName: options.serviceName ?? "opencode",
@@ -1190,5 +1330,6 @@ export function createSoftprobeSessionTracer(
   return new SoftprobeSessionTracer(client, {
     userId: options.userId,
     sessionLookup,
+    evaluation,
   });
 }

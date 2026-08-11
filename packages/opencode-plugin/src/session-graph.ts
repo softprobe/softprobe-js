@@ -135,6 +135,10 @@ export class SessionGraph {
     return this.childByTaskCall.get(callID);
   }
 
+  taskCallArgs(callID: string): TaskCallArgs | undefined {
+    return this.taskCalls.get(callID)?.args;
+  }
+
   /**
    * Infer which task call in `parentSessionID` dispatched `childSessionID`.
    * Returns undefined on any ambiguity — never guesses.
