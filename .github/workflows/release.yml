@@ -58,7 +58,8 @@ jobs:
           for dir in \
             packages/langchain \
             packages/vercel-ai-sdk \
-            packages/opencode-plugin
+            packages/opencode-plugin \
+            packages/web-record
           do
             npm pkg set "version=$VERSION" --prefix "$dir"
             # npm does not rewrite "*" / workspace: on publish — pin the dep.
@@ -78,7 +79,8 @@ jobs:
             packages/tracing \
             packages/langchain \
             packages/vercel-ai-sdk \
-            packages/opencode-plugin
+            packages/opencode-plugin \
+            packages/web-record
           do
             echo "Publishing ${dir}..."
             (cd "$dir" && npm publish --access public)
@@ -95,7 +97,8 @@ jobs:
             packages/tracing/package.json \
             packages/langchain/package.json \
             packages/vercel-ai-sdk/package.json \
-            packages/opencode-plugin/package.json
+            packages/opencode-plugin/package.json \
+            packages/web-record/package.json
 
           git fetch origin main
           git checkout -B main origin/main
@@ -104,14 +107,16 @@ jobs:
             packages/tracing \
             packages/langchain \
             packages/vercel-ai-sdk \
-            packages/opencode-plugin
+            packages/opencode-plugin \
+            packages/web-record
           do
             npm pkg set "version=$VERSION" --prefix "$dir"
           done
           for dir in \
             packages/langchain \
             packages/vercel-ai-sdk \
-            packages/opencode-plugin
+            packages/opencode-plugin \
+            packages/web-record
           do
             npm pkg set "dependencies.@softprobe/tracing=*" --prefix "$dir"
           done
@@ -120,7 +125,8 @@ jobs:
             packages/tracing/package.json \
             packages/langchain/package.json \
             packages/vercel-ai-sdk/package.json \
-            packages/opencode-plugin/package.json
+            packages/opencode-plugin/package.json \
+            packages/web-record/package.json
           then
             echo "main already at version $VERSION"
             exit 0
@@ -130,6 +136,7 @@ jobs:
             packages/tracing/package.json \
             packages/langchain/package.json \
             packages/vercel-ai-sdk/package.json \
-            packages/opencode-plugin/package.json
+            packages/opencode-plugin/package.json \
+            packages/web-record/package.json
           git commit -m "chore: sync package versions to ${VERSION}"
           git push origin main

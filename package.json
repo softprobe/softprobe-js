@@ -8,10 +8,10 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "npm run build -w @softprobe/tracing && npm run build -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin",
-    "test": "npm run test -w @softprobe/tracing && npm run test -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin",
-    "typecheck": "npm run typecheck -w @softprobe/tracing && npm run typecheck -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin",
-    "lint": "npm run lint -w @softprobe/tracing && npm run lint -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin"
+    "build": "npm run build -w @softprobe/tracing && npm run build -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin -w @softprobe/web-record",
+    "test": "npm run test -w @softprobe/tracing && npm run test -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin -w @softprobe/web-record",
+    "typecheck": "npm run typecheck -w @softprobe/tracing && npm run typecheck -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin -w @softprobe/web-record",
+    "lint": "npm run lint -w @softprobe/tracing && npm run lint -w @softprobe/langchain -w @softprobe/vercel-ai-sdk -w @softprobe/opencode-plugin -w @softprobe/web-record"
   },
   "devDependencies": {
     "typescript": "^5.8.2"

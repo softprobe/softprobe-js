@@ -13,6 +13,10 @@ In the Softprobe workspace this repo is the sibling checkout `softprobe-js/`
 | [`@softprobe/langchain`](packages/langchain) | LangChain callback handler |
 | [`@softprobe/vercel-ai-sdk`](packages/vercel-ai-sdk) | Vercel AI SDK telemetry |
 | [`@softprobe/opencode-plugin`](packages/opencode-plugin) | OpenCode coding-agent plugin |
+| [`@softprobe/web-record`](packages/web-record) | Browser session recording (rrweb → OTLP) |
+
+End-to-end web session replay (SPA → thelake → explorer):
+[sp-llm docs/web-session-replay.md](https://github.com/softprobe/sp-llm/blob/main/docs/web-session-replay.md).
 
 ## Develop
 
