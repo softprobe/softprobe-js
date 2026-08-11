@@ -17,7 +17,6 @@ In the Softprobe workspace this repo is the sibling checkout `softprobe-js/`
 
 End-to-end web session replay (SPA → thelake → explorer):
 [sp-llm docs/web-session-replay.md](https://github.com/softprobe/sp-llm/blob/main/docs/web-session-replay.md).
-| [`@softprobe/web-record`](packages/web-record) | Browser session recording (rrweb → OTLP) |
 
 ## Develop
 
