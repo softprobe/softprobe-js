@@ -55,6 +55,8 @@ export class RecordSdk implements WebRecordController {
   private stopHandle: RecordingHandle | null = null;
   private saving = false;
   private fetchImpl: typeof fetch;
+  /** Serializes setSessionId drains so overlapping navigations cannot race. */
+  private sessionSwitch: Promise<void> = Promise.resolve();
 
   private constructor(
     options: WebRecordInitOptions & { enabled: boolean; otlpEndpoint: string },
@@ -184,9 +186,11 @@ export class RecordSdk implements WebRecordController {
   setSessionId(sessionId: string): Promise<void> {
     const next = asNonEmptyString(sessionId);
     if (!next || next === this._sessionId) return Promise.resolve();
-    // Drain buffer under the OLD session id before rebinding — avoid orphaning
-    // in-flight batches onto the new correlation id.
-    return this.switchSessionId(next);
+    // Serialize switches so overlapping navigations cannot race the drain.
+    this.sessionSwitch = this.sessionSwitch
+      .catch(() => undefined)
+      .then(() => this.switchSessionId(next));
+    return this.sessionSwitch;
   }
 
   private async switchSessionId(next: string): Promise<void> {
@@ -197,14 +201,22 @@ export class RecordSdk implements WebRecordController {
     }
   }
 
-  /** Wait out in-flight exports, then flush until the buffer is empty. */
+  /**
+   * Wait out in-flight exports, then flush until the buffer is empty.
+   * Stops after a failed flush so we do not spin forever when OTLP is down
+   * (events stay queued under the old session for a later attempt / stop).
+   */
   private async drainFlush(): Promise<void> {
     for (;;) {
       while (this.saving) {
         await new Promise<void>((r) => setTimeout(r, 0));
       }
       if (this.events.length === 0) return;
-      await this.flush();
+      const before = this.events.length;
+      const ok = await this.flush();
+      if (!ok) return;
+      // flush is a no-op when saving raced; avoid busy-loop.
+      if (this.events.length >= before) return;
     }
   }
 
@@ -226,12 +238,13 @@ export class RecordSdk implements WebRecordController {
     return event;
   }
 
-  async flush(): Promise<void> {
-    if (!this.enabled || this.events.length === 0 || this.saving) return;
+  async flush(): Promise<boolean> {
+    if (!this.enabled || this.events.length === 0 || this.saving) return true;
     this.saving = true;
     // Splice out the batch BEFORE await so events recorded while export is in
     // flight stay in `this.events` and are not dropped on success.
     const batch = this.events.splice(0, this.events.length);
+    const batchIndex = this.batchIndex;
     try {
       if (!this.systemInfo) this.systemInfo = await this.collectSystemInfo();
       const tags: Record<string, string | number | boolean | null | undefined> = {
@@ -249,7 +262,7 @@ export class RecordSdk implements WebRecordController {
         traceId: randomHexId(16),
         spanId: randomHexId(8),
         sessionId: this._sessionId,
-        batchIndex: this.batchIndex++,
+        batchIndex,
         startTimeUnixNano: msToUnixNano(startMs),
         endTimeUnixNano: msToUnixNano(now),
         events: batch,
@@ -272,10 +285,12 @@ export class RecordSdk implements WebRecordController {
           `OTLP export failed: ${res.status} ${await res.text()}`,
         );
       }
-      // Success: leave any events that arrived during the await.
+      this.batchIndex = batchIndex + 1;
+      return true;
     } catch (error) {
       console.error("[@softprobe/web-record] Failed to flush recording:", error);
       this.events.unshift(...batch);
+      return false;
     } finally {
       this.saving = false;
     }

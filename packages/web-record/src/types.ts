@@ -79,5 +79,5 @@ export type WebRecordController = {
   setTags: (tags: Tags, override?: boolean) => void;
   /** Switch correlation id (e.g. when OpenCode chat session changes). */
   setSessionId: (sessionId: string) => void | Promise<void>;
-  flush: () => Promise<void>;
+  flush: () => Promise<boolean>;
 };
