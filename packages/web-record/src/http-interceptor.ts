@@ -9,7 +9,7 @@ export function getSessionIdHeaderName(): string {
 }
 
 /**
- * Patches XHR + fetch to inject `x-sp-session-id`.
+ * Patches XHR + fetch to inject `x-sp-session-id` on same-origin requests only.
  * Provider is consulted on each request so session switches take effect.
  */
 export function initializeHttpInterceptor(getSessionId: SessionIdProvider): void {
@@ -24,6 +24,36 @@ export function updateHttpInterceptorSessionId(getSessionId: SessionIdProvider):
 
 function currentSessionId(): string {
   return sessionIdProvider?.() ?? "";
+}
+
+/** Relative URLs and same `location.origin` only — skip third-party/CDN. */
+export function isSameOriginRequest(resource: RequestInfo | URL): boolean {
+  try {
+    let href: string;
+    if (typeof Request !== "undefined" && resource instanceof Request) {
+      href = resource.url;
+    } else if (resource instanceof URL) {
+      href = resource.href;
+    } else {
+      href = String(resource);
+    }
+
+    // Scheme-relative or absolute with a scheme → compare origins.
+    // Bare paths (`/api`, `./x`) resolve against location and are same-origin.
+    if (typeof location === "undefined") {
+      // No browsing context (e.g. unit tests without jsdom location): treat
+      // relative paths as same-origin; absolute http(s) as cross-origin.
+      if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href) && !href.startsWith("//")) {
+        return true;
+      }
+      return false;
+    }
+
+    const resolved = new URL(href, location.href);
+    return resolved.origin === location.origin;
+  } catch {
+    return false;
+  }
 }
 
 function patchXMLHttpRequest(): void {
@@ -43,6 +73,8 @@ function patchXMLHttpRequest(): void {
     username?: string | null,
     password?: string | null,
   ): void {
+    (this as XMLHttpRequest & { __sp_request_url?: string | URL }).__sp_request_url =
+      url;
     return originalOpen.call(this, method, url, async ?? true, username, password);
   };
 
@@ -51,7 +83,9 @@ function patchXMLHttpRequest(): void {
     body?: Document | XMLHttpRequestBodyInit | null,
   ): void {
     const sid = currentSessionId();
-    if (sid) {
+    const url = (this as XMLHttpRequest & { __sp_request_url?: string | URL })
+      .__sp_request_url;
+    if (sid && url !== undefined && isSameOriginRequest(url)) {
       try {
         this.setRequestHeader(HEADER_X_SP_SESSION_ID, sid);
       } catch {
@@ -78,11 +112,24 @@ function patchFetchAPI(): void {
     options?: RequestInit,
   ): Promise<Response> {
     const sid = currentSessionId();
-    if (!sid) return originalFetch(resource, options);
+    if (!sid || !isSameOriginRequest(resource)) {
+      return originalFetch(resource, options);
+    }
 
-    const next: RequestInit = { ...(options ?? {}) };
-    const headers = next.headers ?? {};
     try {
+      if (typeof Request !== "undefined" && resource instanceof Request) {
+        const headers = new Headers(resource.headers);
+        if (options?.headers) {
+          new Headers(options.headers).forEach((value, key) => {
+            headers.set(key, value);
+          });
+        }
+        headers.set(HEADER_X_SP_SESSION_ID, sid);
+        return originalFetch(resource, { ...options, headers });
+      }
+
+      const next: RequestInit = { ...(options ?? {}) };
+      const headers = next.headers ?? {};
       if (headers instanceof Headers) {
         headers.set(HEADER_X_SP_SESSION_ID, sid);
         next.headers = headers;
@@ -94,10 +141,10 @@ function patchFetchAPI(): void {
           [HEADER_X_SP_SESSION_ID]: sid,
         };
       }
+      return originalFetch(resource, next);
     } catch {
-      // Continue without the header.
+      return originalFetch(resource, options);
     }
-    return originalFetch(resource, next);
   }) as typeof fetch;
 
   g.fetch.__sp_sdk_patched_fetch = true;

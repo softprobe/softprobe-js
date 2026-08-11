@@ -181,12 +181,30 @@ export class RecordSdk implements WebRecordController {
     this.tags = override ? { ...tags } : { ...this.tags, ...tags };
   }
 
-  setSessionId(sessionId: string): void {
+  setSessionId(sessionId: string): Promise<void> {
     const next = asNonEmptyString(sessionId);
-    if (!next) return;
+    if (!next || next === this._sessionId) return Promise.resolve();
+    // Drain buffer under the OLD session id before rebinding — avoid orphaning
+    // in-flight batches onto the new correlation id.
+    return this.switchSessionId(next);
+  }
+
+  private async switchSessionId(next: string): Promise<void> {
+    await this.drainFlush();
     this._sessionId = next;
     if (this.enabled) {
       updateHttpInterceptorSessionId(() => this._sessionId);
+    }
+  }
+
+  /** Wait out in-flight exports, then flush until the buffer is empty. */
+  private async drainFlush(): Promise<void> {
+    for (;;) {
+      while (this.saving) {
+        await new Promise<void>((r) => setTimeout(r, 0));
+      }
+      if (this.events.length === 0) return;
+      await this.flush();
     }
   }
 
@@ -211,7 +229,9 @@ export class RecordSdk implements WebRecordController {
   async flush(): Promise<void> {
     if (!this.enabled || this.events.length === 0 || this.saving) return;
     this.saving = true;
-    const batch = this.events;
+    // Splice out the batch BEFORE await so events recorded while export is in
+    // flight stay in `this.events` and are not dropped on success.
+    const batch = this.events.splice(0, this.events.length);
     try {
       if (!this.systemInfo) this.systemInfo = await this.collectSystemInfo();
       const tags: Record<string, string | number | boolean | null | undefined> = {
@@ -252,9 +272,10 @@ export class RecordSdk implements WebRecordController {
           `OTLP export failed: ${res.status} ${await res.text()}`,
         );
       }
-      this.events = [];
+      // Success: leave any events that arrived during the await.
     } catch (error) {
       console.error("[@softprobe/web-record] Failed to flush recording:", error);
+      this.events.unshift(...batch);
     } finally {
       this.saving = false;
     }

@@ -6,11 +6,18 @@ import {
   type Observation,
   type SoftprobeClientOptions,
 } from "@softprobe/tracing";
+import { BoundedSet } from "./bounded.js";
+import {
+  SessionGraph,
+  parseTaskCallArgs,
+  type TaskBinding,
+} from "./session-graph.js";
 import { inferToolKind } from "./tool-kind.js";
 import type {
   AssistantGenerationInput,
   MessagePart,
   SessionErrorInfo,
+  SessionLookup,
   UserMessageInput,
 } from "./types.js";
 
@@ -50,6 +57,26 @@ function asJson(value: unknown): JsonValue {
   }
   return String(value);
 }
+
+/** Dedup-set key scoped to a session so per-session cleanup stays precise. */
+function scopedKey(sessionID: string, id: string): string {
+  return `${sessionID}:${id}`;
+}
+
+/** Cap on remembered ended task spans (attachment targets for late children). */
+const ENDED_TASK_SPAN_CAP = 200;
+
+/**
+ * Cap per dedup set.
+ *
+ * This bounds memory but does not make eviction free: if an evicted callID
+ * later receives a duplicate delivery, its span is recreated — two spans for
+ * one tool call, the exact failure the dedup set exists to prevent. The cap
+ * raises the threshold rather than removing the failure, so it is set far
+ * above what any live session produces; reaching it needs thousands of calls
+ * between a span's force-end and a late duplicate for that same call.
+ */
+const TRACED_ID_CAP = 10_000;
 
 function formatUserParts(parts: MessagePart[]): JsonValue {
   const formatted: JsonValue[] = parts.map((part) => {
@@ -98,7 +125,10 @@ function getCompletedReasoningTimestamp(part: MessagePart): number | undefined {
   return undefined;
 }
 
-export type SoftprobeSessionTracerOptions = SoftprobeClientOptions;
+export type SoftprobeSessionTracerOptions = SoftprobeClientOptions & {
+  /** OpenCode client API lookup used to classify unknown sessions lazily. */
+  sessionLookup?: SessionLookup;
+};
 
 /**
  * Maps OpenCode session hooks to Softprobe Part A observations.
@@ -107,17 +137,40 @@ export type SoftprobeSessionTracerOptions = SoftprobeClientOptions;
 export class SoftprobeSessionTracer {
   readonly client: SoftprobeClient;
   private readonly userId?: string;
+  private readonly sessionLookup?: SessionLookup;
+
+  /** Sub-agent session relationships (parent links + task-call bindings). */
+  private readonly sessionGraph = new SessionGraph();
+  /** In-flight classification promises, deduped per session. */
+  private readonly classifying = new Map<string, Promise<void>>();
+  /**
+   * Recently ended task spans, kept so late-starting child sessions can still
+   * be parented under them (OTEL allows ended spans as parents).
+   */
+  private readonly endedTaskSpans = new Map<
+    string,
+    { observation: Observation; sessionID: string }
+  >();
+  /** messageID → sessionID index enabling per-session state cleanup. */
+  private readonly messageSession = new Map<string, string>();
 
   private readonly abortedSessions = new Set<string>();
-  private readonly tracedMessageIds = new Set<string>();
-  private readonly tracedGenerationIds = new Set<string>();
-  private readonly tracedEventIds = new Set<string>();
-  private readonly tracedReasoningIds = new Set<string>();
-  private readonly tracedToolCallIds = new Set<string>();
+  // Dedup keys outlive every scoped finalize (see clearTraceState), so they
+  // are capped rather than cleared. Only ids far past their session's end can
+  // fall out, and re-tracing one of those is harmless.
+  private readonly tracedMessageIds = new BoundedSet(TRACED_ID_CAP);
+  private readonly tracedGenerationIds = new BoundedSet(TRACED_ID_CAP);
+  private readonly tracedEventIds = new BoundedSet(TRACED_ID_CAP);
+  private readonly tracedReasoningIds = new BoundedSet(TRACED_ID_CAP);
+  private readonly tracedToolCallIds = new BoundedSet(TRACED_ID_CAP);
   private readonly pendingReasoningByMessageId = new Map<
     string,
     Map<string, MessagePart>
   >();
+  // Deliberately unbounded: every SDK part shape declares sessionID, so every
+  // entry is indexed in messageSession and cleared with its session. A cap
+  // here could only drop parts a pending traceGeneration still needs — losing
+  // the turn's and the generation's output — never save memory.
   private readonly assistantParts = new Map<string, Map<string, MessagePart>>();
   private readonly generationByMessageId = new Map<string, Generation>();
   private readonly turnByMessageId = new Map<string, TurnObservation>();
@@ -126,27 +179,62 @@ export class SoftprobeSessionTracer {
   private readonly activeGenerations = new Map<string, ActiveGenerationStep>();
   private readonly generationParents = new Map<string, Generation>();
 
-  constructor(client: SoftprobeClient, options: { userId?: string } = {}) {
+  constructor(
+    client: SoftprobeClient,
+    options: { userId?: string; sessionLookup?: SessionLookup } = {},
+  ) {
     this.client = client;
     this.userId = options.userId;
+    this.sessionLookup = options.sessionLookup;
   }
 
-  clearTraceState(): void {
-    this.assistantParts.clear();
-    this.abortedSessions.clear();
-    this.tracedEventIds.clear();
-    this.tracedReasoningIds.clear();
-    this.tracedToolCallIds.clear();
-    this.pendingReasoningByMessageId.clear();
-    this.generationByMessageId.clear();
-    this.generationParents.clear();
-    this.turnByMessageId.clear();
-    this.latestTurnBySession.clear();
+  /**
+   * Clear bookkeeping for ended spans. With a sessionID, only that session's
+   * state is cleared (a sub-agent session going idle must not disturb the
+   * parent session's in-flight spans).
+   *
+   * Only payload caches are cleared, in both the scoped and the global path.
+   * Dedup sets are never cleared here — they are capped instead (see
+   * {@link BoundedSet}) — so a late duplicate delivery can never recreate a
+   * span that was already force-ended, on scoped and legacy hosts alike.
+   */
+  clearTraceState(sessionID?: string): void {
+    if (!sessionID) {
+      this.assistantParts.clear();
+      this.abortedSessions.clear();
+      this.pendingReasoningByMessageId.clear();
+      this.generationByMessageId.clear();
+      this.generationParents.clear();
+      this.turnByMessageId.clear();
+      this.latestTurnBySession.clear();
+      this.messageSession.clear();
+      return;
+    }
+
+    this.abortedSessions.delete(sessionID);
+    this.generationParents.delete(sessionID);
+    this.latestTurnBySession.delete(sessionID);
+    for (const [messageID, turn] of this.turnByMessageId) {
+      if (turn.sessionID === sessionID) this.turnByMessageId.delete(messageID);
+    }
+    for (const [messageID, owner] of this.messageSession) {
+      if (owner !== sessionID) continue;
+      this.messageSession.delete(messageID);
+      this.assistantParts.delete(messageID);
+      this.pendingReasoningByMessageId.delete(messageID);
+      this.generationByMessageId.delete(messageID);
+    }
   }
 
   endActiveToolObservations(sessionID?: string, error?: SessionErrorInfo): void {
     for (const [callID, active] of this.activeTools) {
       if (sessionID && active.sessionID !== sessionID) continue;
+      if (active.tool === "task") {
+        const child = this.sessionGraph.childForTaskCall(callID);
+        if (child) {
+          active.observation.setAttributes({ "sp.child.session.id": child });
+        }
+      }
       if (error && error.name !== "MessageAbortedError") {
         active.observation.recordException(
           new Error(getSessionErrorMessage(error)),
@@ -162,6 +250,10 @@ export class SoftprobeSessionTracer {
         active.observation.end();
       }
       this.activeTools.delete(callID);
+      // Mark as traced so a late duplicate tool end (part.completed arriving
+      // after this forced end) does not recreate the span.
+      this.tracedToolCallIds.add(scopedKey(active.sessionID, callID));
+      if (active.tool === "task") this.archiveTaskSpan(callID, active);
     }
   }
 
@@ -181,19 +273,185 @@ export class SoftprobeSessionTracer {
     }
   }
 
-  endActiveTurnObservations(): void {
+  endActiveTurnObservations(sessionID?: string): void {
     for (const turn of new Set(this.latestTurnBySession.values())) {
+      if (sessionID && turn.sessionID !== sessionID) continue;
       turn.observation.end();
     }
-    this.turnByMessageId.clear();
-    this.latestTurnBySession.clear();
+    if (!sessionID) {
+      this.turnByMessageId.clear();
+      this.latestTurnBySession.clear();
+      return;
+    }
+    for (const [messageID, turn] of this.turnByMessageId) {
+      if (turn.sessionID === sessionID) this.turnByMessageId.delete(messageID);
+    }
+    this.latestTurnBySession.delete(sessionID);
   }
 
-  finalizeSessionTracing(): void {
-    this.endActiveToolObservations();
-    this.endActiveGenerationSteps();
-    this.endActiveTurnObservations();
-    this.clearTraceState();
+  /**
+   * End open observations and flush bookkeeping. With a sessionID, only that
+   * session is finalized; without one (dispose/shutdown, or hosts whose idle
+   * event carries no sessionID) everything is finalized.
+   */
+  finalizeSessionTracing(sessionID?: string): void {
+    this.endActiveToolObservations(sessionID);
+    this.endActiveGenerationSteps(sessionID);
+    this.endActiveTurnObservations(sessionID);
+    this.clearTraceState(sessionID);
+  }
+
+  /**
+   * Register session genealogy reported by OpenCode (`session.created` /
+   * `session.updated` carry `info.parentID` for task-tool child sessions).
+   */
+  registerSessionInfo(sessionID: string, parentID?: string | null): void {
+    if (parentID) {
+      this.sessionGraph.registerParent(sessionID, parentID);
+      this.tryBindTask(sessionID, parentID, {});
+    } else {
+      this.sessionGraph.markRoot(sessionID);
+    }
+  }
+
+  /** Drop relationship data for a deleted session (`session.deleted`). */
+  evictSession(sessionID: string): void {
+    this.sessionGraph.evictSession(sessionID);
+    for (const [callID, ended] of this.endedTaskSpans) {
+      if (ended.sessionID === sessionID) this.endedTaskSpans.delete(callID);
+    }
+  }
+
+  /**
+   * Ensure a session is classified (root vs sub-agent child) before its first
+   * spans are created. Resolves the parent from prior events or, failing
+   * that, the OpenCode client API, then tries to bind the session to the
+   * dispatching task call. Idempotent and deduplicated while in flight.
+   */
+  async ensureSessionClassified(
+    sessionID: string,
+    hints: { agent?: string; promptText?: string } = {},
+  ): Promise<void> {
+    if (
+      this.sessionGraph.bindingFor(sessionID) ||
+      this.sessionGraph.isRoot(sessionID)
+    ) {
+      return;
+    }
+    const pending = this.classifying.get(sessionID);
+    if (pending) return pending;
+    const task = this.classifySession(sessionID, hints).finally(() => {
+      this.classifying.delete(sessionID);
+    });
+    this.classifying.set(sessionID, task);
+    return task;
+  }
+
+  private async classifySession(
+    sessionID: string,
+    hints: { agent?: string; promptText?: string },
+  ): Promise<void> {
+    let parentID = this.sessionGraph.parentOf(sessionID);
+    if (!parentID && this.sessionLookup) {
+      try {
+        parentID = (await this.sessionLookup(sessionID)) ?? undefined;
+      } catch {
+        parentID = undefined;
+      }
+      if (parentID) this.sessionGraph.registerParent(sessionID, parentID);
+    }
+    if (!parentID) {
+      // No evidence of a parent. Treat as root; a late session.updated or
+      // task-part metadata event can still reclassify it.
+      this.sessionGraph.markRoot(sessionID);
+      return;
+    }
+    this.tryBindTask(sessionID, parentID, hints);
+  }
+
+  /**
+   * Bind a child session to the task call that dispatched it, when the call
+   * can be identified unambiguously. Bindings from task-part metadata are
+   * authoritative and are never replaced by inference.
+   */
+  private tryBindTask(
+    childSessionID: string,
+    parentSessionID: string,
+    hints: { agent?: string; promptText?: string },
+  ): void {
+    if (this.sessionGraph.bindingFor(childSessionID)?.source === "metadata") {
+      return;
+    }
+    const taskCallID = this.sessionGraph.resolveTaskCall(
+      childSessionID,
+      parentSessionID,
+      { agent: hints.agent, prompt: hints.promptText },
+    );
+    if (taskCallID) {
+      this.sessionGraph.bind({
+        childSessionID,
+        parentSessionID,
+        taskCallID,
+        source: "inferred",
+      });
+    }
+  }
+
+  /**
+   * Capture the authoritative child-session link published on the task tool
+   * part (`state.metadata.sessionId`, present while the part is running,
+   * before the child session starts).
+   */
+  private captureTaskBinding(part: MessagePart): void {
+    const metadata = part.state?.metadata;
+    const childSessionID = metadata?.["sessionId"];
+    if (typeof childSessionID !== "string" || !part.sessionID) return;
+    if (childSessionID === part.sessionID) return;
+    const callID = part.callID ?? part.id;
+    if (!callID) return;
+    const parentSessionId = metadata?.["parentSessionId"];
+    this.sessionGraph.bind({
+      childSessionID,
+      parentSessionID:
+        typeof parentSessionId === "string" ? parentSessionId : part.sessionID,
+      taskCallID: callID,
+      source: "metadata",
+    });
+  }
+
+  /** Move an ended task span into the archive used for late child attach. */
+  private archiveTaskSpan(
+    callID: string,
+    active: { observation: Observation; sessionID: string },
+  ): void {
+    this.sessionGraph.endTaskCall(callID);
+    this.endedTaskSpans.set(callID, {
+      observation: active.observation,
+      sessionID: active.sessionID,
+    });
+    if (this.endedTaskSpans.size > ENDED_TASK_SPAN_CAP) {
+      const oldest = this.endedTaskSpans.keys().next().value;
+      if (oldest !== undefined) this.endedTaskSpans.delete(oldest);
+    }
+  }
+
+  /**
+   * Locate the span of the task call that dispatched a child session.
+   *
+   * Direct lookup only. A previous version fell back to "the unique active
+   * task span in the parent session" when the bound call had no span, which
+   * could parent a child under an unrelated sibling task. Its justification —
+   * a path keying the task span by part.id while the binding carries a
+   * different callID — does not exist: `ToolPart.callID` is required in the
+   * SDK, and traceToolPart and captureTaskBinding derive the id from the same
+   * expression, so the two can never diverge. Callers fall back to the parent
+   * session's turn when this returns undefined.
+   */
+  private taskSpanFor(binding: TaskBinding): Observation | undefined {
+    return (
+      this.activeTools.get(binding.taskCallID)?.observation ??
+      this.endedTaskSpans.get(binding.taskCallID)?.observation
+    );
   }
 
   async forceFlush(): Promise<void> {
@@ -230,7 +488,10 @@ export class SoftprobeSessionTracer {
   }
 
   traceUserMessage(input: UserMessageInput): void {
-    if (input.messageID && this.tracedMessageIds.has(input.messageID)) {
+    if (
+      input.messageID &&
+      this.tracedMessageIds.has(scopedKey(input.sessionID, input.messageID))
+    ) {
       return;
     }
 
@@ -238,7 +499,8 @@ export class SoftprobeSessionTracer {
     const formattedInput = formatUserParts(input.parts);
 
     if (input.messageID) {
-      this.tracedMessageIds.add(input.messageID);
+      this.tracedMessageIds.add(scopedKey(input.sessionID, input.messageID));
+      this.messageSession.set(input.messageID, input.sessionID);
     }
 
     const previous = this.latestTurnBySession.get(input.sessionID);
@@ -248,15 +510,36 @@ export class SoftprobeSessionTracer {
     }
     this.generationParents.delete(input.sessionID);
 
+    // Sub-agent child sessions nest under the dispatching task span (or, when
+    // the span is gone/ambiguous, the parent session's current turn). Root
+    // sessions explicitly detach from any ambient host span.
+    const binding = this.sessionGraph.bindingFor(input.sessionID);
+    const parentSessionID =
+      binding?.parentSessionID ?? this.sessionGraph.parentOf(input.sessionID);
+    const parentObservation =
+      (binding ? this.taskSpanFor(binding) : undefined) ??
+      (parentSessionID
+        ? this.getTurn(parentSessionID)?.observation
+        : undefined);
+
     const turn = this.client.startAgent({
       name: "opencode.turn",
       ...this.sessionAttrs(input.sessionID),
       input: formattedInput,
+      ...(parentObservation
+        ? { parent: parentObservation }
+        : { root: true }),
       metadata: {
         messageID: input.messageID ?? null,
         agent: input.agent ?? null,
         providerID: input.model?.providerID ?? null,
         modelID: input.model?.modelID ?? null,
+        ...(parentSessionID
+          ? { "opencode.parentSessionID": parentSessionID }
+          : {}),
+        ...(binding
+          ? { "opencode.parentTaskCallID": binding.taskCallID }
+          : {}),
       },
     });
 
@@ -354,6 +637,7 @@ export class SoftprobeSessionTracer {
 
   rememberAssistantPart(part: MessagePart): void {
     if (!part.id || !part.messageID) return;
+    if (part.sessionID) this.messageSession.set(part.messageID, part.sessionID);
     const parts =
       this.assistantParts.get(part.messageID) ?? new Map<string, MessagePart>();
     parts.set(part.id, part);
@@ -399,8 +683,13 @@ export class SoftprobeSessionTracer {
 
   traceGeneration(input: AssistantGenerationInput): void {
     if (this.abortedSessions.has(input.sessionID)) return;
-    if (this.tracedGenerationIds.has(input.messageID)) return;
-    this.tracedGenerationIds.add(input.messageID);
+    if (
+      this.tracedGenerationIds.has(scopedKey(input.sessionID, input.messageID))
+    ) {
+      return;
+    }
+    this.tracedGenerationIds.add(scopedKey(input.sessionID, input.messageID));
+    this.messageSession.set(input.messageID, input.sessionID);
 
     const text = this.getAssistantText(input.messageID);
     const output = text ? ({ text } satisfies JsonValue) : undefined;
@@ -503,8 +792,10 @@ export class SoftprobeSessionTracer {
     completed: number;
     error: { message: string };
   }): void {
-    if (this.tracedGenerationIds.has(input.id)) return;
-    this.tracedGenerationIds.add(input.id);
+    if (this.tracedGenerationIds.has(scopedKey(input.sessionID, input.id))) {
+      return;
+    }
+    this.tracedGenerationIds.add(scopedKey(input.sessionID, input.id));
 
     const step = this.activeGenerations.get(input.sessionID);
     if (step) {
@@ -545,8 +836,9 @@ export class SoftprobeSessionTracer {
     metadata?: Record<string, JsonValue>;
     parent?: Observation | Generation;
   }): void {
-    if (this.tracedEventIds.has(input.id)) return;
-    this.tracedEventIds.add(input.id);
+    const eventKey = scopedKey(input.sessionID, input.id);
+    if (this.tracedEventIds.has(eventKey)) return;
+    this.tracedEventIds.add(eventKey);
 
     const parent =
       input.parent ??
@@ -667,11 +959,14 @@ export class SoftprobeSessionTracer {
   }
 
   /**
-   * Capture tool observations from message.part.updated when tool.execute.*
-   * hooks are missed (or spans from those hooks were dropped on export).
+   * Capture tool observations from message.part.updated.
+   * Also the canonical end path for MCP tools: tool.execute.after often
+   * receives raw CallToolResult without `output`, so we leave the span
+   * open until this completed/error part update arrives.
    */
   traceToolPart(part: MessagePart): void {
     if (part.type !== "tool" || !part.tool || !part.sessionID) return;
+    if (part.tool === "task") this.captureTaskBinding(part);
     const callID = part.callID ?? part.id;
     if (!callID) return;
 
@@ -713,7 +1008,29 @@ export class SoftprobeSessionTracer {
     args: unknown;
     started?: number;
   }): void {
-    if (this.tracedToolCallIds.has(input.callID)) return;
+    if (this.tracedToolCallIds.has(scopedKey(input.sessionID, input.callID))) {
+      return;
+    }
+    if (input.tool === "task") {
+      const taskArgs = parseTaskCallArgs(input.args);
+      this.sessionGraph.registerTaskCall(
+        input.callID,
+        input.sessionID,
+        taskArgs,
+      );
+      if (taskArgs.task_id) {
+        // task_id names the resumed child session explicitly — same
+        // authority as part metadata, and always precedes the child's next
+        // message, so stale bindings from an earlier dispatch are replaced
+        // before they can be consumed.
+        this.sessionGraph.bind({
+          childSessionID: taskArgs.task_id,
+          parentSessionID: input.sessionID,
+          taskCallID: input.callID,
+          source: "metadata",
+        });
+      }
+    }
     const existing = this.activeTools.get(input.callID);
     if (existing) {
       // Same call already open (e.g. message.part.updated running before
@@ -767,7 +1084,8 @@ export class SoftprobeSessionTracer {
     started?: number;
     status?: "ok" | "error" | "cancelled";
   }): void {
-    if (this.tracedToolCallIds.has(input.callID)) {
+    const traceKey = scopedKey(input.sessionID, input.callID);
+    if (this.tracedToolCallIds.has(traceKey)) {
       this.activeTools.delete(input.callID);
       return;
     }
@@ -784,10 +1102,22 @@ export class SoftprobeSessionTracer {
     if (!active) return;
 
     const toolStatus = input.status ?? "ok";
+    // Best-effort: the link is read once, here at end, and the ended span is
+    // never revisited. A task that finishes before OpenCode publishes its
+    // child session ships without this attribute. The child turn carries the
+    // reverse edge (sp.metadata.opencode.parentTaskCallID) in most cases but
+    // not all — an ambiguous dispatch leaves the turn with only
+    // sp.metadata.opencode.parentSessionID, which links the sessions but not
+    // the specific task call.
+    const childSessionID =
+      input.tool === "task"
+        ? this.sessionGraph.childForTaskCall(input.callID)
+        : undefined;
     active.observation.setAttributes({
       "sp.metadata.callID": input.callID,
       "sp.metadata.tool": input.tool,
       "sp.tool.status": toolStatus,
+      ...(childSessionID ? { "sp.child.session.id": childSessionID } : {}),
     });
     active.observation.end({
       output: { title: input.title, output: input.output },
@@ -797,7 +1127,8 @@ export class SoftprobeSessionTracer {
         : {}),
     });
     this.activeTools.delete(input.callID);
-    this.tracedToolCallIds.add(input.callID);
+    this.tracedToolCallIds.add(traceKey);
+    if (input.tool === "task") this.archiveTaskSpan(input.callID, active);
   }
 
   traceSessionError(input: {
@@ -837,8 +1168,9 @@ export class SoftprobeSessionTracer {
 export function createSoftprobeSessionTracer(
   options: SoftprobeSessionTracerOptions,
 ): SoftprobeSessionTracer {
+  const { sessionLookup, ...clientOptions } = options;
   const client = new SoftprobeClient({
-    ...options,
+    ...clientOptions,
     serviceName: options.serviceName ?? "opencode",
     // OpenCode already owns experimental OTEL; keep Softprobe spans on a
     // private provider so we never replace or disable the host tracer.
@@ -855,5 +1187,8 @@ export function createSoftprobeSessionTracer(
       ...(options.headers ?? {}),
     },
   });
-  return new SoftprobeSessionTracer(client, { userId: options.userId });
+  return new SoftprobeSessionTracer(client, {
+    userId: options.userId,
+    sessionLookup,
+  });
 }

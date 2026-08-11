@@ -8,6 +8,16 @@ vi.mock("rrweb", () => ({
 import { EVENT_NAME, EVENTS_ATTR, SPAN_NAME } from "../src/otlp.js";
 import { RecordSdk } from "../src/sdk.js";
 
+type SdkInternals = {
+  events: unknown[];
+  systemInfo: Record<string, string>;
+  saving: boolean;
+};
+
+function internals(sdk: InstanceType<typeof RecordSdk>): SdkInternals {
+  return sdk as unknown as SdkInternals;
+}
+
 describe("RecordSdk.init", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -28,7 +38,7 @@ describe("RecordSdk.init", () => {
     ).toThrow(/publicKey and baseUrl/);
   });
 
-  it("honors explicit sessionId and setSessionId", () => {
+  it("honors explicit sessionId and setSessionId", async () => {
     const sdk = RecordSdk.init({
       publicKey: "pk",
       baseUrl: "http://127.0.0.1:8091",
@@ -37,7 +47,7 @@ describe("RecordSdk.init", () => {
     });
     expect(sdk.enabled).toBe(true);
     expect(sdk.sessionId).toBe("ses_open");
-    sdk.setSessionId("ses_next");
+    await sdk.setSessionId("ses_next");
     expect(sdk.sessionId).toBe("ses_next");
   });
 
@@ -65,7 +75,7 @@ describe("RecordSdk.init", () => {
     }) as InstanceType<typeof RecordSdk>;
 
     // Inject buffered events without starting rrweb.
-    (sdk as unknown as { events: unknown[] }).events = [
+    internals(sdk).events = [
       { type: 4, timestamp: 1000, data: { href: "http://x" }, eventIndex: 1 },
       {
         type: 2,
@@ -75,7 +85,7 @@ describe("RecordSdk.init", () => {
         eventIndex: 2,
       },
     ];
-    (sdk as unknown as { systemInfo: Record<string, string> }).systemInfo = {
+    internals(sdk).systemInfo = {
       _sp_browser: "Chrome",
     };
 
@@ -109,7 +119,7 @@ describe("RecordSdk.init", () => {
     expect(events).toHaveLength(2);
     expect(events[1].isCompressed).toBe(true);
 
-    expect((sdk as unknown as { events: unknown[] }).events).toEqual([]);
+    expect(internals(sdk).events).toEqual([]);
   });
 
   it("keeps buffer when flush fails", async () => {
@@ -126,12 +136,138 @@ describe("RecordSdk.init", () => {
       manual: true,
     }) as InstanceType<typeof RecordSdk>;
 
-    (sdk as unknown as { events: unknown[] }).events = [
+    internals(sdk).events = [
       { type: 4, timestamp: 1, eventIndex: 1 },
     ];
-    (sdk as unknown as { systemInfo: Record<string, string> }).systemInfo = {};
+    internals(sdk).systemInfo = {};
 
     await sdk.flush();
-    expect((sdk as unknown as { events: unknown[] }).events).toHaveLength(1);
+    expect(internals(sdk).events).toHaveLength(1);
+  });
+
+  it("preserves events recorded while export is in flight", async () => {
+    let release!: (value: Response) => void;
+    const gate = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const posts: string[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        posts.push(String(init?.body ?? ""));
+        return gate;
+      }),
+    );
+
+    const sdk = RecordSdk.init({
+      publicKey: "token",
+      baseUrl: "http://thelake.test",
+      sessionId: "ses_race",
+      manual: true,
+    }) as InstanceType<typeof RecordSdk>;
+
+    internals(sdk).systemInfo = {};
+    internals(sdk).events = [
+      { type: 4, timestamp: 1, eventIndex: 1 },
+    ];
+
+    const flushPromise = sdk.flush();
+    // While export is awaiting fetch, a new event arrives.
+    await vi.waitFor(() => expect(internals(sdk).saving).toBe(true));
+    internals(sdk).events.push({ type: 3, timestamp: 2, eventIndex: 2 });
+
+    release(new Response("{}", { status: 200 }));
+    await flushPromise;
+
+    expect(posts).toHaveLength(1);
+    const exported = JSON.parse(
+      JSON.parse(posts[0]!).resourceSpans[0].scopeSpans[0].spans[0].events[0]
+        .attributes.find((a: { key: string }) => a.key === EVENTS_ATTR).value
+        .stringValue,
+    );
+    expect(exported).toHaveLength(1);
+    expect(exported[0].eventIndex).toBe(1);
+    // Event that arrived during await must still be buffered.
+    expect(internals(sdk).events).toEqual([
+      { type: 3, timestamp: 2, eventIndex: 2 },
+    ]);
+  });
+
+  it("prepends the batch back when flush fails mid-flight with new events", async () => {
+    let release!: (value: Response) => void;
+    const gate = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => gate));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const sdk = RecordSdk.init({
+      publicKey: "token",
+      baseUrl: "http://thelake.test",
+      sessionId: "ses_fail_race",
+      manual: true,
+    }) as InstanceType<typeof RecordSdk>;
+
+    internals(sdk).systemInfo = {};
+    internals(sdk).events = [
+      { type: 4, timestamp: 1, eventIndex: 1 },
+    ];
+
+    const flushPromise = sdk.flush();
+    await vi.waitFor(() => expect(internals(sdk).saving).toBe(true));
+    internals(sdk).events.push({ type: 3, timestamp: 2, eventIndex: 2 });
+
+    release(new Response("nope", { status: 503 }));
+    await flushPromise;
+
+    expect(internals(sdk).events).toEqual([
+      { type: 4, timestamp: 1, eventIndex: 1 },
+      { type: 3, timestamp: 2, eventIndex: 2 },
+    ]);
+  });
+
+  it("flushes buffered events under the old session id before setSessionId", async () => {
+    const sessionIds: string[] = [];
+    let release!: (value: Response) => void;
+    const gate = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        const body = JSON.parse(String(init?.body ?? "{}"));
+        const attrs = body.resourceSpans[0].scopeSpans[0].spans[0].attributes;
+        const sid = attrs.find(
+          (a: { key: string }) => a.key === "sp.session.id",
+        ).value.stringValue;
+        sessionIds.push(sid);
+        return gate;
+      }),
+    );
+
+    const sdk = RecordSdk.init({
+      publicKey: "token",
+      baseUrl: "http://thelake.test",
+      sessionId: "ses_old",
+      manual: true,
+    }) as InstanceType<typeof RecordSdk>;
+
+    internals(sdk).systemInfo = {};
+    internals(sdk).events = [
+      { type: 4, timestamp: 1, eventIndex: 1 },
+    ];
+
+    sdk.setSessionId("ses_new");
+    // Session must stay old until the drain flush completes.
+    expect(sdk.sessionId).toBe("ses_old");
+    await vi.waitFor(() => expect(internals(sdk).saving).toBe(true));
+
+    release(new Response("{}", { status: 200 }));
+    await vi.waitFor(() => expect(sdk.sessionId).toBe("ses_new"));
+
+    expect(sessionIds).toEqual(["ses_old"]);
+    expect(internals(sdk).events).toEqual([]);
   });
 });

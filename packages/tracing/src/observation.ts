@@ -64,6 +64,11 @@ function resolveParentContext(
       isRemote: true,
     });
   }
+  if (options.root) {
+    // Detach any ambient span (e.g. a host app's OTEL context) so this span
+    // opens its own trace instead of being adopted into the ambient one.
+    return trace.deleteSpan(context.active());
+  }
   return context.active();
 }
 

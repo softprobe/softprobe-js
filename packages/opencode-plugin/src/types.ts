@@ -82,6 +82,12 @@ export type MessagePart = {
     error?: string;
     input?: unknown;
     output?: string;
+    /**
+     * Tool-state metadata. OpenCode's task tool publishes
+     * `{ sessionId, parentSessionId }` here while the part is still running —
+     * the authoritative link between a task call and its child session.
+     */
+    metadata?: Record<string, unknown>;
     time?: { start?: number; end?: number };
   };
   time?: { completed?: number; end?: number };
@@ -92,6 +98,41 @@ export type SessionErrorInfo = {
   message?: string;
   data?: { message?: string };
 };
+
+/** Session record as it appears on `session.created` / `session.updated`. */
+export type SessionInfo = {
+  id?: string;
+  /** Set on task-tool child sessions; absent or null on roots. */
+  parentID?: string | null;
+};
+
+/**
+ * Session lifecycle events the plugin consumes.
+ *
+ * Declared locally for the same reason as {@link SessionNextEvent}: the host's
+ * `Event` union resolves to `any` unless `@opencode-ai/sdk` is installed, so
+ * inline casts at each call site are unchecked *and* invisible to a rename.
+ * Keeping the shapes here at least makes them one searchable definition.
+ */
+export type SessionLifecycleEvent =
+  | { type: "session.idle"; properties?: { sessionID?: string } }
+  | {
+      type: "session.status";
+      properties?: { sessionID?: string; status?: { type?: string } };
+    }
+  | { type: "session.created"; properties?: { info?: SessionInfo } }
+  | { type: "session.updated"; properties?: { info?: SessionInfo } }
+  | { type: "session.deleted"; properties?: { info?: { id?: string } } }
+  | {
+      type: "session.error";
+      properties?: { sessionID?: string; error?: SessionErrorInfo };
+    };
+
+/**
+ * Resolves a session's parent sessionID via the OpenCode client API.
+ * Returns undefined when the session is a root, unknown, or the lookup fails.
+ */
+export type SessionLookup = (sessionID: string) => Promise<string | undefined>;
 
 export type UserMessageInput = {
   sessionID: string;

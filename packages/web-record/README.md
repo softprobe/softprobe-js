@@ -31,6 +31,12 @@ recorder.stop();
 
 Missing credentials soft-disable the SDK (warn + no-op) so hosts keep running.
 
+## Session header
+
+While recording is enabled, the SDK patches `fetch` / XHR to inject
+`x-sp-session-id` on **same-origin** requests only (relative URLs and
+`location.origin`). Third-party / CDN calls are left untouched.
+
 ## OTLP contract
 
 Each flush emits one span:

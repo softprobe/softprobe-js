@@ -2,6 +2,7 @@ import {
   InMemorySpanExporter,
   type ReadableSpan,
 } from "@opentelemetry/sdk-trace-base";
+import { context, trace } from "@opentelemetry/api";
 import { afterEach, describe, expect, it } from "vitest";
 import { SoftprobeClient } from "../src/client.js";
 import { normalizeReadableSpans } from "../src/normalize.js";
@@ -129,6 +130,27 @@ describe("nesting and context", () => {
     const spans = normalizeReadableSpans(exporter.getFinishedSpans());
     const child = spans.find((s) => s.name === "child");
     expect(child?.parent_name).toBe("parent");
+    await client.shutdown();
+  });
+
+  it("root: true detaches from the ambient span and starts a new trace", async () => {
+    const { client, exporter } = await createClient();
+    const ambient = client.startAgent({ name: "ambient" });
+    const ctx = trace.setSpan(context.active(), ambient.otelSpan);
+    let adoptedTraceId: string | undefined;
+    let detached: ReturnType<typeof client.startAgent> | undefined;
+    context.with(ctx, () => {
+      adoptedTraceId = client.startAgent({ name: "adopted" }).traceId;
+      detached = client.startAgent({ name: "detached", root: true });
+    });
+    expect(adoptedTraceId).toBe(ambient.traceId);
+    expect(detached!.traceId).not.toBe(ambient.traceId);
+    detached!.end();
+    ambient.end();
+    await client.forceFlush();
+    const raw = exporter.getFinishedSpans();
+    const detachedSpan = raw.find((s) => s.name === "detached")!;
+    expect(detachedSpan.parentSpanId).toBeUndefined();
     await client.shutdown();
   });
 
