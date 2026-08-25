@@ -12,6 +12,8 @@ type SdkInternals = {
   events: unknown[];
   systemInfo: Record<string, string>;
   saving: boolean;
+  consecutiveFailures: number;
+  exportDisabled: boolean;
 };
 
 function internals(sdk: InstanceType<typeof RecordSdk>): SdkInternals {
@@ -269,5 +271,103 @@ describe("RecordSdk.init", () => {
 
     expect(sessionIds).toEqual(["ses_old"]);
     expect(internals(sdk).events).toEqual([]);
+  });
+  // ——— 导出失败的退避与熔断 ———
+  // 回归背景(2026-08-25 现场):collector 不可达时,原实现每 5 秒原样重发同一批事件,
+  // 失败 429 次没停过 —— 控制台被刷爆、主线程每轮白做一次序列化+压缩,页面明显卡。
+  // 下面三条在旧实现上都是红的。
+
+  function failingSdk(sessionId: string) {
+    const sdk = RecordSdk.init({
+      publicKey: "token",
+      baseUrl: "http://thelake.test",
+      sessionId,
+      manual: true,
+    }) as InstanceType<typeof RecordSdk>;
+    internals(sdk).systemInfo = {};
+    return sdk;
+  }
+
+  it("logs once per failure streak instead of once per attempt", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("nope", { status: 503 })),
+    );
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const sdk = failingSdk("ses_streak");
+
+    for (let i = 0; i < 3; i += 1) {
+      internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: i + 1 }];
+      await sdk.flush();
+    }
+
+    // 旧实现:每次失败都 console.error 一条 → 3。
+    expect(err).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up after a failure streak: drops the buffer and stops exporting", async () => {
+    const fetchMock = vi.fn(async () => new Response("nope", { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const sdk = failingSdk("ses_giveup");
+
+    for (let i = 0; i < 5; i += 1) {
+      internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: i + 1 }];
+      await sdk.flush();
+    }
+
+    // 旧实现:事件被 unshift 回去,永远留着 → 长度 1。
+    expect(internals(sdk).exportDisabled).toBe(true);
+    expect(internals(sdk).events).toHaveLength(0);
+
+    // 熔断后不许再打网络,也不许再吞掉新事件。
+    const callsBefore = fetchMock.mock.calls.length;
+    internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: 99 }];
+    await sdk.flush();
+    expect(fetchMock.mock.calls.length).toBe(callsBefore);
+    expect(internals(sdk).events).toHaveLength(1);
+  });
+
+  it("resets the failure streak after a successful export", async () => {
+    let healthy = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        healthy
+          ? new Response("{}", { status: 200 })
+          : new Response("nope", { status: 503 }),
+      ),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const sdk = failingSdk("ses_recover");
+
+    internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: 1 }];
+    await sdk.flush();
+    expect(internals(sdk).consecutiveFailures).toBe(1);
+
+    healthy = true;
+    internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: 2 }];
+    await sdk.flush();
+
+    // 旧实现:根本没有这个计数 → undefined。
+    expect(internals(sdk).consecutiveFailures).toBe(0);
+    expect(internals(sdk).exportDisabled).toBe(false);
+  });
+  it("refuses to re-arm recording after giving up", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("nope", { status: 503 })),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const sdk = failingSdk("ses_rearm");
+
+    for (let i = 0; i < 5; i += 1) {
+      internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: i + 1 }];
+      await sdk.flush();
+    }
+    expect(internals(sdk).exportDisabled).toBe(true);
+
+    // 宿主每次路由变化都会调 record();熔断后必须拒绝,否则每导航一次白起一轮采集。
+    expect(sdk.record()).toBeNull();
   });
 });

@@ -24,6 +24,10 @@ import type {
 } from "./types.js";
 
 const MAX_EVENTS = 500;
+/** 连续导出失败多少次后彻底放弃采集(见 {@link RecordSdk.noteExportFailure})。 */
+const MAX_CONSECUTIVE_EXPORT_FAILURES = 5;
+/** 退避上限。不可达时不应一直定期打点。 */
+const BACKOFF_MAX_MS = 5 * 60_000;
 const COOKIE_NAME = "_sp_vid";
 const COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
 
@@ -54,6 +58,12 @@ export class RecordSdk implements WebRecordController {
   private systemInfo: Record<string, string | number | null> | null = null;
   private stopHandle: RecordingHandle | null = null;
   private saving = false;
+  /** 连续导出失败次数;成功即归零。 */
+  private consecutiveFailures = 0;
+  /** 退避到期时间戳(ms);在此之前定时器不再尝试导出。 */
+  private nextAttemptAt = 0;
+  /** 熔断标志:连败到上限后置位,导出与采集一起停。 */
+  private exportDisabled = false;
   private fetchImpl: typeof fetch;
   /** Serializes setSessionId drains so overlapping navigations cannot race. */
   private sessionSwitch: Promise<void> = Promise.resolve();
@@ -134,6 +144,9 @@ export class RecordSdk implements WebRecordController {
 
   record(opts?: { tags?: Tags }): RecordingHandle | null {
     if (!this.enabled) return null;
+    // 熔断后不再重新武装。宿主(SPA)每次路由变化都会调 record(),不挡住的话
+    // 每导航一次就白起一轮 rrweb 采集,下一个 tick 再自己停掉。
+    if (this.exportDisabled) return null;
     if (this.stopHandle) return this.stopHandle;
 
     if (opts?.tags) this.setTags(opts.tags);
@@ -153,6 +166,13 @@ export class RecordSdk implements WebRecordController {
     } as Parameters<typeof rrwebRecord>[0]);
 
     const intervalId = setInterval(() => {
+      // 熔断后连采集一起停:导出不出去还继续录,只是白耗主线程和内存。
+      if (this.exportDisabled) {
+        this.stop();
+        return;
+      }
+      // 退避未到,这轮跳过。这里刻意不打日志——日志本身就是故障放大器。
+      if (Date.now() < this.nextAttemptAt) return;
       void this.flush();
       if (this.events.length) {
         const last = this.events[this.events.length - 1];
@@ -239,6 +259,7 @@ export class RecordSdk implements WebRecordController {
   }
 
   async flush(): Promise<boolean> {
+    if (this.exportDisabled) return false;
     if (!this.enabled || this.events.length === 0 || this.saving) return true;
     this.saving = true;
     // Splice out the batch BEFORE await so events recorded while export is in
@@ -286,14 +307,56 @@ export class RecordSdk implements WebRecordController {
         );
       }
       this.batchIndex = batchIndex + 1;
+      this.consecutiveFailures = 0;
+      this.nextAttemptAt = 0;
       return true;
     } catch (error) {
-      console.error("[@softprobe/web-record] Failed to flush recording:", error);
       this.events.unshift(...batch);
+      this.noteExportFailure(error);
       return false;
     } finally {
       this.saving = false;
     }
+  }
+
+  /**
+   * 导出失败后的退避与熔断。
+   *
+   * <p>现场实证(2026-08-25,甲方内网):到不了配置的 collector,原实现每 5 秒把同一批
+   * 事件原样重发,失败 429 次没停过 —— 控制台被刷爆,主线程每轮还白做一次
+   * `JSON.stringify` + 压缩,页面肉眼可见地卡。三条对策:
+   * <ul>
+   *   <li>连败指数退避,不再固定间隔硬打;</li>
+   *   <li>只在连败的<b>第一条</b>打日志,后续静默;</li>
+   *   <li>连败到上限就停掉采集并清空缓冲,再打一条写明端点和处置办法。</li>
+   * </ul>
+   * 单次失败仍然保留缓冲(可能只是网络抖动),这一点不变。
+   */
+  private noteExportFailure(error: unknown): void {
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures === 1) {
+      console.error(
+        "[@softprobe/web-record] Failed to flush recording:",
+        error,
+      );
+    }
+    if (this.consecutiveFailures >= MAX_CONSECUTIVE_EXPORT_FAILURES) {
+      this.exportDisabled = true;
+      this.events.length = 0;
+      console.error(
+        `[@softprobe/web-record] Giving up after ${this.consecutiveFailures} ` +
+          `consecutive export failures; session recording disabled. ` +
+          `Endpoint: ${this.otlpEndpoint}. On a closed network, point ` +
+          `SOFTPROBE_BASE_URL at a reachable collector or disable web recording.`,
+      );
+      return;
+    }
+    this.nextAttemptAt =
+      Date.now() +
+      Math.min(
+        BACKOFF_MAX_MS,
+        this.intervalMs * 2 ** (this.consecutiveFailures - 1),
+      );
   }
 
   private async collectSystemInfo(): Promise<
