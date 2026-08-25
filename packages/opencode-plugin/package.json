@@ -1,6 +1,6 @@
 {
   "name": "@softprobe/opencode-plugin",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "OpenCode plugin that sends session telemetry to Softprobe",
   "type": "module",
   "main": "./dist/index.js",

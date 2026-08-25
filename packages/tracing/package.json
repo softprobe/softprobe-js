@@ -1,6 +1,6 @@
 {
   "name": "@softprobe/tracing",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Softprobe LLM observability SDK for TypeScript/Node",
   "type": "module",
   "main": "./dist/index.js",
