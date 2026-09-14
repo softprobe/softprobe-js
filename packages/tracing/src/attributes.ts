@@ -70,7 +70,10 @@ export function buildObservationAttributes(
   const metadata =
     ("metadata" in options ? options.metadata : undefined) ?? defaults.metadata;
 
-  if (sessionId) attrs["sp.session.id"] = sessionId;
+  if (sessionId) {
+    attrs["sp.session.id"] = sessionId;
+    attrs["gen_ai.conversation.id"] = sessionId;
+  }
   if (userId) attrs["sp.user.id"] = userId;
   if (release) attrs["sp.release"] = release;
   if (tags) attrs["sp.tags"] = tags;

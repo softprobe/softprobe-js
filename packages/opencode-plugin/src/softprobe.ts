@@ -481,8 +481,11 @@ export class SoftprobeSessionTracer {
   }
 
   private sessionAttrs(sessionID: string) {
+    // Product session is always the root OpenCode session; child ses_* scopes
+    // keep their own bookkeeping keys but stamp the root on every span.
+    const productSessionId = this.sessionGraph.rootSessionId(sessionID);
     return {
-      sessionId: sessionID,
+      sessionId: productSessionId,
       ...(this.userId ? { userId: this.userId } : {}),
     };
   }

@@ -8,6 +8,8 @@ describe("SessionGraph genealogy", () => {
     graph.markRoot("root");
 
     expect(graph.parentOf("child")).toBe("parent");
+    expect(graph.rootSessionId("child")).toBe("parent");
+    expect(graph.rootSessionId("parent")).toBe("parent");
     expect(graph.isRoot("root")).toBe(true);
     expect(graph.isRoot("child")).toBe(false);
 

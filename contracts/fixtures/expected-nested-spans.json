@@ -7,8 +7,12 @@
       "sp.observation.type": "agent",
       "sp.session.id": "sess-contract-1",
       "sp.user.id": "user-contract-1",
-      "sp.tags": ["contract", "nested"],
-      "sp.input": "{\"goal\":\"answer question\"}"
+      "sp.tags": [
+        "contract",
+        "nested"
+      ],
+      "sp.input": "{\"goal\":\"answer question\"}",
+      "gen_ai.conversation.id": "sess-contract-1"
     },
     "events": [],
     "status_code": "OK",
@@ -20,7 +24,8 @@
     "parent_name": "agent.run",
     "attributes": {
       "sp.observation.type": "chain",
-      "sp.session.id": "sess-contract-1"
+      "sp.session.id": "sess-contract-1",
+      "gen_ai.conversation.id": "sess-contract-1"
     },
     "events": [],
     "status_code": "OK",
@@ -67,7 +72,9 @@
       "gen_ai.request.temperature": 0.2,
       "gen_ai.request.max_tokens": 128,
       "gen_ai.response.id": "chatcmpl-contract-1",
-      "gen_ai.response.finish_reasons": ["tool_calls"],
+      "gen_ai.response.finish_reasons": [
+        "tool_calls"
+      ],
       "gen_ai.usage.input_tokens": 100,
       "gen_ai.usage.output_tokens": 25,
       "gen_ai.usage.total_tokens": 125,
@@ -76,13 +83,20 @@
       "sp.cost.total": 0.0003,
       "sp.prompt.name": "answer",
       "sp.prompt.version": 1,
-      "sp.tool.available_names": ["lookup"],
+      "sp.tool.available_names": [
+        "lookup"
+      ],
       "sp.tool.available_count": 1,
-      "sp.tool.call_names": ["lookup"],
+      "sp.tool.call_names": [
+        "lookup"
+      ],
       "sp.tool.call_count": 1,
-      "sp.tool.call_ids": ["call_lookup_1"],
+      "sp.tool.call_ids": [
+        "call_lookup_1"
+      ],
       "sp.input": "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}",
-      "sp.output": "{\"content\":null,\"tool_calls\":[{\"id\":\"call_lookup_1\",\"name\":\"lookup\",\"arguments\":\"{\\\"name\\\":\\\"lookup\\\"}\"}]}"
+      "sp.output": "{\"content\":null,\"tool_calls\":[{\"id\":\"call_lookup_1\",\"name\":\"lookup\",\"arguments\":\"{\\\"name\\\":\\\"lookup\\\"}\"}]}",
+      "gen_ai.conversation.id": "sess-contract-1"
     },
     "events": [
       {
