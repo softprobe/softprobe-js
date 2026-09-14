@@ -92,6 +92,19 @@ export class SessionGraph {
     return this.parents.get(sessionID);
   }
 
+  /** Walk parent links to the product (root) session id. */
+  rootSessionId(sessionID: string): string {
+    let current = sessionID;
+    const seen = new Set<string>();
+    while (true) {
+      if (seen.has(current)) return current;
+      seen.add(current);
+      const parent = this.parents.get(current);
+      if (!parent) return current;
+      current = parent;
+    }
+  }
+
   registerTaskCall(callID: string, sessionID: string, args: TaskCallArgs): void {
     const existing = this.taskCalls.get(callID);
     if (existing) {

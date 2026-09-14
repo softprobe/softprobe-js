@@ -8,6 +8,9 @@ and used to improve agents.
 
 ## Install
 
+Full guide: [Agent QA · OpenCode](https://docs.softprobe.ai/en/agent-qa/opencode)
+(Explorer can also give you a short pasteable OpenCode chat prompt).
+
 Enable OpenTelemetry and add the plugin in `opencode.json` / `opencode.jsonc`:
 
 ```json
@@ -69,16 +72,18 @@ credentials when `SPCODE_MODE` is on (see softprobe-code
 
 ### Sub-agent sessions
 
-OpenCode runs sub-agents (the `task` tool) in child sessions. The plugin nests
-each child session's turn under the dispatching task span, so a whole agent
-run — root session plus any sub-agents, recursively — forms a single trace
-instead of several disconnected ones. The link comes from the task part's
+OpenCode runs sub-agents (the `task` tool) in child OpenCode sessions. The
+plugin nests each child turn under the dispatching task span (`parent_span_id`)
+and stamps the **root** OpenCode session id as `sp.session.id` /
+`gen_ai.conversation.id` on every nested span — one product Session for the
+whole chat. Child `ses_*` ids stay internal to the plugin graph and are never
+the product session key. Linkage comes from the task part's
 `state.metadata.sessionId` (authoritative), with `task_id` resume and
 parentID + task-call inference as fallbacks; ambiguous dispatches (e.g.
-parallel identical task calls) are left unnested rather than guessed. Each
-span keeps its own `sp.session.id`; the parent side is recorded as
-`sp.metadata.opencode.parentSessionID` / `sp.metadata.opencode.parentTaskCallID`
-on the child turn and `sp.child.session.id` on the task span.
+parallel identical task calls) are left unnested rather than guessed. Nested
+turns also carry `sp.metadata.opencode.parentSessionID` /
+`sp.metadata.opencode.parentTaskCallID`, and the task span records
+`sp.child.session.id` for the OpenCode child session id.
 
 Session lifecycle is isolated per session: a sub-agent session going idle
 finalizes only its own spans, never the parent session's in-flight work.

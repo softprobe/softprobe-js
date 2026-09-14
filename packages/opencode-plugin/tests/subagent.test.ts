@@ -38,9 +38,31 @@ function attr(
     | undefined;
 }
 
-function turnSpan(spans: ReadableSpan[], sessionID: string) {
+function turnSpan(spans: ReadableSpan[], productSessionID: string) {
   return spans.find(
-    (s) => s.name === "opencode.turn" && attr(s, "sp.session.id") === sessionID,
+    (s) =>
+      s.name === "opencode.turn" &&
+      attr(s, "sp.session.id") === productSessionID &&
+      !attr(s, "sp.metadata.opencode.parentSessionID"),
+  );
+}
+
+/** Nested sub-agent turn under the product session (stamps root sp.session.id). */
+function childTurnSpan(
+  spans: ReadableSpan[],
+  productSessionID: string,
+  parentTaskCallID?: string,
+  openCodeParentSessionID: string = productSessionID,
+) {
+  return spans.find(
+    (s) =>
+      s.name === "opencode.turn" &&
+      attr(s, "sp.session.id") === productSessionID &&
+      attr(s, "sp.metadata.opencode.parentSessionID") ===
+        openCodeParentSessionID &&
+      (parentTaskCallID
+        ? attr(s, "sp.metadata.opencode.parentTaskCallID") === parentTaskCallID
+        : true),
   );
 }
 
@@ -119,14 +141,15 @@ describe("sub-agent nesting", () => {
     const raw = exporter.getFinishedSpans();
     const parentTurn = turnSpan(raw, PARENT)!;
     const task = taskSpan(raw, "call-t1")!;
-    const childTurn = turnSpan(raw, CHILD)!;
+    const childTurn = childTurnSpan(raw, PARENT, "call-t1")!;
 
     expect(childTurn.parentSpanId).toBe(task.spanContext().spanId);
     expect(childTurn.spanContext().traceId).toBe(
       parentTurn.spanContext().traceId,
     );
-    // Sessions keep their own ids; the link is expressed via metadata.
-    expect(attr(childTurn, "sp.session.id")).toBe(CHILD);
+    // Product session is the root; nesting is parent_span_id under the task.
+    expect(attr(childTurn, "sp.session.id")).toBe(PARENT);
+    expect(attr(childTurn, "gen_ai.conversation.id")).toBe(PARENT);
     expect(attr(childTurn, "sp.metadata.opencode.parentSessionID")).toBe(
       PARENT,
     );
@@ -261,7 +284,8 @@ describe("sub-agent nesting", () => {
     const resumed = raw.find(
       (s) =>
         s.name === "opencode.turn" &&
-        attr(s, "sp.session.id") === CHILD &&
+        attr(s, "sp.session.id") === PARENT &&
+        attr(s, "sp.metadata.opencode.parentSessionID") === PARENT &&
         String(attr(s, "sp.input")).includes("keep going"),
     )!;
     const second = taskSpan(raw, "call-t2")!;
@@ -292,7 +316,7 @@ describe("sub-agent nesting", () => {
     await client.forceFlush();
 
     const raw = exporter.getFinishedSpans();
-    expect(turnSpan(raw, CHILD)!.parentSpanId).toBe(
+    expect(childTurnSpan(raw, PARENT)!.parentSpanId).toBe(
       taskSpan(raw, "call-t1")!.spanContext().spanId,
     );
 
@@ -318,7 +342,7 @@ describe("sub-agent nesting", () => {
     await client.forceFlush();
 
     const raw = exporter.getFinishedSpans();
-    expect(turnSpan(raw, CHILD)!.parentSpanId).toBe(
+    expect(childTurnSpan(raw, PARENT)!.parentSpanId).toBe(
       taskSpan(raw, "call-t1")!.spanContext().spanId,
     );
 
@@ -348,7 +372,7 @@ describe("sub-agent nesting", () => {
     await client.forceFlush();
 
     const raw = exporter.getFinishedSpans();
-    const childTurn = turnSpan(raw, CHILD)!;
+    const childTurn = childTurnSpan(raw, PARENT)!;
     // Ambiguous: falls back to the parent turn, never to a guessed task span.
     expect(childTurn.parentSpanId).toBe(
       turnSpan(raw, PARENT)!.spanContext().spanId,
@@ -388,7 +412,7 @@ describe("sub-agent nesting", () => {
     await client.forceFlush();
 
     const raw = exporter.getFinishedSpans();
-    expect(turnSpan(raw, CHILD)!.parentSpanId).toBe(
+    expect(childTurnSpan(raw, PARENT)!.parentSpanId).toBe(
       taskSpan(raw, "call-t1")!.spanContext().spanId,
     );
 
@@ -418,10 +442,11 @@ describe("sub-agent nesting", () => {
     await client.forceFlush();
 
     const raw = exporter.getFinishedSpans();
-    const grandchildTurn = turnSpan(raw, GRANDCHILD)!;
+    const grandchildTurn = childTurnSpan(raw, PARENT, "call-t2", CHILD)!;
     expect(grandchildTurn.parentSpanId).toBe(
       taskSpan(raw, "call-t2")!.spanContext().spanId,
     );
+    expect(attr(grandchildTurn, "sp.session.id")).toBe(PARENT);
     expect(grandchildTurn.spanContext().traceId).toBe(
       turnSpan(raw, PARENT)!.spanContext().traceId,
     );
@@ -489,7 +514,7 @@ describe("sub-agent nesting via OpenCode hooks", () => {
 
     await client.forceFlush();
     const raw = exporter.getFinishedSpans();
-    expect(turnSpan(raw, CHILD)!.parentSpanId).toBe(
+    expect(childTurnSpan(raw, PARENT)!.parentSpanId).toBe(
       taskSpan(raw, "call-t1")!.spanContext().spanId,
     );
     expect(attr(taskSpan(raw, "call-t1"), "sp.output")).toContain("verified");
@@ -524,7 +549,7 @@ describe("binding and lifecycle edge cases", () => {
     await client.forceFlush();
 
     const raw = exporter.getFinishedSpans();
-    const childTurn = turnSpan(raw, CHILD)!;
+    const childTurn = childTurnSpan(raw, PARENT)!;
     // Task A's span does not exist; task B is somebody else's sub-agent.
     // Fall back to the parent turn rather than mis-parenting under B.
     expect(childTurn.parentSpanId).not.toBe(
@@ -602,7 +627,7 @@ describe("binding and lifecycle edge cases", () => {
     const raw = exporter.getFinishedSpans();
     expect(attr(taskSpan(raw, "call-t1"), "sp.child.session.id")).toBeUndefined();
     // The reverse edge still records the relationship.
-    expect(attr(turnSpan(raw, CHILD), "sp.metadata.opencode.parentTaskCallID")).toBe(
+    expect(attr(childTurnSpan(raw, PARENT), "sp.metadata.opencode.parentTaskCallID")).toBe(
       "call-t1",
     );
 
@@ -649,7 +674,8 @@ describe("binding and lifecycle edge cases", () => {
     const resumed = raw.find(
       (s) =>
         s.name === "opencode.turn" &&
-        attr(s, "sp.session.id") === CHILD &&
+        attr(s, "sp.session.id") === PARENT &&
+        attr(s, "sp.metadata.opencode.parentSessionID") === PARENT &&
         String(attr(s, "sp.input")).includes("keep going"),
     )!;
     expect(resumed.parentSpanId).toBe(
@@ -725,7 +751,7 @@ describe("binding and lifecycle edge cases", () => {
     await client.forceFlush();
 
     const raw = exporter.getFinishedSpans();
-    expect(turnSpan(raw, CHILD)!.parentSpanId).toBe(
+    expect(childTurnSpan(raw, PARENT)!.parentSpanId).toBe(
       taskSpan(raw, "call-t1")!.spanContext().spanId,
     );
 
@@ -745,8 +771,10 @@ describe("binding and lifecycle edge cases", () => {
     await client.forceFlush();
 
     const raw = exporter.getFinishedSpans();
-    const childTurn = turnSpan(raw, CHILD)!;
-    expect(childTurn.parentSpanId).toBeUndefined();
+    // Lookup failed → treated as its own product root (no parent metadata).
+    const orphanTurn = turnSpan(raw, CHILD)!;
+    expect(orphanTurn.parentSpanId).toBeUndefined();
+    expect(attr(orphanTurn, "sp.session.id")).toBe(CHILD);
 
     await client.shutdown();
   });
