@@ -1,14 +1,16 @@
 # Softprobe JS examples
 
-Public, docs-faithful samples for Softprobe Agent QA SDKs.
+Public, docs-faithful samples for Softprobe Agent QA TypeScript SDKs.
 
 Customer install steps match [Agent QA → LangChain](https://docs.softprobe.ai/en/agent-qa/langchain) and [Quick start](https://docs.softprobe.ai/en/agent-qa/getting-started).
 
-| Example | Language | What it shows |
-|---------|----------|----------------|
-| [`basic`](./basic) | TypeScript | `SoftprobeClient.fromEnv()` — agent + generation |
-| [`langchain`](./langchain) | TypeScript | Env auto / `instrument()` + app `thread_id` |
-| [`python`](./python) | Python | Same paths via `pip install softprobe` |
+| Example | What it shows |
+|---------|----------------|
+| [`basic`](./basic) | `SoftprobeClient.fromEnv()` — agent + generation |
+| [`langchain`](./langchain) | Env auto / `instrument()` + app `thread_id` |
+
+Python examples live in the public Python SDK repo:
+[`softprobe/softprobe-py`](https://github.com/softprobe/softprobe-py/tree/main/examples).
 
 ## Credentials
 
@@ -21,7 +23,7 @@ export SOFTPROBE_ENVIRONMENT="Production"
 
 Local thelake: `SOFTPROBE_BASE_URL=http://127.0.0.1:8091` and a token your stack accepts.
 
-## Run TypeScript (this repo)
+## Run
 
 ```bash
 # from softprobe-js root
@@ -32,10 +34,3 @@ cd examples/langchain && npm install && npm start
 ```
 
 `langchain` needs `GEMINI_KEY` / `GOOGLE_API_KEY` or `OPENAI_API_KEY`. Default model is Gemini.
-
-## Run Python
-
-```bash
-pip install 'softprobe[langchain]'
-cd examples/python && python basic.py
-```
