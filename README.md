@@ -15,8 +15,15 @@ In the Softprobe workspace this repo is the sibling checkout `softprobe-js/`
 | [`@softprobe/opencode-plugin`](packages/opencode-plugin) | OpenCode coding-agent plugin |
 | [`@softprobe/web-record`](packages/web-record) | Browser session recording (rrweb → OTLP) |
 
-End-to-end web session replay (SPA → thelake → explorer):
-[sp-llm docs/web-session-replay.md](https://github.com/softprobe/sp-llm/blob/main/docs/web-session-replay.md).
+## Examples
+
+Runnable samples that follow the public Agent QA docs:
+
+- [`examples/basic`](examples/basic) — `SoftprobeClient.fromEnv()`
+- [`examples/langchain`](examples/langchain) — env auto / `instrument()` + app `thread_id`
+- [`examples/python`](examples/python) — same flows for `pip install softprobe`
+
+See [`examples/README.md`](examples/README.md). Docs: [LangChain install](https://docs.softprobe.ai/en/agent-qa/langchain).
 
 ## Develop
 
