@@ -4,6 +4,8 @@ export type ResolvedSoftprobeConfig = {
   baseUrl: string;
   otlpEndpoint: string;
   environment?: string;
+  /** Optional default; prefer the app's thread/chat id at emit time. */
+  sessionId?: string;
   userId?: string;
   serviceName?: string;
 };
@@ -51,6 +53,7 @@ export function resolveSoftprobeConfigFromEnv(
       asNonEmptyString(env.SOFTPROBE_OTLP_ENDPOINT),
     ),
     environment: asNonEmptyString(env.SOFTPROBE_ENVIRONMENT),
+    sessionId: asNonEmptyString(env.SOFTPROBE_SESSION_ID),
     userId: asNonEmptyString(env.SOFTPROBE_USER_ID),
     serviceName: asNonEmptyString(env.SOFTPROBE_SERVICE_NAME),
   };
@@ -79,6 +82,7 @@ export function resolveSoftprobeConfigFromObject(
       asNonEmptyString(obj.otlpEndpoint),
     ),
     environment: asNonEmptyString(obj.environment),
+    sessionId: asNonEmptyString(obj.sessionId),
     userId: asNonEmptyString(obj.userId),
     serviceName: asNonEmptyString(obj.serviceName),
   };
