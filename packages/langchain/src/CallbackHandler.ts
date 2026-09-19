@@ -7,6 +7,7 @@ import type { LLMResult } from "@langchain/core/outputs";
 import type { ChainValues } from "@langchain/core/utils/types";
 import {
   SoftprobeClient,
+  resolveRunIdentity,
   type Attributes,
   type Generation,
   type Observation,
@@ -21,8 +22,14 @@ import {
 type Tracked = Observation | Generation;
 
 export type CallbackHandlerParams = {
-  softprobeClient: SoftprobeClient;
+  /** Defaults to {@link SoftprobeClient.fromEnv}. */
+  softprobeClient?: SoftprobeClient;
+  /**
+   * Fallback only when the run has no thread/session/chat id in LangChain
+   * metadata / `configurable`. Prefer your app's existing ids at invoke time.
+   */
   sessionId?: string;
+  /** Fallback only when the run has no user id in metadata / `configurable`. */
   userId?: string;
   tags?: string[];
   metadata?: Record<string, JsonValue>;
@@ -79,15 +86,20 @@ export class CallbackHandler extends BaseCallbackHandler {
   >();
   public lastTraceId: string | null = null;
 
-  constructor(params: CallbackHandlerParams) {
+  constructor(params: CallbackHandlerParams = {}) {
     super();
-    this.client = params.softprobeClient;
+    this.client = params.softprobeClient ?? SoftprobeClient.fromEnv();
     this.sessionId = params.sessionId;
     this.userId = params.userId;
     this.tags = params.tags ?? [];
     this.metadata = params.metadata;
     this.version = params.version;
     this.parentSpanContext = params.parentSpanContext;
+  }
+
+  /** Flush pending OTLP spans (alias of the underlying client). */
+  async flush(): Promise<void> {
+    await this.client.flush();
   }
 
   private parent(parentRunId?: string): Observation | undefined {
@@ -116,10 +128,15 @@ export class CallbackHandler extends BaseCallbackHandler {
       ...(this.metadata ?? {}),
       ...((options.metadata as Record<string, JsonValue> | undefined) ?? {}),
     };
+    const identity = resolveRunIdentity({
+      metadata: options.metadata,
+      fallbackSessionId: this.sessionId,
+      fallbackUserId: this.userId,
+    });
     const common = {
       name: options.name,
-      sessionId: this.sessionId,
-      userId: this.userId,
+      sessionId: identity.sessionId,
+      userId: identity.userId,
       tags: mergedTags.length ? mergedTags : undefined,
       metadata: Object.keys(mergedMeta).length ? mergedMeta : undefined,
       version: this.version,

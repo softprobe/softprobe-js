@@ -127,11 +127,13 @@ async function traceChatCreate(
   const sessionId =
     (softprobe.sessionId as string | undefined) ??
     (softprobe.session_id as string | undefined) ??
-    config.sessionId;
+    config.sessionId ??
+    (process.env.SOFTPROBE_SESSION_ID?.trim() || undefined);
   const userId =
     (softprobe.userId as string | undefined) ??
     (softprobe.user_id as string | undefined) ??
-    config.userId;
+    config.userId ??
+    (process.env.SOFTPROBE_USER_ID?.trim() || undefined);
   const tags = (softprobe.tags as string[] | undefined) ?? config.tags;
   const release = (softprobe.release as string | undefined) ?? config.release;
   const model = openai.model as string | undefined;

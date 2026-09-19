@@ -44,6 +44,7 @@ describe("resolveSoftprobeConfigFromEnv", () => {
       baseUrl: "http://127.0.0.1:8091",
       otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
       environment: "staging",
+      sessionId: undefined,
       userId: "dev",
       serviceName: undefined,
     });
@@ -71,6 +72,7 @@ describe("resolveSoftprobeConfigFromObject", () => {
       baseUrl: "https://softprobe.example",
       otlpEndpoint: "https://softprobe.example/v1/traces",
       environment: undefined,
+      sessionId: undefined,
       userId: undefined,
       serviceName: undefined,
     });

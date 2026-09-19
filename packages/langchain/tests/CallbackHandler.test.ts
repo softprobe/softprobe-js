@@ -128,6 +128,29 @@ describe("Softprobe LangChain CallbackHandler", () => {
     await client.shutdown();
   });
 
+  it("uses LangGraph thread_id from metadata as session id", async () => {
+    const { client, exporter } = makeClient();
+    const handler = new CallbackHandler({ softprobeClient: client });
+
+    await handler.handleChainStart(
+      { id: ["agent"], lc: 1, type: "not_implemented", name: "agent" },
+      { input: "hi" },
+      "chain-1",
+      undefined,
+      undefined,
+      { thread_id: "chat-42", user_id: "u-9" },
+      undefined,
+      "agent",
+    );
+    await handler.handleChainEnd({ output: "ok" }, "chain-1");
+    await client.forceFlush();
+
+    const spans = normalizeReadableSpans(exporter.getFinishedSpans());
+    expect(spans[0].attributes["sp.session.id"]).toBe("chat-42");
+    expect(spans[0].attributes["sp.user.id"]).toBe("u-9");
+    await client.shutdown();
+  });
+
   it("omits gen_ai.tool.call.id when no provider id is available", async () => {
     const { client, exporter } = makeClient();
     const handler = new CallbackHandler({ softprobeClient: client });
