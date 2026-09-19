@@ -10,6 +10,12 @@ export {
   type ResolvedSoftprobeConfig,
   type SoftprobeEnvSource,
 } from "./config.js";
+export {
+  resolveRunIdentity,
+  identitySourcesFromMetadata,
+  type ResolveRunIdentityOptions,
+  type ResolvedRunIdentity,
+} from "./identity.js";
 export { Observation, Generation } from "./observation.js";
 export {
   normalizeReadableSpans,

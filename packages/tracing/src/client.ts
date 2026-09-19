@@ -22,7 +22,11 @@ import {
   type ObservationRuntime,
 } from "./observation.js";
 import { withAttributes as withAttributesFn } from "./propagation.js";
-import { deriveOtlpEndpoint } from "./config.js";
+import {
+  deriveOtlpEndpoint,
+  MissingSoftprobeCredentialsError,
+  resolveSoftprobeConfigFromEnv,
+} from "./config.js";
 import { defaultRedactKeys } from "./redaction.js";
 import { buildScoreRequest, HttpScoreTransport } from "./scores.js";
 import { RetryingSpanExporter } from "./retrying-exporter.js";
@@ -69,6 +73,19 @@ export class SoftprobeClient {
   private readonly registeredProvider: boolean;
   private readonly disableGlobalTracerOnShutdown: boolean;
   private shutDown = false;
+
+  /** Build from `SOFTPROBE_*` env. Requires public key + base URL. */
+  static fromEnv(
+    overrides: Partial<SoftprobeClientOptions> = {},
+  ): SoftprobeClient {
+    const cfg = resolveSoftprobeConfigFromEnv();
+    if (!cfg) {
+      throw new MissingSoftprobeCredentialsError(
+        "Set SOFTPROBE_PUBLIC_KEY and SOFTPROBE_BASE_URL",
+      );
+    }
+    return new SoftprobeClient({ ...cfg, ...overrides });
+  }
 
   constructor(options: SoftprobeClientOptions) {
     if (!options.publicKey?.trim()) {
@@ -286,6 +303,11 @@ export class SoftprobeClient {
 
   async forceFlush(): Promise<void> {
     await this.provider.forceFlush();
+  }
+
+  /** Alias for {@link forceFlush}. */
+  async flush(): Promise<void> {
+    await this.forceFlush();
   }
 
   async shutdown(): Promise<void> {

@@ -1,0 +1,23 @@
+{
+  "name": "@softprobe/example-langchain",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@langchain/core": "^0.3.40",
+    "@langchain/google-genai": "^0.2.0",
+    "@langchain/langgraph": "^0.2.0",
+    "@langchain/openai": "^0.4.0",
+    "@softprobe/langchain": "file:../../packages/langchain",
+    "@softprobe/tracing": "file:../../packages/tracing",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
