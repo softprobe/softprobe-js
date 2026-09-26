@@ -21,7 +21,8 @@ Runnable samples that follow the public Agent QA docs:
 
 - [`examples/basic`](examples/basic) — `SoftprobeClient.fromEnv()`
 - [`examples/langchain`](examples/langchain) — env auto / `instrument()` + app `thread_id`
-- [`examples/python`](examples/python) — same flows for `pip install softprobe`
+
+Python: [`softprobe/softprobe-py` examples](https://github.com/softprobe/softprobe-py/tree/main/examples).
 
 See [`examples/README.md`](examples/README.md). Docs: [LangChain install](https://docs.softprobe.ai/en/agent-qa/langchain).
 
