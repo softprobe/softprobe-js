@@ -1,0 +1,16 @@
+{
+  "name": "@softprobe/opencode-plugin-example-ts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@softprobe/opencode-plugin": "^0.1.6",
+    "@softprobe/tracing": "^0.1.6"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
