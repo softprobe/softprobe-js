@@ -1,0 +1,31 @@
+{
+  "name": "@softprobe/web",
+  "version": "0.1.0",
+  "description": "One-tag browser script that records rrweb into Softprobe and stamps x-sp-session-id on same-origin calls",
+  "type": "module",
+  "files": [
+    "dist/softprobe-session.js",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && node esbuild.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@softprobe/web-record": "*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "jsdom": "^26.0.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/softprobe/softprobe-js.git",
+    "directory": "packages/web"
+  },
+  "license": "MIT"
+}
