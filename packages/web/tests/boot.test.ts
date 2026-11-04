@@ -17,21 +17,44 @@ function script(attrs: Record<string, string>): HTMLScriptElement {
 }
 
 describe("readScriptConfig", () => {
-  it("reads data-base-url and data-public-key", () => {
+  it("reads Agent and capture settings from one script tag", () => {
     expect(
       readScriptConfig(
         script({
-          "data-base-url": "http://10.0.0.170:30091",
-          "data-public-key": "home-demo",
+          "data-api-key": " spk_agent ",
+          "data-base-url": " https://explorer.example/api/thelake ",
+          "data-api-origins": "https://app.example, https://api.example,https://app.example",
+          "data-environment": "staging",
+          "data-service-name": "travel-ota-web",
+          "data-mask-all-inputs": "true",
+          "data-mask-text-selector": ".private, .secret",
+          "data-block-selector": "#payment-details",
         }),
       ),
     ).toEqual({
-      baseUrl: "http://10.0.0.170:30091",
-      publicKey: "home-demo",
+      apiKey: "spk_agent",
+      baseUrl: "https://explorer.example/api/thelake",
+      apiOrigins: ["https://app.example", "https://api.example"],
+      environment: "staging",
+      serviceName: "travel-ota-web",
+      maskAllInputs: true,
+      maskTextSelector: ".private, .secret",
+      blockSelector: "#payment-details",
     });
   });
 
-  it("returns null when an attribute is missing", () => {
+  it("keeps the legacy public key tag working without capture identity", () => {
+    expect(readScriptConfig(script({
+      "data-base-url": "http://lake",
+      "data-public-key": "legacy-public-key",
+    }))).toMatchObject({ apiKey: "legacy-public-key" });
+    expect(readScriptConfig(script({
+      "data-base-url": "http://lake",
+      "data-public-key": "legacy-public-key",
+    }))).not.toHaveProperty("captureId");
+  });
+
+  it("returns null when required setup attributes are missing", () => {
     expect(readScriptConfig(script({ "data-base-url": "http://lake" }))).toBeNull();
     expect(readScriptConfig(null)).toBeNull();
   });
@@ -86,22 +109,28 @@ describe("boot", () => {
     sessionStorage.clear();
   });
 
-  it("calls RecordSdk.init once with the script attributes and a stored session id", () => {
+  it("initializes the capture SDK once from the script tag", () => {
     const tag = script({
       "data-base-url": "http://10.0.0.170:30091",
-      "data-public-key": "home-demo",
+      "data-api-key": "agent-key",
+      "data-api-origins": "https://api.example",
+      "data-mask-text-selector": ".private",
     });
     const first = boot(tag);
     const second = boot(tag);
     expect(first).toBe(second);
     expect(init).toHaveBeenCalledTimes(1);
     const arg = init.mock.calls[0]?.[0] as {
-      publicKey: string;
+      apiKey: string;
       baseUrl: string;
+      apiOrigins: string[];
+      maskTextSelector: string;
       sessionId: string;
     };
-    expect(arg.publicKey).toBe("home-demo");
+    expect(arg.apiKey).toBe("agent-key");
     expect(arg.baseUrl).toBe("http://10.0.0.170:30091");
+    expect(arg.apiOrigins).toEqual(["https://api.example"]);
+    expect(arg.maskTextSelector).toBe(".private");
     expect(arg.sessionId).toMatch(/^sp-session-/);
     expect(sessionStorage.getItem("x-sp-session-id")).toBe(arg.sessionId);
   });

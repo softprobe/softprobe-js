@@ -24,7 +24,6 @@ describe("buildRecordingExport", () => {
       traceId: "a".repeat(32),
       spanId: "b".repeat(16),
       sessionId: "ses_abc",
-      captureId: "capture-test",
       batchIndex: 3,
       startTimeUnixNano: msToUnixNano(1_000),
       endTimeUnixNano: msToUnixNano(2_000),
@@ -50,8 +49,8 @@ describe("buildRecordingExport", () => {
       ]),
     );
     expect(keys["sp.session.id"]).toBe("ses_abc");
-    expect(keys["sp.capture.id"]).toBe("capture-test");
     expect(keys["sp.capture.source"]).toBe("browser");
+    expect(keys).not.toHaveProperty("sp.capture.id");
     expect(keys["sp.observation.type"]).toBe("recording");
     expect(keys["sp.recording.batch_index"]).toBe("3");
     expect(keys._sp_browser).toBe("Chrome");
@@ -109,7 +108,7 @@ describe("buildRecordingExport", () => {
         item.value.stringValue,
       ]),
     );
-    expect(attrs["sp.capture.source"]).toBeUndefined();
+    expect(attrs["sp.capture.source"]).toBe("browser");
   });
 });
 
@@ -120,12 +119,11 @@ describe("msToUnixNano", () => {
 });
 
 describe("buildClientRequestExport", () => {
-  it("keeps the selected API request in the same capture and omits query data", () => {
+  it("keeps the selected API request in the same session and omits query data", () => {
     const payload = buildClientRequestExport({
       traceId: "0123456789abcdef0123456789abcdef",
       spanId: "0123456789abcdef",
       sessionId: "session-1",
-      captureId: "capture-1",
       method: "POST",
       scheme: "https",
       serverAddress: "api.example.test",
@@ -148,8 +146,8 @@ describe("buildClientRequestExport", () => {
     expect(span.spanId).toBe("0123456789abcdef");
     expect(span.kind).toBe(3);
     expect(attrs["sp.session.id"]).toBe("session-1");
-    expect(attrs["sp.capture.id"]).toBe("capture-1");
     expect(attrs["sp.capture.source"]).toBe("browser");
+    expect(attrs).not.toHaveProperty("sp.capture.id");
     expect(attrs["url.path"]).toBe("/api/flights/search");
     expect(JSON.stringify(payload)).not.toContain("?token=");
     expect(span.status.code).toBe(1);

@@ -78,12 +78,12 @@ describe("RecordSdk.init", () => {
     const options = {
       publicKey: "pk",
       baseUrl: "http://127.0.0.1:8091",
-      captureId: "capture-tab",
+      serviceName: "travel-ota-web",
       manual: true,
     };
     const first = RecordSdk.init(options);
     const originalId = first.sessionId;
-    expect(sessionStorage.getItem("_sp_session_id:capture-tab")).toBe(originalId);
+    expect(sessionStorage.getItem("_sp_session_id:travel-ota-web")).toBe(originalId);
 
     const second = RecordSdk.init(options);
     expect(second.sessionId).toBe(originalId);
@@ -91,6 +91,22 @@ describe("RecordSdk.init", () => {
     await first.setSessionId("application-session");
     const third = RecordSdk.init(options);
     expect(third.sessionId).toBe("application-session");
+  });
+
+  it("keeps session storage independent for different service names", () => {
+    const first = RecordSdk.init({
+      apiKey: "agent-key",
+      baseUrl: "http://127.0.0.1:8091",
+      serviceName: "travel-ota-web",
+      manual: true,
+    });
+    const second = RecordSdk.init({
+      apiKey: "agent-key",
+      baseUrl: "http://127.0.0.1:8091",
+      serviceName: "admin-web",
+      manual: true,
+    });
+    expect(second.sessionId).not.toBe(first.sessionId);
   });
 
   it("attempts a keepalive export on pagehide and reports upload status", async () => {
@@ -164,7 +180,6 @@ describe("RecordSdk.init", () => {
     RecordSdk.init({
       apiKey: "agent-key",
       baseUrl: "https://collector.example.com",
-      captureId: "capture-request",
       sessionId: "session-request",
       apiOrigins: ["https://api.example.com"],
       manual: true,
@@ -182,8 +197,8 @@ describe("RecordSdk.init", () => {
     const exportCall = calls.find((call) => call.url.endsWith("/v1/traces"));
     expect(exportCall).toBeDefined();
     expect(exportCall?.init?.keepalive).toBe(true);
-    expect(new Headers(exportCall?.init?.headers).get("x-softprobe-capture-id"))
-      .toBe("capture-request");
+    expect(new Headers(exportCall?.init?.headers).has("x-softprobe-capture-id"))
+      .toBe(false);
     const envelope = JSON.parse(String(exportCall?.init?.body));
     const span = envelope.resourceSpans[0].scopeSpans[0].spans[0];
     expect(span.traceId).toBe(traceId);
@@ -194,10 +209,54 @@ describe("RecordSdk.init", () => {
         a.value.stringValue,
       ]),
     );
-    expect(attrs["sp.capture.id"]).toBe("capture-request");
+    expect(attrs).not.toHaveProperty("sp.capture.id");
+    expect(attrs["sp.capture.source"]).toBe("browser");
     expect(attrs["sp.session.id"]).toBe("session-request");
     expect(attrs["url.path"]).toBe("/api/orders");
     expect(String(exportCall?.init?.body)).not.toContain("private");
+  });
+
+  it("flush waits for in-flight request-span exports before navigation", async () => {
+    let releaseExport!: (response: Response) => void;
+    const exportGate = new Promise<Response>((resolve) => {
+      releaseExport = resolve;
+    });
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (url: string) => {
+      calls.push(url);
+      return url.endsWith("/v1/traces")
+        ? exportGate
+        : new Response("ok", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    delete (globalThis.fetch as { __sp_sdk_patched_fetch?: boolean })
+      .__sp_sdk_patched_fetch;
+    vi.stubGlobal("location", {
+      href: "https://app.example.com/chat",
+      origin: "https://app.example.com",
+    });
+
+    const sdk = RecordSdk.init({
+      apiKey: "agent-key",
+      baseUrl: "https://collector.example.com",
+      sessionId: "session-before-navigation",
+      apiOrigins: ["https://api.example.com"],
+      manual: true,
+    }) as InstanceType<typeof RecordSdk>;
+
+    await fetch("https://api.example.com/api/orders");
+    expect(calls).toHaveLength(2);
+    let flushSettled = false;
+    const pendingFlush = sdk.flush().then((result) => {
+      flushSettled = true;
+      return result;
+    });
+    await Promise.resolve();
+    expect(flushSettled).toBe(false);
+
+    releaseExport(new Response("{}", { status: 200 }));
+    await expect(pendingFlush).resolves.toBe(true);
+    expect(flushSettled).toBe(true);
   });
 
   it("flushes OTLP envelope and clears buffer on success", async () => {
@@ -218,7 +277,6 @@ describe("RecordSdk.init", () => {
     const sdk = RecordSdk.init({
       apiKey: "agent-ingest-key",
       baseUrl: "http://thelake.test",
-      captureId: "capture-demo",
       sessionId: "ses_flush",
       manual: true,
       serviceName: "test-web",
@@ -246,8 +304,8 @@ describe("RecordSdk.init", () => {
     expect(posts[0]?.headers).toMatchObject({
       Authorization: "Bearer agent-ingest-key",
       "Content-Type": "application/json",
-      "X-Softprobe-Capture-ID": "capture-demo",
     });
+    expect(new Headers(posts[0]?.headers).has("X-Softprobe-Capture-ID")).toBe(false);
 
     const payload = JSON.parse(posts[0]!.body);
     const span = payload.resourceSpans[0].scopeSpans[0].spans[0];
@@ -261,7 +319,8 @@ describe("RecordSdk.init", () => {
       ),
     );
     expect(attrs["sp.session.id"]).toBe("ses_flush");
-    expect(attrs["sp.capture.id"]).toBe("capture-demo");
+    expect(attrs).not.toHaveProperty("sp.capture.id");
+    expect(attrs["sp.capture.source"]).toBe("browser");
     expect(attrs["sp.observation.type"]).toBe("recording");
     expect(span.events[0].name).toBe(EVENT_NAME);
     expect(posts[0]!.body).not.toContain("agent-ingest-key");

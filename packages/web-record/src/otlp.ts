@@ -20,7 +20,6 @@ export type BuildRecordingSpanInput = {
   traceId: string;
   spanId: string;
   sessionId: string;
-  captureId?: string;
   batchIndex: number;
   startTimeUnixNano: string;
   endTimeUnixNano: string;
@@ -34,7 +33,6 @@ export type BuildClientRequestSpanInput = {
   traceId: string;
   spanId: string;
   sessionId: string;
-  captureId?: string;
   method: string;
   scheme: string;
   serverAddress: string;
@@ -76,12 +74,7 @@ export function buildRecordingExport(input: BuildRecordingSpanInput): {
 } {
   const attrs: OtlpAttr[] = [
     stringAttr("sp.session.id", input.sessionId),
-    ...(input.captureId
-      ? [
-          stringAttr("sp.capture.id", input.captureId),
-          stringAttr("sp.capture.source", "browser"),
-        ]
-      : []),
+    stringAttr("sp.capture.source", "browser"),
     stringAttr("sp.observation.type", "recording"),
     intAttr("sp.recording.batch_index", input.batchIndex),
     ...toAttrs(input.attributes),
@@ -138,12 +131,7 @@ export function buildClientRequestExport(input: BuildClientRequestSpanInput): {
 } {
   const attrs: OtlpAttr[] = [
     stringAttr("sp.session.id", input.sessionId),
-    ...(input.captureId
-      ? [
-          stringAttr("sp.capture.id", input.captureId),
-          stringAttr("sp.capture.source", "browser"),
-        ]
-      : []),
+    stringAttr("sp.capture.source", "browser"),
     stringAttr("http.request.method", input.method),
     stringAttr("url.scheme", input.scheme),
     stringAttr("server.address", input.serverAddress),

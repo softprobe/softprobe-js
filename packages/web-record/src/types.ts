@@ -31,8 +31,6 @@ export type WebRecordCredentials = {
   /** @deprecated Use apiKey for Agent-owned ingest keys. */
   publicKey?: string;
   baseUrl: string;
-  /** Non-secret capture profile identity, validated by the ingest gateway. */
-  captureId?: string;
   /** Defaults to `{baseUrl}/v1/traces`. */
   otlpEndpoint?: string;
   environment?: string;

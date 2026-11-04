@@ -45,7 +45,6 @@ export class RecordSdk implements WebRecordController {
   private _sessionId: string;
   private readonly otlpEndpoint: string;
   private readonly apiKey: string;
-  private readonly captureId?: string;
   private readonly apiOrigins: string[];
   private readonly sessionIdStorageKey: string;
   private readonly intervalMs: number;
@@ -67,6 +66,8 @@ export class RecordSdk implements WebRecordController {
   private systemInfo: Record<string, string | number | null> | null = null;
   private stopHandle: RecordingHandle | null = null;
   private saving = false;
+  private recordingFlush: Promise<boolean> | null = null;
+  private readonly pendingClientSpanExports = new Set<Promise<boolean>>();
   /** 连续导出失败次数;成功即归零。 */
   private consecutiveFailures = 0;
   /** 退避到期时间戳(ms);在此之前定时器不再尝试导出。 */
@@ -91,10 +92,9 @@ export class RecordSdk implements WebRecordController {
   ) {
     this.enabled = options.enabled;
     this.apiKey = options.apiKey ?? options.publicKey ?? "";
-    this.captureId = options.captureId;
     this.apiOrigins = [...(options.apiOrigins ?? [])];
     this.otlpEndpoint = options.otlpEndpoint;
-    this.sessionIdStorageKey = `${SESSION_ID_STORAGE_PREFIX}${this.captureId ?? options.serviceName ?? "default"}`;
+    this.sessionIdStorageKey = `${SESSION_ID_STORAGE_PREFIX}${options.serviceName ?? "default"}`;
     this._sessionId = getOrCreateSessionId(options.sessionId, this.sessionIdStorageKey);
     this.intervalMs = Math.max(options.interval ?? 5000, 5000);
     this.serviceName = options.serviceName;
@@ -304,7 +304,25 @@ export class RecordSdk implements WebRecordController {
 
   async flush(options: { keepalive?: boolean } = {}): Promise<boolean> {
     if (this.exportDisabled) return false;
-    if (!this.enabled || this.events.length === 0 || this.saving) return true;
+    if (!this.enabled) return true;
+    let recordingResult = true;
+    if (this.saving) {
+      recordingResult = await (this.recordingFlush ?? Promise.resolve(true));
+    } else if (this.events.length > 0) {
+      const recordingFlush = this.flushRecordingBatch(options);
+      this.recordingFlush = recordingFlush;
+      try {
+        recordingResult = await recordingFlush;
+      } finally {
+        if (this.recordingFlush === recordingFlush) this.recordingFlush = null;
+      }
+    }
+    const clientSpansResult = await this.flushPendingClientSpanExports();
+    return recordingResult && clientSpansResult;
+  }
+
+  private async flushRecordingBatch(options: { keepalive?: boolean }): Promise<boolean> {
+    if (this.exportDisabled || !this.enabled || this.events.length === 0) return !this.exportDisabled;
     this.saving = true;
     if (!options.keepalive) this.setUploadStatus("pending");
     // Splice out the batch BEFORE await so events recorded while export is in
@@ -328,7 +346,6 @@ export class RecordSdk implements WebRecordController {
         traceId: randomHexId(16),
         spanId: randomHexId(8),
         sessionId: this._sessionId,
-        captureId: this.captureId,
         batchIndex,
         startTimeUnixNano: msToUnixNano(startMs),
         endTimeUnixNano: msToUnixNano(now),
@@ -343,7 +360,6 @@ export class RecordSdk implements WebRecordController {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.apiKey}`,
-          ...(this.captureId ? { "X-Softprobe-Capture-ID": this.captureId } : {}),
         },
         body: JSON.stringify(body),
         redirect: "follow",
@@ -369,6 +385,16 @@ export class RecordSdk implements WebRecordController {
     }
   }
 
+  private async flushPendingClientSpanExports(): Promise<boolean> {
+    let succeeded = true;
+    while (this.pendingClientSpanExports.size > 0) {
+      const batch = [...this.pendingClientSpanExports];
+      const results = await Promise.all(batch);
+      succeeded = results.every(Boolean) && succeeded;
+    }
+    return succeeded;
+  }
+
   private setUploadStatus(status: RecordingUploadStatus): void {
     this._uploadStatus = status;
     try {
@@ -383,7 +409,9 @@ export class RecordSdk implements WebRecordController {
     try {
       url = new URL(rawUrl, typeof location !== "undefined" ? location.href : undefined);
       const endpoint = new URL(this.otlpEndpoint);
-      if (url.origin === endpoint.origin) return null;
+      // Exclude only the collector endpoint itself. An application may use a
+      // same-origin gateway for its own API and telemetry ingestion.
+      if (url.origin === endpoint.origin && url.pathname === endpoint.pathname) return null;
     } catch {
       return null;
     }
@@ -402,7 +430,6 @@ export class RecordSdk implements WebRecordController {
           traceId,
           spanId,
           sessionId: this._sessionId,
-          captureId: this.captureId,
           method,
           scheme: url.protocol.slice(0, -1),
           serverAddress: url.hostname,
@@ -414,12 +441,14 @@ export class RecordSdk implements WebRecordController {
           serviceName: this.serviceName,
           environment: this.environment,
         });
-        void this.exportClientRequestSpan(body);
+        const pending = this.exportClientRequestSpan(body);
+        this.pendingClientSpanExports.add(pending);
+        void pending.finally(() => this.pendingClientSpanExports.delete(pending));
       },
     };
   }
 
-  private async exportClientRequestSpan(body: { resourceSpans: unknown[] }): Promise<void> {
+  private async exportClientRequestSpan(body: { resourceSpans: unknown[] }): Promise<boolean> {
     this.setUploadStatus("pending");
     try {
       const response = await this.fetchImpl(this.otlpEndpoint, {
@@ -427,7 +456,6 @@ export class RecordSdk implements WebRecordController {
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.apiKey}`,
-          ...(this.captureId ? { "X-Softprobe-Capture-ID": this.captureId } : {}),
         },
         body: JSON.stringify(body),
         redirect: "follow",
@@ -437,8 +465,10 @@ export class RecordSdk implements WebRecordController {
       });
       if (!response.ok) throw new Error(`OTLP export failed: ${response.status}`);
       this.setUploadStatus("uploaded");
+      return true;
     } catch {
       this.setUploadStatus("failed");
+      return false;
     }
   }
 
