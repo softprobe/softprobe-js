@@ -50,6 +50,33 @@ describe("readOrCreateSessionId", () => {
     expect(readOrCreateSessionId(fake)).toBe("sp-session-existing");
     expect(readOrCreateSessionId(fake)).toBe("sp-session-existing");
   });
+
+  it("creates an id when crypto.randomUUID is unavailable", () => {
+    const storage = new Map<string, string>();
+    const fake = {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
+    } as Storage;
+    const randomUUID = crypto.randomUUID;
+    Object.defineProperty(crypto, "randomUUID", {
+      value: undefined,
+      configurable: true,
+    });
+    try {
+      const id = readOrCreateSessionId(fake);
+      expect(id).toMatch(
+        /^sp-session-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
+      expect(storage.get("x-sp-session-id")).toBe(id);
+    } finally {
+      Object.defineProperty(crypto, "randomUUID", {
+        value: randomUUID,
+        configurable: true,
+      });
+    }
+  });
 });
 
 describe("boot", () => {

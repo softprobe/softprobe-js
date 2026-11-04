@@ -20,11 +20,29 @@ export type BuildRecordingSpanInput = {
   traceId: string;
   spanId: string;
   sessionId: string;
+  captureId?: string;
   batchIndex: number;
   startTimeUnixNano: string;
   endTimeUnixNano: string;
   events: RrwebEventBatchItem[];
   attributes: Record<string, string | number | boolean | null | undefined>;
+  serviceName?: string;
+  environment?: string;
+};
+
+export type BuildClientRequestSpanInput = {
+  traceId: string;
+  spanId: string;
+  sessionId: string;
+  captureId?: string;
+  method: string;
+  scheme: string;
+  serverAddress: string;
+  path: string;
+  statusCode: number;
+  failed: boolean;
+  startTimeUnixNano: string;
+  endTimeUnixNano: string;
   serviceName?: string;
   environment?: string;
 };
@@ -58,6 +76,12 @@ export function buildRecordingExport(input: BuildRecordingSpanInput): {
 } {
   const attrs: OtlpAttr[] = [
     stringAttr("sp.session.id", input.sessionId),
+    ...(input.captureId
+      ? [
+          stringAttr("sp.capture.id", input.captureId),
+          stringAttr("sp.capture.source", "browser"),
+        ]
+      : []),
     stringAttr("sp.observation.type", "recording"),
     intAttr("sp.recording.batch_index", input.batchIndex),
     ...toAttrs(input.attributes),
@@ -99,6 +123,57 @@ export function buildRecordingExport(input: BuildRecordingSpanInput): {
                   },
                 ],
                 status: { code: 1 },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/** Build an OTLP client span for an explicitly selected browser API request. */
+export function buildClientRequestExport(input: BuildClientRequestSpanInput): {
+  resourceSpans: unknown[];
+} {
+  const attrs: OtlpAttr[] = [
+    stringAttr("sp.session.id", input.sessionId),
+    ...(input.captureId
+      ? [
+          stringAttr("sp.capture.id", input.captureId),
+          stringAttr("sp.capture.source", "browser"),
+        ]
+      : []),
+    stringAttr("http.request.method", input.method),
+    stringAttr("url.scheme", input.scheme),
+    stringAttr("server.address", input.serverAddress),
+    stringAttr("url.path", input.path),
+    intAttr("http.response.status_code", input.statusCode),
+  ];
+  const resourceAttrs: OtlpAttr[] = [];
+  if (input.serviceName) resourceAttrs.push(stringAttr("service.name", input.serviceName));
+  if (input.environment) {
+    resourceAttrs.push(stringAttr("deployment.environment.name", input.environment));
+  }
+
+  return {
+    resourceSpans: [
+      {
+        resource: { attributes: resourceAttrs },
+        scopeSpans: [
+          {
+            scope: { name: "softprobe.web.record", version: "0.1.0" },
+            spans: [
+              {
+                traceId: input.traceId,
+                spanId: input.spanId,
+                name: `HTTP ${input.method}`,
+                kind: 3,
+                startTimeUnixNano: input.startTimeUnixNano,
+                endTimeUnixNano: input.endTimeUnixNano,
+                attributes: attrs,
+                events: [],
+                status: { code: input.failed ? 2 : 1 },
               },
             ],
           },

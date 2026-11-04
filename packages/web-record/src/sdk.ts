@@ -7,16 +7,18 @@ import {
   MissingSoftprobeCredentialsError,
 } from "@softprobe/tracing/config";
 import {
+  type RequestTraceHandle,
   initializeHttpInterceptor,
-  updateHttpInterceptorSessionId,
 } from "./http-interceptor.js";
 import {
+  buildClientRequestExport,
   buildRecordingExport,
   msToUnixNano,
   randomHexId,
 } from "./otlp.js";
 import type {
   RecordingHandle,
+  RecordingUploadStatus,
   RrwebEventBatchItem,
   Tags,
   WebRecordController,
@@ -30,6 +32,7 @@ const MAX_CONSECUTIVE_EXPORT_FAILURES = 5;
 const BACKOFF_MAX_MS = 5 * 60_000;
 const COOKIE_NAME = "_sp_vid";
 const COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
+const SESSION_ID_STORAGE_PREFIX = "_sp_session_id:";
 
 type Compressible = eventWithTime & {
   data?: unknown;
@@ -41,12 +44,18 @@ export class RecordSdk implements WebRecordController {
   readonly enabled: boolean;
   private _sessionId: string;
   private readonly otlpEndpoint: string;
-  private readonly publicKey: string;
+  private readonly apiKey: string;
+  private readonly captureId?: string;
+  private readonly apiOrigins: string[];
+  private readonly sessionIdStorageKey: string;
   private readonly intervalMs: number;
   private readonly serviceName?: string;
   private readonly environment?: string;
   private readonly userId?: string;
   private readonly maskAllInputs: boolean;
+  private readonly maskTextSelector?: string;
+  private readonly blockSelector?: string;
+  private readonly onUploadStatus?: (status: RecordingUploadStatus) => void;
   private readonly recordOptions: Record<string, unknown>;
   private readonly replacers: Record<string, string>;
   private tags: Tags;
@@ -67,19 +76,34 @@ export class RecordSdk implements WebRecordController {
   private fetchImpl: typeof fetch;
   /** Serializes setSessionId drains so overlapping navigations cannot race. */
   private sessionSwitch: Promise<void> = Promise.resolve();
+  private _uploadStatus: RecordingUploadStatus = "idle";
+  private readonly onPageHide = (): void => {
+    if (!this.enabled || (this.events.length === 0 && !this.saving)) return;
+    this.setUploadStatus("incomplete");
+    // A keepalive request is best-effort. If an ordinary export is already in
+    // flight, do not duplicate its batch; report it as incomplete until it
+    // resolves or fails.
+    if (!this.saving) void this.flush({ keepalive: true });
+  };
 
   private constructor(
     options: WebRecordInitOptions & { enabled: boolean; otlpEndpoint: string },
   ) {
     this.enabled = options.enabled;
-    this.publicKey = options.publicKey ?? "";
+    this.apiKey = options.apiKey ?? options.publicKey ?? "";
+    this.captureId = options.captureId;
+    this.apiOrigins = [...(options.apiOrigins ?? [])];
     this.otlpEndpoint = options.otlpEndpoint;
-    this._sessionId = asNonEmptyString(options.sessionId) ?? uuid();
+    this.sessionIdStorageKey = `${SESSION_ID_STORAGE_PREFIX}${this.captureId ?? options.serviceName ?? "default"}`;
+    this._sessionId = getOrCreateSessionId(options.sessionId, this.sessionIdStorageKey);
     this.intervalMs = Math.max(options.interval ?? 5000, 5000);
     this.serviceName = options.serviceName;
     this.environment = options.environment;
     this.userId = options.userId;
     this.maskAllInputs = options.maskAllInputs !== false;
+    this.maskTextSelector = options.maskTextSelector;
+    this.blockSelector = options.blockSelector;
+    this.onUploadStatus = options.onUploadStatus;
     this.recordOptions = options.recordOptions ?? {};
     this.replacers = options.replacers ?? {};
     this.tags = { ...(options.tags ?? {}) };
@@ -93,7 +117,10 @@ export class RecordSdk implements WebRecordController {
           }) as typeof fetch;
 
     if (this.enabled) {
-      initializeHttpInterceptor(() => this._sessionId);
+      initializeHttpInterceptor({
+        apiOrigins: this.apiOrigins,
+        createRequestSpan: (method, url) => this.createRequestSpan(method, url),
+      });
       if (!options.manual) {
         this.record();
       }
@@ -104,11 +131,15 @@ export class RecordSdk implements WebRecordController {
     return this._sessionId;
   }
 
+  get uploadStatus(): RecordingUploadStatus {
+    return this._uploadStatus;
+  }
+
   static init(options: WebRecordInitOptions = {} as WebRecordInitOptions): WebRecordController {
     const softDisable = options.softDisable !== false;
     try {
       const resolved = resolveSoftprobeConfigFromObject({
-        publicKey: options.publicKey,
+        publicKey: options.apiKey ?? options.publicKey,
         baseUrl: options.baseUrl,
         otlpEndpoint: options.otlpEndpoint,
         environment: options.environment,
@@ -151,9 +182,15 @@ export class RecordSdk implements WebRecordController {
 
     if (opts?.tags) this.setTags(opts.tags);
 
+    if (typeof window !== "undefined") {
+      window.addEventListener("pagehide", this.onPageHide);
+    }
+
     const stopFn = rrwebRecord({
       maskAllInputs: this.maskAllInputs,
       ...this.recordOptions,
+      ...(this.maskTextSelector ? { maskTextSelector: this.maskTextSelector } : {}),
+      ...(this.blockSelector ? { blockSelector: this.blockSelector } : {}),
       emit: (raw: unknown) => {
         const event = raw as eventWithTime;
         if (this.events.length >= MAX_EVENTS) this.events.shift();
@@ -187,6 +224,9 @@ export class RecordSdk implements WebRecordController {
     this.stopHandle = {
       stop: () => {
         clearInterval(intervalId);
+        if (typeof window !== "undefined") {
+          window.removeEventListener("pagehide", this.onPageHide);
+        }
         stopFn?.();
         void this.flush();
         this.stopHandle = null;
@@ -216,8 +256,12 @@ export class RecordSdk implements WebRecordController {
   private async switchSessionId(next: string): Promise<void> {
     await this.drainFlush();
     this._sessionId = next;
-    if (this.enabled) {
-      updateHttpInterceptorSessionId(() => this._sessionId);
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.setItem(this.sessionIdStorageKey, next);
+      }
+    } catch {
+      // Storage can be unavailable in restricted browser contexts.
     }
   }
 
@@ -258,10 +302,11 @@ export class RecordSdk implements WebRecordController {
     return event;
   }
 
-  async flush(): Promise<boolean> {
+  async flush(options: { keepalive?: boolean } = {}): Promise<boolean> {
     if (this.exportDisabled) return false;
     if (!this.enabled || this.events.length === 0 || this.saving) return true;
     this.saving = true;
+    if (!options.keepalive) this.setUploadStatus("pending");
     // Splice out the batch BEFORE await so events recorded while export is in
     // flight stay in `this.events` and are not dropped on success.
     const batch = this.events.splice(0, this.events.length);
@@ -283,6 +328,7 @@ export class RecordSdk implements WebRecordController {
         traceId: randomHexId(16),
         spanId: randomHexId(8),
         sessionId: this._sessionId,
+        captureId: this.captureId,
         batchIndex,
         startTimeUnixNano: msToUnixNano(startMs),
         endTimeUnixNano: msToUnixNano(now),
@@ -296,10 +342,12 @@ export class RecordSdk implements WebRecordController {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${this.publicKey}`,
+          Authorization: `Bearer ${this.apiKey}`,
+          ...(this.captureId ? { "X-Softprobe-Capture-ID": this.captureId } : {}),
         },
         body: JSON.stringify(body),
         redirect: "follow",
+        ...(options.keepalive ? { keepalive: true } : {}),
       });
       if (!res.ok) {
         throw new Error(
@@ -309,13 +357,88 @@ export class RecordSdk implements WebRecordController {
       this.batchIndex = batchIndex + 1;
       this.consecutiveFailures = 0;
       this.nextAttemptAt = 0;
+      this.setUploadStatus("uploaded");
       return true;
     } catch (error) {
       this.events.unshift(...batch);
+      this.setUploadStatus("failed");
       this.noteExportFailure(error);
       return false;
     } finally {
       this.saving = false;
+    }
+  }
+
+  private setUploadStatus(status: RecordingUploadStatus): void {
+    this._uploadStatus = status;
+    try {
+      this.onUploadStatus?.(status);
+    } catch {
+      // Application status rendering must not interrupt recording or export.
+    }
+  }
+
+  private createRequestSpan(method: string, rawUrl: string): RequestTraceHandle | null {
+    let url: URL;
+    try {
+      url = new URL(rawUrl, typeof location !== "undefined" ? location.href : undefined);
+      const endpoint = new URL(this.otlpEndpoint);
+      if (url.origin === endpoint.origin) return null;
+    } catch {
+      return null;
+    }
+
+    const traceId = randomHexId(16);
+    const spanId = randomHexId(8);
+    const startMs = Date.now();
+    let finished = false;
+    return {
+      traceparent: `00-${traceId}-${spanId}-01`,
+      finish: (statusCode, error) => {
+        if (finished) return;
+        finished = true;
+        const endMs = Date.now();
+        const body = buildClientRequestExport({
+          traceId,
+          spanId,
+          sessionId: this._sessionId,
+          captureId: this.captureId,
+          method,
+          scheme: url.protocol.slice(0, -1),
+          serverAddress: url.hostname,
+          path: url.pathname,
+          statusCode,
+          failed: Boolean(error) || statusCode >= 500,
+          startTimeUnixNano: msToUnixNano(startMs),
+          endTimeUnixNano: msToUnixNano(endMs),
+          serviceName: this.serviceName,
+          environment: this.environment,
+        });
+        void this.exportClientRequestSpan(body);
+      },
+    };
+  }
+
+  private async exportClientRequestSpan(body: { resourceSpans: unknown[] }): Promise<void> {
+    this.setUploadStatus("pending");
+    try {
+      const response = await this.fetchImpl(this.otlpEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+          ...(this.captureId ? { "X-Softprobe-Capture-ID": this.captureId } : {}),
+        },
+        body: JSON.stringify(body),
+        redirect: "follow",
+        // Client spans close with the application request and are often
+        // exported immediately before a full-page navigation.
+        keepalive: true,
+      });
+      if (!response.ok) throw new Error(`OTLP export failed: ${response.status}`);
+      this.setUploadStatus("uploaded");
+    } catch {
+      this.setUploadStatus("failed");
     }
   }
 
@@ -422,6 +545,26 @@ function uuid(): string {
       (crypto.getRandomValues(new Uint8Array(1))[0]! & (15 >> (n / 4)))
     ).toString(16);
   });
+}
+
+function getOrCreateSessionId(candidate: unknown, storageKey: string): string {
+  const provided = asNonEmptyString(candidate);
+  try {
+    if (typeof sessionStorage !== "undefined") {
+      if (provided) {
+        sessionStorage.setItem(storageKey, provided);
+        return provided;
+      }
+      const stored = asNonEmptyString(sessionStorage.getItem(storageKey));
+      if (stored) return stored;
+      const generated = uuid();
+      sessionStorage.setItem(storageKey, generated);
+      return generated;
+    }
+  } catch {
+    // sessionStorage may throw for blocked or opaque origins; use an in-memory ID.
+  }
+  return provided ?? uuid();
 }
 
 function getOrCreateVisitorId(): string {

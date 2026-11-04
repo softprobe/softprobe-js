@@ -26,8 +26,13 @@ export type Tags = {
 };
 
 export type WebRecordCredentials = {
-  publicKey: string;
+  /** Existing Agent-owned ingest-only API key. */
+  apiKey?: string;
+  /** @deprecated Use apiKey for Agent-owned ingest keys. */
+  publicKey?: string;
   baseUrl: string;
+  /** Non-secret capture profile identity, validated by the ingest gateway. */
+  captureId?: string;
   /** Defaults to `{baseUrl}/v1/traces`. */
   otlpEndpoint?: string;
   environment?: string;
@@ -40,6 +45,8 @@ export type WebRecordInitOptions = WebRecordCredentials & {
   sessionId?: string;
   /** Flush interval in ms (minimum 5000). */
   interval?: number;
+  /** Exact HTTP(S) origins that may receive traceparent/tracestate headers. */
+  apiOrigins?: string[];
   /** When true, do not auto-start rrweb. */
   manual?: boolean;
   tags?: Tags;
@@ -48,9 +55,17 @@ export type WebRecordInitOptions = WebRecordCredentials & {
   softDisable?: boolean;
   /** rrweb: mask all inputs. Default true for agent IDEs. */
   maskAllInputs?: boolean;
+  /** CSS selector for visible text that rrweb should mask. */
+  maskTextSelector?: string;
+  /** CSS selector for page regions that rrweb should block from recording. */
+  blockSelector?: string;
+  /** Receives best-effort recording upload state changes. */
+  onUploadStatus?: (status: RecordingUploadStatus) => void;
   /** Extra rrweb record options (emit is owned by the SDK). */
   recordOptions?: Record<string, unknown>;
 };
+
+export type RecordingUploadStatus = "idle" | "pending" | "uploaded" | "failed" | "incomplete";
 
 export type CompressedRrwebEvent = {
   type: number;
@@ -74,6 +89,7 @@ export type RecordingHandle = {
 export type WebRecordController = {
   readonly enabled: boolean;
   readonly sessionId: string;
+  readonly uploadStatus: RecordingUploadStatus;
   record: (opts?: { tags?: Tags }) => RecordingHandle | null;
   stop: () => void;
   setTags: (tags: Tags, override?: boolean) => void;

@@ -26,9 +26,27 @@ export function readScriptConfig(
 export function readOrCreateSessionId(storage: Storage): string {
   const existing = storage.getItem(SESSION_KEY)?.trim();
   if (existing) return existing;
-  const id = `sp-session-${crypto.randomUUID()}`;
+  const id = `sp-session-${newUuid()}`;
   storage.setItem(SESSION_KEY, id);
   return id;
+}
+
+/**
+ * `crypto.randomUUID` exists only in a secure context. The demo is served over
+ * plain HTTP, where that call throws and the script never starts recording.
+ * `getRandomValues` works there.
+ */
+function newUuid(): string {
+  try {
+    if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  } catch {
+    // Insecure context: fall through.
+  }
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => {
+    const n = Number(c);
+    const byte = crypto.getRandomValues(new Uint8Array(1))[0] ?? 0;
+    return (n ^ (byte & (15 >> (n / 4)))).toString(16);
+  });
 }
 
 /**
