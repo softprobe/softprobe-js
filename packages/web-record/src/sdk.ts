@@ -418,6 +418,7 @@ export class RecordSdk implements WebRecordController {
 
     const traceId = randomHexId(16);
     const spanId = randomHexId(8);
+    const sessionId = this._sessionId;
     const startMs = Date.now();
     let finished = false;
     return {
@@ -429,7 +430,7 @@ export class RecordSdk implements WebRecordController {
         const body = buildClientRequestExport({
           traceId,
           spanId,
-          sessionId: this._sessionId,
+          sessionId,
           method,
           scheme: url.protocol.slice(0, -1),
           serverAddress: url.hostname,
