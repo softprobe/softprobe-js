@@ -85,5 +85,9 @@ Each flush emits one span:
 Auth: `Authorization: Bearer <apiKey>`. `publicKey` remains accepted for older
 integrations; new Agent capture setup should pass `apiKey`.
 
+The SDK does not label spans by producer. TheLake uses `sp.session.id` on a
+trace span to associate spans with the same `trace_id`; recording spans are
+identified by `sp.observation.type=recording`.
+
 Credentials and `{baseUrl}/v1/traces` derivation come from `@softprobe/tracing/config`
 (same product semantics as the LLM SDK).

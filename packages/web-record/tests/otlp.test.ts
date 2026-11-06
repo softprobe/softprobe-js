@@ -49,8 +49,8 @@ describe("buildRecordingExport", () => {
       ]),
     );
     expect(keys["sp.session.id"]).toBe("ses_abc");
-    expect(keys["sp.capture.source"]).toBe("browser");
     expect(keys).not.toHaveProperty("sp.capture.id");
+    expect(keys).not.toHaveProperty("sp.capture.source");
     expect(keys["sp.observation.type"]).toBe("recording");
     expect(keys["sp.recording.batch_index"]).toBe("3");
     expect(keys._sp_browser).toBe("Chrome");
@@ -108,7 +108,7 @@ describe("buildRecordingExport", () => {
         item.value.stringValue,
       ]),
     );
-    expect(attrs["sp.capture.source"]).toBe("browser");
+    expect(attrs).not.toHaveProperty("sp.capture.source");
   });
 });
 
@@ -146,10 +146,38 @@ describe("buildClientRequestExport", () => {
     expect(span.spanId).toBe("0123456789abcdef");
     expect(span.kind).toBe(3);
     expect(attrs["sp.session.id"]).toBe("session-1");
-    expect(attrs["sp.capture.source"]).toBe("browser");
+    expect(attrs).not.toHaveProperty("sp.capture.source");
     expect(attrs).not.toHaveProperty("sp.capture.id");
     expect(attrs["url.path"]).toBe("/api/flights/search");
     expect(JSON.stringify(payload)).not.toContain("?token=");
     expect(span.status.code).toBe(1);
+  });
+
+  it("exports sanitized request and response bodies as span attributes", () => {
+    const payload = buildClientRequestExport({
+      traceId: "a".repeat(32),
+      spanId: "b".repeat(16),
+      sessionId: "session-1",
+      method: "POST",
+      scheme: "https",
+      serverAddress: "api.example.test",
+      path: "/api/pay",
+      statusCode: 200,
+      failed: false,
+      requestBody: '{"cardNumber":"[REDACTED]"}',
+      responseBody: '{"status":"ok"}',
+      startTimeUnixNano: "1000000",
+      endTimeUnixNano: "2000000",
+    });
+    const span = (payload.resourceSpans as any[])[0].scopeSpans[0].spans[0];
+    const attrs = Object.fromEntries(
+      span.attributes.map((a: { key: string; value: { stringValue?: string } }) => [
+        a.key,
+        a.value.stringValue,
+      ]),
+    );
+
+    expect(attrs["http.request.body.content"]).toBe('{"cardNumber":"[REDACTED]"}');
+    expect(attrs["http.response.body.content"]).toBe('{"status":"ok"}');
   });
 });
