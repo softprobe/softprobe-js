@@ -4,7 +4,7 @@ Add one script tag to record a browser session and trace selected API calls. Use
 
 ```html
 <script
-  src="https://unpkg.com/@softprobe/web@0.1.8/dist/softprobe-session.js"
+  src="/js/softprobe-session.js"
   data-api-key="spk_..."
   data-base-url="https://explorer.softprobe.ai/api/thelake"
   data-api-origins="https://travel-api.example.com"

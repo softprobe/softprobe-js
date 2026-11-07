@@ -27,9 +27,5 @@
     "url": "git+https://github.com/softprobe/softprobe-js.git",
     "directory": "packages/web"
   },
-  "publishConfig": {
-    "access": "public",
-    "provenance": true
-  },
   "license": "MIT"
 }

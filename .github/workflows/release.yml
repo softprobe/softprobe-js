@@ -66,9 +66,6 @@ jobs:
             npm pkg set "dependencies.@softprobe/tracing=$VERSION" --prefix "$dir"
             echo "Set $dir -> $VERSION (depends on @softprobe/tracing@$VERSION)"
           done
-          npm pkg set "version=$VERSION" --prefix packages/web
-          npm pkg set "dependencies.@softprobe/web-record=$VERSION" --prefix packages/web
-          echo "Set packages/web -> $VERSION (depends on @softprobe/web-record@$VERSION)"
           echo "Set packages/tracing -> $VERSION"
 
       - name: Build packages
@@ -76,15 +73,14 @@ jobs:
 
       - name: Publish to npm (OIDC Trusted Publishing)
         run: |
-          # Publish dependencies before dependents.
+          # tracing first — dependents pin @softprobe/tracing=$VERSION above
           # Do not set NODE_AUTH_TOKEN — empty/token auth blocks OIDC Trusted Publishing.
           for dir in \
             packages/tracing \
             packages/langchain \
             packages/vercel-ai-sdk \
             packages/opencode-plugin \
-            packages/web-record \
-            packages/web
+            packages/web-record
           do
             echo "Publishing ${dir}..."
             (cd "$dir" && npm publish --access public)
@@ -102,8 +98,7 @@ jobs:
             packages/langchain/package.json \
             packages/vercel-ai-sdk/package.json \
             packages/opencode-plugin/package.json \
-            packages/web-record/package.json \
-            packages/web/package.json
+            packages/web-record/package.json
 
           git fetch origin main
           git checkout -B main origin/main
@@ -113,8 +108,7 @@ jobs:
             packages/langchain \
             packages/vercel-ai-sdk \
             packages/opencode-plugin \
-            packages/web-record \
-            packages/web
+            packages/web-record
           do
             npm pkg set "version=$VERSION" --prefix "$dir"
           done
@@ -126,15 +120,12 @@ jobs:
           do
             npm pkg set "dependencies.@softprobe/tracing=*" --prefix "$dir"
           done
-          npm pkg set "dependencies.@softprobe/web-record=*" --prefix packages/web
-
           if git diff --quiet -- \
             packages/tracing/package.json \
             packages/langchain/package.json \
             packages/vercel-ai-sdk/package.json \
             packages/opencode-plugin/package.json \
-            packages/web-record/package.json \
-            packages/web/package.json
+            packages/web-record/package.json
           then
             echo "main already at version $VERSION"
             exit 0
@@ -145,7 +136,6 @@ jobs:
             packages/langchain/package.json \
             packages/vercel-ai-sdk/package.json \
             packages/opencode-plugin/package.json \
-            packages/web-record/package.json \
-            packages/web/package.json
+            packages/web-record/package.json
           git commit -m "chore: sync package versions to ${VERSION}"
           git push origin main
