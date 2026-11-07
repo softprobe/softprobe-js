@@ -1,10 +1,10 @@
 # @softprobe/web
 
-One script tag for application session capture. The Agent key is ingest-only and is shared with the OBI installation. The SDK records with rrweb and exports browser request spans labeled with the Session ID and trace ID. It does not add a Session ID or capture ID header to application requests.
+Add one script tag to record a browser session and trace selected API calls. Use the Agent's ingest-only key. The script does not add a Session ID header to application requests.
 
 ```html
 <script
-  src="/js/softprobe-session.js"
+  src="https://unpkg.com/@softprobe/web@0.1.8/dist/softprobe-session.js"
   data-api-key="spk_..."
   data-base-url="https://explorer.softprobe.ai/api/thelake"
   data-api-origins="https://travel-api.example.com"
@@ -17,7 +17,7 @@ One script tag for application session capture. The Agent key is ingest-only and
 ></script>
 ```
 
-Add this tag to the page that starts your app. The Agent API key identifies the owning App and permits ingestion only. Put the tag before the app's own scripts. `data-api-origins` is a comma-separated list of exact origins allowed to receive W3C trace context.
+Add this tag to the shared page layout before your app's scripts so it can see API calls from the start. Replace the example key and address with your Agent key and API origin. The Agent key permits ingestion only. `data-api-origins` is a comma-separated list of exact API origins allowed to receive trace headers. The SDK keeps one Session ID for this tab across page loads.
 
 The recording and request tracing live in `@softprobe/web-record`. This package reads the settings from the script tag and boots the SDK. Legacy `data-public-key` tags remain supported for existing non-profile installations. The SDK flushes on `pagehide`; navigation uploads are best-effort.
 
