@@ -40,6 +40,10 @@ npm test
 2. [`.github/workflows/release.yml`](.github/workflows/release.yml) publishes
    all packages via npm Trusted Publishing (OIDC) — no npm token.
 
+For the package map and release verification checklist, see
+[`docs/releases/feature-map.md`](docs/releases/feature-map.md) and
+[`docs/releases/verification.md`](docs/releases/verification.md).
+
 Requires a Trusted Publisher on **each** package pointing at this repo and
 workflow filename exactly `release.yml` (case-sensitive). Configurations
 created after 2026-05-20 must also allow the publish action.
