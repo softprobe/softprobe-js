@@ -29,6 +29,15 @@ describe("readScriptConfig", () => {
           "data-mask-all-inputs": "true",
           "data-mask-text-selector": ".private, .secret",
           "data-block-selector": "#payment-details",
+          "data-http-body-capture": JSON.stringify({
+            maxBodyBytes: 16384,
+            routes: [{
+              origin: "https://api.example",
+              method: "POST",
+              path: "/api/pay",
+              redactJsonPaths: ["$.paymentDetails.cardNumber"],
+            }],
+          }),
         }),
       ),
     ).toEqual({
@@ -40,6 +49,15 @@ describe("readScriptConfig", () => {
       maskAllInputs: true,
       maskTextSelector: ".private, .secret",
       blockSelector: "#payment-details",
+      httpBodyCapture: {
+        maxBodyBytes: 16384,
+        routes: [{
+          origin: "https://api.example",
+          method: "POST",
+          path: "/api/pay",
+          redactJsonPaths: ["$.paymentDetails.cardNumber"],
+        }],
+      },
     });
   });
 
@@ -57,6 +75,14 @@ describe("readScriptConfig", () => {
   it("returns null when required setup attributes are missing", () => {
     expect(readScriptConfig(script({ "data-base-url": "http://lake" }))).toBeNull();
     expect(readScriptConfig(null)).toBeNull();
+  });
+
+  it("fails closed when the body-capture JSON is invalid", () => {
+    expect(readScriptConfig(script({
+      "data-base-url": "http://lake",
+      "data-api-key": "agent-key",
+      "data-http-body-capture": "not-json",
+    }))).not.toHaveProperty("httpBodyCapture");
   });
 });
 
@@ -114,6 +140,9 @@ describe("boot", () => {
       "data-base-url": "http://10.0.0.170:30091",
       "data-api-key": "agent-key",
       "data-api-origins": "https://api.example",
+      "data-http-body-capture": JSON.stringify({
+        routes: [{ origin: "https://api.example", method: "POST", path: "/api/orders" }],
+      }),
       "data-mask-text-selector": ".private",
     });
     const first = boot(tag);
@@ -126,11 +155,13 @@ describe("boot", () => {
       apiOrigins: string[];
       maskTextSelector: string;
       sessionId: string;
+      httpBodyCapture: { routes: Array<{ path: string }> };
     };
     expect(arg.apiKey).toBe("agent-key");
     expect(arg.baseUrl).toBe("http://10.0.0.170:30091");
     expect(arg.apiOrigins).toEqual(["https://api.example"]);
     expect(arg.maskTextSelector).toBe(".private");
+    expect(arg.httpBodyCapture.routes[0]?.path).toBe("/api/orders");
     expect(arg.sessionId).toMatch(/^sp-session-/);
     expect(sessionStorage.getItem("x-sp-session-id")).toBe(arg.sessionId);
   });

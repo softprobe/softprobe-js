@@ -79,7 +79,9 @@ export class RecordSdk implements WebRecordController {
   private sessionSwitch: Promise<void> = Promise.resolve();
   private _uploadStatus: RecordingUploadStatus = "idle";
   private readonly onPageHide = (): void => {
-    if (!this.enabled || (this.events.length === 0 && !this.saving)) return;
+    if (!this.enabled || (
+      this.events.length === 0 && !this.saving && this.pendingClientSpanExports.size === 0
+    )) return;
     this.setUploadStatus("incomplete");
     // A keepalive request is best-effort. If an ordinary export is already in
     // flight, do not duplicate its batch; report it as incomplete until it
@@ -119,6 +121,7 @@ export class RecordSdk implements WebRecordController {
     if (this.enabled) {
       initializeHttpInterceptor({
         apiOrigins: this.apiOrigins,
+        httpBodyCapture: options.httpBodyCapture,
         createRequestSpan: (method, url) => this.createRequestSpan(method, url),
       });
       if (!options.manual) {
@@ -421,30 +424,38 @@ export class RecordSdk implements WebRecordController {
     const sessionId = this._sessionId;
     const startMs = Date.now();
     let finished = false;
+    let resolveCompletion!: (succeeded: boolean) => void;
+    const completion = new Promise<boolean>((resolve) => { resolveCompletion = resolve; });
+    this.pendingClientSpanExports.add(completion);
+    void completion.finally(() => this.pendingClientSpanExports.delete(completion));
     return {
       traceparent: `00-${traceId}-${spanId}-01`,
-      finish: (statusCode, error) => {
+      finish: (statusCode, error, bodies) => {
         if (finished) return;
         finished = true;
         const endMs = Date.now();
-        const body = buildClientRequestExport({
-          traceId,
-          spanId,
-          sessionId,
-          method,
-          scheme: url.protocol.slice(0, -1),
-          serverAddress: url.hostname,
-          path: url.pathname,
-          statusCode,
-          failed: Boolean(error) || statusCode >= 500,
-          startTimeUnixNano: msToUnixNano(startMs),
-          endTimeUnixNano: msToUnixNano(endMs),
-          serviceName: this.serviceName,
-          environment: this.environment,
-        });
-        const pending = this.exportClientRequestSpan(body);
-        this.pendingClientSpanExports.add(pending);
-        void pending.finally(() => this.pendingClientSpanExports.delete(pending));
+        try {
+          const body = buildClientRequestExport({
+            traceId,
+            spanId,
+            sessionId,
+            method,
+            scheme: url.protocol.slice(0, -1),
+            serverAddress: url.hostname,
+            path: url.pathname,
+            statusCode,
+            failed: Boolean(error) || statusCode >= 500,
+            requestBody: bodies?.requestBody,
+            responseBody: bodies?.responseBody,
+            startTimeUnixNano: msToUnixNano(startMs),
+            endTimeUnixNano: msToUnixNano(endMs),
+            serviceName: this.serviceName,
+            environment: this.environment,
+          });
+          void this.exportClientRequestSpan(body).then(resolveCompletion, () => resolveCompletion(false));
+        } catch {
+          resolveCompletion(false);
+        }
       },
     };
   }

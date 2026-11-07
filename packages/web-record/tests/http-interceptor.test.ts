@@ -167,4 +167,169 @@ describe("http interceptor", () => {
 
     globalThis.fetch = original;
   });
+
+  it("captures and redacts JSON bodies only for an exact configured route", async () => {
+    let resolveCapture!: (value: {
+      status: number;
+      error?: unknown;
+      bodies?: { requestBody?: string; responseBody?: string };
+    }) => void;
+    const captured = new Promise<{
+      status: number;
+      error?: unknown;
+      bodies?: { requestBody?: string; responseBody?: string };
+    }>((resolve) => { resolveCapture = resolve; });
+    const original = globalThis.fetch;
+    resetFetchPatch(
+      vi.fn(async () => new Response(JSON.stringify({ status: "ok" }), {
+        headers: { "Content-Type": "application/json" },
+      })) as typeof fetch,
+    );
+    vi.stubGlobal("location", {
+      href: "https://app.example.com/chat",
+      origin: "https://app.example.com",
+    });
+
+    initializeHttpInterceptor({
+      apiOrigins: ["https://api.example.net"],
+      httpBodyCapture: {
+        maxBodyBytes: 1024,
+        routes: [{
+          origin: "https://api.example.net",
+          method: "POST",
+          path: "/api/pay",
+          redactJsonPaths: ["$.paymentDetails.cardNumber", "$.paymentDetails.cvv"],
+        }],
+      },
+      createRequestSpan: () => ({
+        traceparent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+        finish: (status, error, bodies) => resolveCapture({ status, error, bodies }),
+      }),
+    });
+
+    const response = await fetch("https://api.example.net/api/pay?token=private", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        paymentDetails: { cardNumber: "4111111111111111", cvv: "314" },
+        amount: "42.00",
+      }),
+    });
+    expect(await response.json()).toEqual({ status: "ok" });
+    const result = await captured;
+
+    expect(result.status).toBe(200);
+    expect(result.error).toBeUndefined();
+    expect(JSON.parse(result.bodies?.requestBody ?? "{}")).toEqual({
+      paymentDetails: { cardNumber: "[REDACTED]", cvv: "[REDACTED]" },
+      amount: "42.00",
+    });
+    expect(result.bodies?.responseBody).toBe('{"status":"ok"}');
+    expect(JSON.stringify(result.bodies)).not.toContain("4111111111111111");
+    expect(JSON.stringify(result.bodies)).not.toContain('"314"');
+
+    globalThis.fetch = original;
+  });
+
+  it("omits nonmatching and oversized JSON bodies", async () => {
+    const captures: Array<{ requestBody?: string; responseBody?: string }> = [];
+    const original = globalThis.fetch;
+    resetFetchPatch(
+      vi.fn(async () => new Response(JSON.stringify({ result: "too-large" }), {
+        headers: { "Content-Type": "application/json" },
+      })) as typeof fetch,
+    );
+    vi.stubGlobal("location", {
+      href: "https://app.example.com/chat",
+      origin: "https://app.example.com",
+    });
+
+    initializeHttpInterceptor({
+      apiOrigins: ["https://api.example.net"],
+      httpBodyCapture: {
+        maxBodyBytes: 8,
+        routes: [{
+          origin: "https://api.example.net",
+          method: "POST",
+          path: "/api/capture",
+        }],
+      },
+      createRequestSpan: () => ({
+        traceparent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+        finish: (_status, _error, bodies) => captures.push(bodies ?? {}),
+      }),
+    });
+
+    await fetch("https://api.example.net/api/other", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: '{"x":1}',
+    });
+    await fetch("https://api.example.net/api/capture", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: '{"too":"large"}',
+    });
+    await vi.waitFor(() => expect(captures).toHaveLength(2));
+
+    expect(captures).toEqual([{}, {}]);
+    globalThis.fetch = original;
+  });
+
+  it("captures JSON bodies from XHR without changing its response", async () => {
+    let resolveCapture!: (bodies: { requestBody?: string; responseBody?: string } | undefined) => void;
+    const captured = new Promise<{ requestBody?: string; responseBody?: string } | undefined>(
+      (resolve) => { resolveCapture = resolve; },
+    );
+    class MockXHR extends EventTarget {
+      status = 200;
+      responseType: XMLHttpRequestResponseType = "";
+      responseText = '{"ok":true}';
+      sentBody?: Document | XMLHttpRequestBodyInit | null;
+      private readonly headers = new Headers();
+
+      open(): void {}
+
+      setRequestHeader(name: string, value: string): void {
+        this.headers.set(name, value);
+      }
+
+      getResponseHeader(name: string): string | null {
+        return name.toLowerCase() === "content-type" ? "application/json" : null;
+      }
+
+      send(body?: Document | XMLHttpRequestBodyInit | null): void {
+        this.sentBody = body;
+        this.dispatchEvent(new Event("loadend"));
+      }
+    }
+    vi.stubGlobal("XMLHttpRequest", MockXHR);
+    vi.stubGlobal("location", {
+      href: "https://app.example.com/chat",
+      origin: "https://app.example.com",
+    });
+    initializeHttpInterceptor({
+      apiOrigins: ["https://api.example.net"],
+      httpBodyCapture: {
+        maxBodyBytes: 1024,
+        routes: [{ origin: "https://api.example.net", method: "POST", path: "/api/orders" }],
+      },
+      createRequestSpan: () => ({
+        traceparent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+        finish: (_status, _error, bodies) => resolveCapture(bodies),
+      }),
+    });
+
+    const xhr = new XMLHttpRequest() as unknown as MockXHR;
+    xhr.open("POST", "https://api.example.net/api/orders");
+    xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.send('{"orderId":"ord-1"}');
+
+    expect(xhr.sentBody).toBe('{"orderId":"ord-1"}');
+    expect(xhr.responseText).toBe('{"ok":true}');
+    await expect(captured).resolves.toEqual({
+      requestBody: '{"orderId":"ord-1"}',
+      responseBody: '{"ok":true}',
+    });
+  });
 });

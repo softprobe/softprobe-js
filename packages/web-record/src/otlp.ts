@@ -39,6 +39,8 @@ export type BuildClientRequestSpanInput = {
   path: string;
   statusCode: number;
   failed: boolean;
+  requestBody?: string;
+  responseBody?: string;
   startTimeUnixNano: string;
   endTimeUnixNano: string;
   serviceName?: string;
@@ -74,7 +76,6 @@ export function buildRecordingExport(input: BuildRecordingSpanInput): {
 } {
   const attrs: OtlpAttr[] = [
     stringAttr("sp.session.id", input.sessionId),
-    stringAttr("sp.capture.source", "browser"),
     stringAttr("sp.observation.type", "recording"),
     intAttr("sp.recording.batch_index", input.batchIndex),
     ...toAttrs(input.attributes),
@@ -131,12 +132,17 @@ export function buildClientRequestExport(input: BuildClientRequestSpanInput): {
 } {
   const attrs: OtlpAttr[] = [
     stringAttr("sp.session.id", input.sessionId),
-    stringAttr("sp.capture.source", "browser"),
     stringAttr("http.request.method", input.method),
     stringAttr("url.scheme", input.scheme),
     stringAttr("server.address", input.serverAddress),
     stringAttr("url.path", input.path),
     intAttr("http.response.status_code", input.statusCode),
+    ...(input.requestBody === undefined
+      ? []
+      : [stringAttr("http.request.body.content", input.requestBody)]),
+    ...(input.responseBody === undefined
+      ? []
+      : [stringAttr("http.response.body.content", input.responseBody)]),
   ];
   const resourceAttrs: OtlpAttr[] = [];
   if (input.serviceName) resourceAttrs.push(stringAttr("service.name", input.serviceName));

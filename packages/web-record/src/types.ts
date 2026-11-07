@@ -38,6 +38,23 @@ export type WebRecordCredentials = {
   serviceName?: string;
 };
 
+export type HttpBodyCaptureRoute = {
+  /** Exact HTTP(S) origin already listed in `apiOrigins`. */
+  origin: string;
+  method: string;
+  /** Exact URL path without query string or fragment. */
+  path: string;
+  /** JSONPath property paths such as `$.paymentDetails.cardNumber`. */
+  redactJsonPaths?: string[];
+};
+
+export type HttpBodyCaptureOptions = {
+  /** Bodies larger than this many bytes are omitted. Defaults to 64 KiB. */
+  maxBodyBytes?: number;
+  /** Only listed JSON routes can export body content. */
+  routes: HttpBodyCaptureRoute[];
+};
+
 export type WebRecordInitOptions = WebRecordCredentials & {
   /** Correlate with LLM / OpenCode session (`sp.session.id`). */
   sessionId?: string;
@@ -45,6 +62,8 @@ export type WebRecordInitOptions = WebRecordCredentials & {
   interval?: number;
   /** Exact HTTP(S) origins that may receive traceparent/tracestate headers. */
   apiOrigins?: string[];
+  /** Opt-in JSON body capture for exact routes. Disabled when omitted. */
+  httpBodyCapture?: HttpBodyCaptureOptions;
   /** When true, do not auto-start rrweb. */
   manual?: boolean;
   tags?: Tags;

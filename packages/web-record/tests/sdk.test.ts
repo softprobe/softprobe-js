@@ -210,7 +210,7 @@ describe("RecordSdk.init", () => {
       ]),
     );
     expect(attrs).not.toHaveProperty("sp.capture.id");
-    expect(attrs["sp.capture.source"]).toBe("browser");
+    expect(attrs).not.toHaveProperty("sp.capture.source");
     expect(attrs["sp.session.id"]).toBe("session-request");
     expect(attrs["url.path"]).toBe("/api/orders");
     expect(String(exportCall?.init?.body)).not.toContain("private");
@@ -320,7 +320,7 @@ describe("RecordSdk.init", () => {
     );
     expect(attrs["sp.session.id"]).toBe("ses_flush");
     expect(attrs).not.toHaveProperty("sp.capture.id");
-    expect(attrs["sp.capture.source"]).toBe("browser");
+    expect(attrs).not.toHaveProperty("sp.capture.source");
     expect(attrs["sp.observation.type"]).toBe("recording");
     expect(span.events[0].name).toBe(EVENT_NAME);
     expect(posts[0]!.body).not.toContain("agent-ingest-key");

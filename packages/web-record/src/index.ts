@@ -13,12 +13,15 @@ export {
   initializeHttpInterceptor,
 } from "./http-interceptor.js";
 export type {
+  CapturedHttpBodies,
   HttpInterceptorOptions,
   RequestSpanFactory,
   RequestTraceHandle,
 } from "./http-interceptor.js";
 export type {
   CompressedRrwebEvent,
+  HttpBodyCaptureOptions,
+  HttpBodyCaptureRoute,
   RecordingHandle,
   RrwebEventBatchItem,
   RecordingUploadStatus,
