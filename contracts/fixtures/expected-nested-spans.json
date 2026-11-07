@@ -12,7 +12,8 @@
         "nested"
       ],
       "sp.input": "{\"goal\":\"answer question\"}",
-      "gen_ai.conversation.id": "sess-contract-1"
+      "gen_ai.conversation.id": "sess-contract-1",
+      "session.id": "sess-contract-1"
     },
     "events": [],
     "status_code": "OK",
@@ -25,7 +26,8 @@
     "attributes": {
       "sp.observation.type": "chain",
       "sp.session.id": "sess-contract-1",
-      "gen_ai.conversation.id": "sess-contract-1"
+      "gen_ai.conversation.id": "sess-contract-1",
+      "session.id": "sess-contract-1"
     },
     "events": [],
     "status_code": "OK",
@@ -96,7 +98,8 @@
       ],
       "sp.input": "{\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}",
       "sp.output": "{\"content\":null,\"tool_calls\":[{\"id\":\"call_lookup_1\",\"name\":\"lookup\",\"arguments\":\"{\\\"name\\\":\\\"lookup\\\"}\"}]}",
-      "gen_ai.conversation.id": "sess-contract-1"
+      "gen_ai.conversation.id": "sess-contract-1",
+      "session.id": "sess-contract-1"
     },
     "events": [
       {

@@ -2,6 +2,32 @@ import { describe, expect, it } from "vitest";
 import { createSoftprobeObservationAttributes } from "../src/integration.js";
 
 describe("createSoftprobeObservationAttributes", () => {
+  it("maps Vercel AI run identity into Softprobe session attributes", () => {
+    const attrs = createSoftprobeObservationAttributes({
+      spanType: "languageModel",
+      runtimeContext: {
+        chatId: "chat-existing-42",
+        threadId: "thread-existing-42",
+      },
+    });
+    expect(attrs["session.id"]).toBe("thread-existing-42");
+    expect(attrs["sp.session.id"]).toBe("thread-existing-42");
+    expect(attrs["sp.metadata.chatId"]).toBeUndefined();
+    expect(attrs["sp.metadata.threadId"]).toBeUndefined();
+  });
+
+  it("preserves the application's existing ses_ conversation ID", () => {
+    const sessionId = "ses_123e4567-e89b-12d3-a456-426614174000";
+    const attrs = createSoftprobeObservationAttributes({
+      spanType: "languageModel",
+      runtimeContext: { sessionId },
+    });
+    expect(attrs["session.id"]).toBe(sessionId);
+    expect(attrs["sp.session.id"]).toBe(sessionId);
+    expect(attrs["gen_ai.conversation.id"]).toBe(sessionId);
+    expect(attrs["sp.metadata.sessionId"]).toBeUndefined();
+  });
+
   it("maps language model spans to generation and links prompts", () => {
     const attrs = createSoftprobeObservationAttributes({
       spanType: "languageModel",

@@ -1,4 +1,5 @@
 import { createRequire } from "node:module";
+import { resolveRunIdentity } from "@softprobe/tracing";
 import type { Attributes, Tracer } from "@opentelemetry/api";
 
 export type SoftprobePrompt = {
@@ -93,6 +94,13 @@ export function createSoftprobeObservationAttributes(params: {
   if (!runtimeContext) return attributes;
 
   const { softprobePrompt, langfusePrompt, ...metadata } = runtimeContext;
+  const identity = resolveRunIdentity({ metadata: runtimeContext });
+  if (identity.sessionId) {
+    attributes["session.id"] = identity.sessionId;
+    attributes["sp.session.id"] = identity.sessionId;
+    attributes["gen_ai.conversation.id"] = identity.sessionId;
+  }
+  if (identity.userId) attributes["sp.user.id"] = identity.userId;
   const prompt = normalizePrompt(softprobePrompt ?? langfusePrompt);
 
   if (PROMPT_SPAN_TYPES.has(String(spanType)) && prompt && !prompt.isFallback) {
@@ -131,6 +139,17 @@ export function createSoftprobeObservationAttributes(params: {
         "toolStatus",
         "status",
         "name",
+        "thread_id",
+        "threadId",
+        "session_id",
+        "sessionId",
+        "conversation_id",
+        "conversationId",
+        "chat_id",
+        "chatId",
+        "user_id",
+        "userId",
+        "user",
       ].includes(key)
     ) {
       continue;
