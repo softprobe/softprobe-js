@@ -1,89 +1,60 @@
 # @softprobe/web-record
 
-Browser session recording SDK. Captures DOM mutations with [rrweb](https://github.com/rrweb-io/rrweb)
-and exports batches to Softprobe **thelake** via OTLP `POST {baseUrl}/v1/traces`.
+Record browser activity and trace selected API calls. The SDK can capture JSON request and response bodies for routes you list.
 
 ## Install
 
-```bash
+```sh
 npm install @softprobe/web-record
 ```
 
-## Usage
+The package includes the OpenTelemetry browser SDK, its Fetch/XHR instrumentations, and OTLP exporter as dependencies. Import `RecordSdk` from `@softprobe/web-record`; your app does not need to import or configure OpenTelemetry.
+
+## Start capture
+
+Initialize the SDK once when your app starts. For a site that loads a new page on navigation, add the setup to the shared page layout.
 
 ```ts
 import { RecordSdk } from "@softprobe/web-record";
 
-const recorder = RecordSdk.init({
-  apiKey: process.env.SOFTPROBE_API_KEY!, // existing Agent ingest-only key
-  baseUrl: process.env.SOFTPROBE_BASE_URL!,
-  apiOrigins: ["https://travel-api.example.com"], // exact origins to trace
-  sessionId: openCodeSessionId, // becomes sp.session.id
-  serviceName: "softprobe-code",
-  maskAllInputs: true,
-  onUploadStatus: (status) => showCaptureStatus(status),
+RecordSdk.init({
+  apiKey: "<Agent API key>",
+  baseUrl: "https://explorer.softprobe.ai/api/thelake",
+  serviceName: "travel-ota-web",
+  environment: "production",
+  apiOrigins: ["https://travel.example.com"],
+  httpBodyCapture: {
+    maxBodyBytes: 65536,
+    routes: [
+      { origin: "https://travel.example.com", method: "POST", path: "/api/flights/search" },
+      { origin: "https://travel.example.com", method: "POST", path: "/api/flights/book" },
+      {
+        origin: "https://travel.example.com",
+        method: "POST",
+        path: "/api/flights/payandissue",
+        redactJsonPaths: ["$.paymentDetails.cardNumber", "$.paymentDetails.cvv"],
+      },
+    ],
+  },
 });
-
-// When the chat session changes:
-recorder.setSessionId(nextSessionId);
-
-// On teardown:
-recorder.stop();
 ```
 
-Missing credentials soft-disable the SDK (warn + no-op) so hosts keep running.
+Replace the example Agent API key and website address with your values. Use an Agent ingest key. The key is visible in browser code, so do not use a user password, cookie, or account token.
 
-Inputs are masked by default. Use `maskTextSelector` for visible text that should
-be masked and `blockSelector` for page regions that must not be recorded. These
-selectors are separate from server-side API payload redaction; inspect a sample
-recording before enabling production capture.
+The SDK creates a Session ID and keeps it in this tab across page loads. Set `sessionId` if your app already has a non-secret ID for the user journey.
 
-The SDK does not add a session ID or capture ID header to application requests.
-Browser request spans carry `session.id` and `trace_id`. W3C trace context is
-sent only to the exact API origins listed in `apiOrigins`.
+Browser spans carry the OpenTelemetry `session.id` attribute and Softprobe's `sp.session.id` compatibility attribute with the same value. If you change the ID with `setSessionId()`, the SDK drains in-flight work before switching both attributes.
 
-## Browser request tracing
+## Choose browser bodies
 
-When `apiOrigins` is set, the SDK emits a client span for each `fetch` or XHR
-request to those exact HTTP(S) origins and injects its matching `traceparent`
-(and `tracestate` when supplied) only there. It records the URL path without the
-query string or request/response bodies. Configure CORS on each selected API to
-allow the trace headers, or route requests through the app's same-origin gateway.
-Do not enable this alongside another browser fetch/XHR instrumentation unless
-that instrumentation is configured to avoid duplicate client spans.
+Add each route by exact origin, method, and path. The origin must also appear in `apiOrigins`. The SDK captures JSON bodies up to `maxBodyBytes`. It omits other content types and bodies over the limit. Use `redactJsonPaths` for fields to replace with `[REDACTED]`, such as `$.paymentDetails.cardNumber`.
 
-When the SDK generates a session ID, it stores it in `sessionStorage` scoped by
-service name so full-page navigation in the same tab continues the session. A
-supplied application session ID takes priority.
+`apiOrigins` is an exact-origin allowlist for browser HTTP spans and `traceparent` / `tracestate` propagation. Requests to other origins, including subdomains, are ignored. If your API uses a different origin from the website, allow those headers in the API's CORS settings.
 
-## Navigation and upload status
+Captured bodies are exported on a child span named `softprobe.http.body.capture`. OpenTelemetry owns the HTTP client span and the Softprobe child carries only the route-approved, bounded JSON body after redaction. The response is returned to your app without waiting for body capture to finish.
 
-The SDK attempts a `fetch` with `keepalive: true` when the page fires `pagehide`.
-This is best-effort: browsers may still terminate the page or reject an oversized
-keepalive body. `uploadStatus` and `onUploadStatus` report `idle`, `pending`,
-`uploaded`, `failed`, or `incomplete`; applications can show that recording may
-not have finished uploading. Do not treat a pagehide attempt as a durable flush.
+## Configure backend bodies
 
-For an app-driven full-page navigation immediately after an API request, await
-`recorder.flush()` before changing `window.location`. It uploads buffered rrweb
-events and waits for client request spans already in flight, returning `false`
-if an upload failed. This keeps normal requests non-blocking while giving the
-page a chance to finish both capture streams before navigation.
+Browser body rules do not configure OBI. Add the same backend and outgoing routes to OBI's native `payload_extraction` rules. Keep the default body action set to `exclude`, then use `include` and `obfuscate` rules for selected routes. See the [OBI Config v2 guide](https://opentelemetry.io/docs/zero-code/obi/configure/config-v2/) and [OBI payload-capture limits](https://github.com/open-telemetry/opentelemetry-ebpf-instrumentation/blob/main/devdocs/features.md#payload-capture).
 
-## OTLP contract
-
-Each flush emits one span:
-
-| Field | Value |
-|---|---|
-| name | `softprobe.web.recording` |
-| `sp.observation.type` | `recording` |
-| `sp.session.id` | correlation id |
-| `sp.recording.batch_index` | monotonic batch counter |
-| event `sp.recording.batch` | attribute `sp.recording.events` = JSON rrweb events |
-
-Auth: `Authorization: Bearer <apiKey>`. `publicKey` remains accepted for older
-integrations; new Agent capture setup should pass `apiKey`.
-
-Credentials and `{baseUrl}/v1/traces` derivation come from `@softprobe/tracing/config`
-(same product semantics as the LLM SDK).
+Input masking applies to the browser recording. It does not redact HTTP body fields. Use `redactJsonPaths` for browser request bodies and OBI obfuscation rules for backend and outgoing request bodies.

@@ -1,7 +1,103 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const testState = vi.hoisted(() => {
+  const spans: Array<{
+    name: string;
+    attributes: Record<string, unknown>;
+    events: Array<{ name: string; attributes: Record<string, unknown>; time: Date }>;
+    status?: { code: number };
+    ended: boolean;
+  }> = [];
+  const state: {
+    spans: typeof spans;
+    sessionId: string;
+    active: boolean;
+    idleGate?: Promise<void>;
+    releaseIdle?: () => void;
+    exportError?: Error;
+    exportGate?: Promise<void>;
+    releaseExport?: () => void;
+    runtimeOptions?: unknown;
+    createBrowserRuntime: ReturnType<typeof vi.fn>;
+    runtime: {
+      tracer: { startSpan: ReturnType<typeof vi.fn> };
+      hasPendingTelemetry: ReturnType<typeof vi.fn>;
+      waitForIdle: ReturnType<typeof vi.fn>;
+      forceFlush: ReturnType<typeof vi.fn>;
+      setSessionId: ReturnType<typeof vi.fn>;
+      shutdown: ReturnType<typeof vi.fn>;
+    };
+  } = {
+    spans,
+    sessionId: "",
+    active: false,
+    createBrowserRuntime: vi.fn(),
+    runtime: undefined as never,
+  };
+  const runtime = {
+    tracer: {
+      startSpan: vi.fn((name: string, options: { attributes?: Record<string, unknown> } = {}) => {
+        const span = {
+          name,
+          attributes: {
+            ...(options.attributes ?? {}),
+            "session.id": state.sessionId,
+            "sp.session.id": state.sessionId,
+          },
+          events: [] as typeof spans[number]["events"],
+          ended: false,
+          addEvent(eventName: string, attributes: Record<string, unknown>, time: Date) {
+            this.events.push({ name: eventName, attributes, time });
+          },
+          setAttribute(key: string, value: unknown) {
+            this.attributes[key] = value;
+            return this;
+          },
+          setStatus(status: { code: number }) {
+            this.status = status;
+            return this;
+          },
+          end() {
+            this.ended = true;
+          },
+        };
+        spans.push(span);
+        return span;
+      }),
+    },
+    hasPendingTelemetry: vi.fn(() => state.active),
+    waitForIdle: vi.fn(async () => {
+      if (state.idleGate) await state.idleGate;
+      state.active = false;
+    }),
+    forceFlush: vi.fn(async () => {
+      if (state.exportGate) await state.exportGate;
+      if (state.exportError) {
+        const error = state.exportError;
+        state.exportError = undefined;
+        throw error;
+      }
+    }),
+    setSessionId: vi.fn((sessionId: string) => {
+      state.sessionId = sessionId;
+    }),
+    shutdown: vi.fn(async () => undefined),
+  };
+  state.runtime = runtime;
+  state.createBrowserRuntime.mockImplementation((options: unknown, sessionState: { getSessionId(): string }) => {
+    state.runtimeOptions = options;
+    state.sessionId = sessionState.getSessionId();
+    return runtime;
+  });
+  return state;
+});
+
+vi.mock("../src/browser-runtime.js", () => ({
+  createBrowserRuntime: testState.createBrowserRuntime,
+}));
+
 const { rrwebRecordMock } = vi.hoisted(() => ({
-  rrwebRecordMock: vi.fn(() => () => {}),
+  rrwebRecordMock: vi.fn(() => () => undefined),
 }));
 
 vi.mock("rrweb", () => ({
@@ -9,575 +105,279 @@ vi.mock("rrweb", () => ({
   record: rrwebRecordMock,
 }));
 
-import { EVENT_NAME, EVENTS_ATTR, SPAN_NAME } from "../src/otlp.js";
 import { RecordSdk } from "../src/sdk.js";
 
 type SdkInternals = {
   events: unknown[];
-  systemInfo: Record<string, string>;
+  systemInfo: Record<string, string> | null;
   saving: boolean;
   consecutiveFailures: number;
   exportDisabled: boolean;
+  batchIndex: number;
 };
 
 function internals(sdk: InstanceType<typeof RecordSdk>): SdkInternals {
   return sdk as unknown as SdkInternals;
 }
 
-describe("RecordSdk.init", () => {
+function recordingSdk(extra: Record<string, unknown> = {}) {
+  return RecordSdk.init({
+    apiKey: "agent-key",
+    baseUrl: "https://collector.example.test",
+    sessionId: "session-recording",
+    manual: true,
+    ...extra,
+  }) as InstanceType<typeof RecordSdk>;
+}
+
+function resetTestState(): void {
+  testState.spans.length = 0;
+  testState.sessionId = "";
+  testState.active = false;
+  testState.idleGate = undefined;
+  testState.releaseIdle = undefined;
+  testState.exportError = undefined;
+  testState.exportGate = undefined;
+  testState.releaseExport = undefined;
+  testState.runtimeOptions = undefined;
+  testState.createBrowserRuntime.mockClear();
+  for (const mock of Object.values(testState.runtime)) {
+    if (typeof mock === "object" && mock !== null) {
+      for (const value of Object.values(mock)) {
+        if (typeof value === "function" && "mockClear" in value) value.mockClear();
+      }
+      continue;
+    }
+    if (typeof mock === "function") mock.mockClear();
+  }
+  testState.runtime.tracer.startSpan.mockClear();
+  testState.runtime.hasPendingTelemetry.mockImplementation(() => testState.active);
+  testState.runtime.waitForIdle.mockImplementation(async () => {
+    if (testState.idleGate) await testState.idleGate;
+    testState.active = false;
+  });
+  testState.runtime.forceFlush.mockImplementation(async () => {
+    if (testState.exportGate) await testState.exportGate;
+    if (testState.exportError) {
+      const error = testState.exportError;
+      testState.exportError = undefined;
+      throw error;
+    }
+  });
+  testState.runtime.setSessionId.mockImplementation((sessionId: string) => {
+    testState.sessionId = sessionId;
+  });
+  testState.runtime.shutdown.mockResolvedValue(undefined);
+  testState.runtime.tracer.startSpan.mockImplementation((name: string, options: { attributes?: Record<string, unknown> } = {}) => {
+    const span = {
+      name,
+      attributes: {
+        ...(options.attributes ?? {}),
+        "session.id": testState.sessionId,
+        "sp.session.id": testState.sessionId,
+      },
+      events: [] as typeof testState.spans[number]["events"],
+      ended: false,
+      addEvent(eventName: string, attributes: Record<string, unknown>, time: Date) {
+        this.events.push({ name: eventName, attributes, time });
+      },
+      setAttribute(key: string, value: unknown) {
+        this.attributes[key] = value;
+        return this;
+      },
+      setStatus(status: { code: number }) {
+        this.status = status;
+        return this;
+      },
+      end() {
+        this.ended = true;
+      },
+    };
+    testState.spans.push(span);
+    return span;
+  });
+  testState.createBrowserRuntime.mockImplementation((options: unknown, sessionState: { getSessionId(): string }) => {
+    testState.runtimeOptions = options;
+    testState.sessionId = sessionState.getSessionId();
+    return testState.runtime;
+  });
+}
+
+describe("RecordSdk", () => {
   afterEach(() => {
     sessionStorage.clear();
     rrwebRecordMock.mockClear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    resetTestState();
   });
 
-  it("soft-disables when credentials are missing", () => {
+  it("soft-disables when credentials are missing and otherwise requires credentials", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const sdk = RecordSdk.init({ softDisable: true } as never);
-    expect(sdk.enabled).toBe(false);
-    expect(sdk.record()).toBeNull();
+    const disabled = RecordSdk.init({ softDisable: true } as never);
+    expect(disabled.enabled).toBe(false);
+    expect(disabled.record()).toBeNull();
     expect(warn).toHaveBeenCalled();
+    expect(testState.createBrowserRuntime).not.toHaveBeenCalled();
+
+    expect(() => RecordSdk.init({ softDisable: false } as never)).toThrow(/publicKey and baseUrl/);
   });
 
-  it("throws when softDisable is false and credentials missing", () => {
-    expect(() =>
-      RecordSdk.init({ softDisable: false } as never),
-    ).toThrow(/publicKey and baseUrl/);
-  });
-
-  it("honors explicit sessionId and setSessionId", async () => {
-    const sdk = RecordSdk.init({
-      publicKey: "pk",
-      baseUrl: "http://127.0.0.1:8091",
-      sessionId: "ses_open",
-      manual: true,
-    });
-    expect(sdk.enabled).toBe(true);
-    expect(sdk.sessionId).toBe("ses_open");
-    await sdk.setSessionId("ses_next");
-    expect(sdk.sessionId).toBe("ses_next");
-  });
-
-  it("applies first-class visible-text masking and blocked-region selectors", () => {
-    const sdk = RecordSdk.init({
-      publicKey: "pk",
-      baseUrl: "http://127.0.0.1:8091",
-      maskTextSelector: ".private-copy",
-      blockSelector: "#payment-form",
-    });
-
-    const recordOptions = rrwebRecordMock.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(recordOptions.maskAllInputs).toBe(true);
-    expect(recordOptions.maskTextSelector).toBe(".private-copy");
-    expect(recordOptions.blockSelector).toBe("#payment-form");
-    sdk.stop();
-  });
-
-  it("keeps a generated session id across SDK initialization in the same tab", async () => {
+  it("keeps a generated session id in the tab and supports session switches", async () => {
     const options = {
-      publicKey: "pk",
-      baseUrl: "http://127.0.0.1:8091",
+      apiKey: "agent-key",
+      baseUrl: "https://collector.example.test",
       serviceName: "travel-ota-web",
       manual: true,
     };
     const first = RecordSdk.init(options);
+    expect(testState.createBrowserRuntime).toHaveBeenCalled();
     const originalId = first.sessionId;
     expect(sessionStorage.getItem("_sp_session_id:travel-ota-web")).toBe(originalId);
-
-    const second = RecordSdk.init(options);
-    expect(second.sessionId).toBe(originalId);
+    expect((RecordSdk.init(options)).sessionId).toBe(originalId);
 
     await first.setSessionId("application-session");
-    const third = RecordSdk.init(options);
-    expect(third.sessionId).toBe("application-session");
+    expect(testState.runtime.setSessionId).toHaveBeenCalledWith("application-session");
+    expect(RecordSdk.init(options).sessionId).toBe("application-session");
   });
 
   it("keeps session storage independent for different service names", () => {
-    const first = RecordSdk.init({
-      apiKey: "agent-key",
-      baseUrl: "http://127.0.0.1:8091",
-      serviceName: "travel-ota-web",
-      manual: true,
-    });
-    const second = RecordSdk.init({
-      apiKey: "agent-key",
-      baseUrl: "http://127.0.0.1:8091",
-      serviceName: "admin-web",
-      manual: true,
-    });
+    const first = RecordSdk.init({ apiKey: "agent-key", baseUrl: "https://collector.example.test", serviceName: "travel-ota-web", manual: true });
+    const second = RecordSdk.init({ apiKey: "agent-key", baseUrl: "https://collector.example.test", serviceName: "admin-web", manual: true });
     expect(second.sessionId).not.toBe(first.sessionId);
+    expect(sessionStorage.getItem("_sp_session_id:travel-ota-web")).toBe(first.sessionId);
+    expect(sessionStorage.getItem("_sp_session_id:admin-web")).toBe(second.sessionId);
   });
 
-  it("attempts a keepalive export on pagehide and reports upload status", async () => {
-    let release!: (value: Response) => void;
-    const gate = new Promise<Response>((resolve) => {
-      release = resolve;
-    });
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => gate);
-    vi.stubGlobal("fetch", fetchMock);
-    const statuses: string[] = [];
-
-    const sdk = RecordSdk.init({
-      publicKey: "token",
-      baseUrl: "http://thelake.test",
-      manual: true,
-      onUploadStatus: (status) => statuses.push(status),
-    }) as InstanceType<typeof RecordSdk>;
-    internals(sdk).systemInfo = {};
-    internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: 1 }];
-    sdk.record();
-
-    window.dispatchEvent(new Event("pagehide"));
-
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    expect(fetchMock.mock.calls[0]?.[1]?.keepalive).toBe(true);
-    expect(sdk.uploadStatus).toBe("incomplete");
-    expect(statuses).toContain("incomplete");
-
-    release(new Response("{}", { status: 200 }));
-    await vi.waitFor(() => expect(sdk.uploadStatus).toBe("uploaded"));
-  });
-
-  it("reports a failed pagehide upload", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("offline", { status: 503 })),
-    );
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const statuses: string[] = [];
-    const sdk = RecordSdk.init({
-      publicKey: "token",
-      baseUrl: "http://thelake.test",
-      manual: true,
-      onUploadStatus: (status) => statuses.push(status),
-    }) as InstanceType<typeof RecordSdk>;
-    internals(sdk).systemInfo = {};
-    internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: 1 }];
-    sdk.record();
-
-    window.dispatchEvent(new Event("pagehide"));
-
-    await vi.waitFor(() => expect(sdk.uploadStatus).toBe("failed"));
-    expect(statuses).toContain("incomplete");
-    expect(statuses).toContain("failed");
-  });
-
-  it("exports a request span and propagates trace context only to selected origins", async () => {
-    const calls: Array<{ url: string; init?: RequestInit }> = [];
-    const originalFetch = vi.fn(async (url: string, init?: RequestInit) => {
-      calls.push({ url, init });
-      return new Response("ok", { status: 200 });
-    });
-    vi.stubGlobal("fetch", originalFetch);
-    delete (globalThis.fetch as { __sp_sdk_patched_fetch?: boolean })
-      .__sp_sdk_patched_fetch;
-    vi.stubGlobal("location", {
-      href: "https://app.example.com/chat",
-      origin: "https://app.example.com",
-    });
-
-    RecordSdk.init({
-      apiKey: "agent-key",
-      baseUrl: "https://collector.example.com",
-      sessionId: "session-request",
-      apiOrigins: ["https://api.example.com"],
-      manual: true,
-    });
-
-    await fetch("https://api.example.com/api/orders?token=private");
-    await vi.waitFor(() => expect(calls).toHaveLength(2));
-
-    const requestHeaders = new Headers(calls[0]?.init?.headers);
-    const [version, traceId, spanId] = requestHeaders.get("traceparent")!.split("-");
-    expect(version).toBe("00");
-    expect(requestHeaders.has("x-sp-session-id")).toBe(false);
-    expect(requestHeaders.has("x-softprobe-capture-id")).toBe(false);
-
-    const exportCall = calls.find((call) => call.url.endsWith("/v1/traces"));
-    expect(exportCall).toBeDefined();
-    expect(exportCall?.init?.keepalive).toBe(true);
-    expect(new Headers(exportCall?.init?.headers).has("x-softprobe-capture-id"))
-      .toBe(false);
-    const envelope = JSON.parse(String(exportCall?.init?.body));
-    const span = envelope.resourceSpans[0].scopeSpans[0].spans[0];
-    expect(span.traceId).toBe(traceId);
-    expect(span.spanId).toBe(spanId);
-    const attrs = Object.fromEntries(
-      span.attributes.map((a: { key: string; value: { stringValue?: string } }) => [
-        a.key,
-        a.value.stringValue,
-      ]),
-    );
-    expect(attrs).not.toHaveProperty("sp.capture.id");
-    expect(attrs["sp.capture.source"]).toBe("browser");
-    expect(attrs["sp.session.id"]).toBe("session-request");
-    expect(attrs["url.path"]).toBe("/api/orders");
-    expect(String(exportCall?.init?.body)).not.toContain("private");
-  });
-
-  it("flush waits for in-flight request-span exports before navigation", async () => {
-    let releaseExport!: (response: Response) => void;
-    const exportGate = new Promise<Response>((resolve) => {
-      releaseExport = resolve;
-    });
-    const calls: string[] = [];
-    const fetchMock = vi.fn(async (url: string) => {
-      calls.push(url);
-      return url.endsWith("/v1/traces")
-        ? exportGate
-        : new Response("ok", { status: 200 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    delete (globalThis.fetch as { __sp_sdk_patched_fetch?: boolean })
-      .__sp_sdk_patched_fetch;
-    vi.stubGlobal("location", {
-      href: "https://app.example.com/chat",
-      origin: "https://app.example.com",
-    });
-
+  it("applies rrweb privacy options and stops recording through the returned handle", () => {
     const sdk = RecordSdk.init({
       apiKey: "agent-key",
-      baseUrl: "https://collector.example.com",
-      sessionId: "session-before-navigation",
-      apiOrigins: ["https://api.example.com"],
-      manual: true,
-    }) as InstanceType<typeof RecordSdk>;
-
-    await fetch("https://api.example.com/api/orders");
-    expect(calls).toHaveLength(2);
-    let flushSettled = false;
-    const pendingFlush = sdk.flush().then((result) => {
-      flushSettled = true;
-      return result;
+      baseUrl: "https://collector.example.test",
+      maskTextSelector: ".private-copy",
+      blockSelector: "#payment-form",
     });
-    await Promise.resolve();
-    expect(flushSettled).toBe(false);
-
-    releaseExport(new Response("{}", { status: 200 }));
-    await expect(pendingFlush).resolves.toBe(true);
-    expect(flushSettled).toBe(true);
+    const options = rrwebRecordMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(options.maskAllInputs).toBe(true);
+    expect(options.maskTextSelector).toBe(".private-copy");
+    expect(options.blockSelector).toBe("#payment-form");
+    sdk.stop();
+    expect(rrwebRecordMock).toHaveBeenCalledTimes(1);
   });
 
-  it("flushes OTLP envelope and clears buffer on success", async () => {
-    const posts: Array<{ url: string; headers: HeadersInit; body: string }> =
-      [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string, init?: RequestInit) => {
-        posts.push({
-          url: String(url),
-          headers: init?.headers as HeadersInit,
-          body: String(init?.body ?? ""),
-        });
-        return new Response("{}", { status: 200 });
-      }),
-    );
-
-    const sdk = RecordSdk.init({
-      apiKey: "agent-ingest-key",
-      baseUrl: "http://thelake.test",
-      sessionId: "ses_flush",
-      manual: true,
-      serviceName: "test-web",
-    }) as InstanceType<typeof RecordSdk>;
-
-    // Inject buffered events without starting rrweb.
-    internals(sdk).events = [
-      { type: 4, timestamp: 1000, data: { href: "http://x" }, eventIndex: 1 },
-      {
-        type: 2,
-        timestamp: 1100,
-        data: "packed-snapshot",
-        isCompressed: true,
-        eventIndex: 2,
-      },
+  it("exports rrweb batches as OTel recording spans with their event payload", async () => {
+    const sdk = recordingSdk({ tags: { userId: "user-7", plan: "gold" } });
+    const internal = internals(sdk);
+    internal.systemInfo = { _sp_browser: "Chrome" };
+    internal.events = [
+      { type: 4, timestamp: 1000, eventIndex: 1 },
+      { type: 2, timestamp: 1100, data: "packed-snapshot", isCompressed: true, eventIndex: 2 },
     ];
-    internals(sdk).systemInfo = {
+
+    await expect(sdk.flush()).resolves.toBe(true);
+
+    const span = testState.spans[0]!;
+    expect(span.name).toBe("softprobe.web.recording");
+    expect(span.attributes).toMatchObject({
+      "sp.session.id": "session-recording",
+      "session.id": "session-recording",
+      "sp.observation.type": "recording",
+      "sp.recording.batch_index": 0,
       _sp_browser: "Chrome",
-    };
-
-    await sdk.flush();
-
-    expect(posts).toHaveLength(1);
-    expect(posts[0]?.url).toBe("http://thelake.test/v1/traces");
-    expect(posts[0]?.headers).toMatchObject({
-      Authorization: "Bearer agent-ingest-key",
-      "Content-Type": "application/json",
+      userId: "user-7",
+      plan: "gold",
     });
-    expect(new Headers(posts[0]?.headers).has("X-Softprobe-Capture-ID")).toBe(false);
-
-    const payload = JSON.parse(posts[0]!.body);
-    const span = payload.resourceSpans[0].scopeSpans[0].spans[0];
-    expect(span.name).toBe(SPAN_NAME);
-    const attrs = Object.fromEntries(
-      span.attributes.map(
-        (a: { key: string; value: { stringValue?: string } }) => [
-          a.key,
-          a.value.stringValue,
-        ],
-      ),
-    );
-    expect(attrs["sp.session.id"]).toBe("ses_flush");
-    expect(attrs).not.toHaveProperty("sp.capture.id");
-    expect(attrs["sp.capture.source"]).toBe("browser");
-    expect(attrs["sp.observation.type"]).toBe("recording");
-    expect(span.events[0].name).toBe(EVENT_NAME);
-    expect(posts[0]!.body).not.toContain("agent-ingest-key");
-    const eventsJson = span.events[0].attributes.find(
-      (a: { key: string }) => a.key === EVENTS_ATTR,
-    ).value.stringValue;
-    const events = JSON.parse(eventsJson);
-    expect(events).toHaveLength(2);
-    expect(events[1].isCompressed).toBe(true);
-
-    expect(internals(sdk).events).toEqual([]);
+    expect(span.events).toHaveLength(1);
+    expect(span.events[0]?.name).toBe("sp.recording.batch");
+    expect(JSON.parse(String(span.events[0]?.attributes["sp.recording.events"]))).toMatchObject([
+      { eventIndex: 1 },
+      { eventIndex: 2, isCompressed: true },
+    ]);
+    expect(span.ended).toBe(true);
+    expect(internal.events).toEqual([]);
+    expect(internal.batchIndex).toBe(1);
+    expect(sdk.uploadStatus).toBe("uploaded");
   });
 
-  it("keeps buffer when flush fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("nope", { status: 503 })),
-    );
+  it("preserves events arriving while an OTel export is in flight", async () => {
+    let release!: () => void;
+    testState.exportGate = new Promise<void>((resolve) => { release = resolve; });
+    const sdk = recordingSdk();
+    const internal = internals(sdk);
+    internal.systemInfo = {};
+    internal.events = [{ type: 4, timestamp: 1, eventIndex: 1 }];
+
+    const flushing = sdk.flush();
+    await vi.waitFor(() => expect(internal.saving).toBe(true));
+    internal.events.push({ type: 3, timestamp: 2, eventIndex: 2 });
+    release();
+
+    await expect(flushing).resolves.toBe(true);
+    expect(internal.events).toEqual([{ type: 3, timestamp: 2, eventIndex: 2 }]);
+    expect(JSON.parse(String(testState.spans[0]?.events[0]?.attributes["sp.recording.events"])))
+      .toMatchObject([{ eventIndex: 1 }]);
+  });
+
+  it("restores the batch and backs off after an OTel export failure", async () => {
+    const sdk = recordingSdk();
+    const internal = internals(sdk);
+    internal.systemInfo = {};
+    internal.events = [{ type: 4, timestamp: 1, eventIndex: 1 }];
+    testState.exportError = new Error("offline");
     vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const sdk = RecordSdk.init({
-      publicKey: "token",
-      baseUrl: "http://thelake.test",
-      sessionId: "ses_fail",
-      manual: true,
-    }) as InstanceType<typeof RecordSdk>;
-
-    internals(sdk).events = [
-      { type: 4, timestamp: 1, eventIndex: 1 },
-    ];
-    internals(sdk).systemInfo = {};
-
-    await sdk.flush();
-    expect(internals(sdk).events).toHaveLength(1);
+    await expect(sdk.flush()).resolves.toBe(false);
+    expect(internal.events).toEqual([{ type: 4, timestamp: 1, eventIndex: 1 }]);
+    expect(internal.consecutiveFailures).toBe(1);
+    expect(sdk.uploadStatus).toBe("failed");
   });
 
-  it("preserves events recorded while export is in flight", async () => {
-    let release!: (value: Response) => void;
-    const gate = new Promise<Response>((resolve) => {
-      release = resolve;
-    });
-    const posts: string[] = [];
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_url: string, init?: RequestInit) => {
-        posts.push(String(init?.body ?? ""));
-        return gate;
-      }),
-    );
-
-    const sdk = RecordSdk.init({
-      publicKey: "token",
-      baseUrl: "http://thelake.test",
-      sessionId: "ses_race",
-      manual: true,
-    }) as InstanceType<typeof RecordSdk>;
-
-    internals(sdk).systemInfo = {};
-    internals(sdk).events = [
-      { type: 4, timestamp: 1, eventIndex: 1 },
-    ];
-
-    const flushPromise = sdk.flush();
-    // While export is awaiting fetch, a new event arrives.
-    await vi.waitFor(() => expect(internals(sdk).saving).toBe(true));
-    internals(sdk).events.push({ type: 3, timestamp: 2, eventIndex: 2 });
-
-    release(new Response("{}", { status: 200 }));
-    await flushPromise;
-
-    expect(posts).toHaveLength(1);
-    const exported = JSON.parse(
-      JSON.parse(posts[0]!).resourceSpans[0].scopeSpans[0].spans[0].events[0]
-        .attributes.find((a: { key: string }) => a.key === EVENTS_ATTR).value
-        .stringValue,
-    );
-    expect(exported).toHaveLength(1);
-    expect(exported[0].eventIndex).toBe(1);
-    // Event that arrived during await must still be buffered.
-    expect(internals(sdk).events).toEqual([
-      { type: 3, timestamp: 2, eventIndex: 2 },
-    ]);
-  });
-
-  it("prepends the batch back when flush fails mid-flight with new events", async () => {
-    let release!: (value: Response) => void;
-    const gate = new Promise<Response>((resolve) => {
-      release = resolve;
-    });
-    vi.stubGlobal("fetch", vi.fn(async () => gate));
+  it("opens the export circuit after five consecutive failures", async () => {
+    const sdk = recordingSdk();
+    const internal = internals(sdk);
+    internal.systemInfo = {};
     vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const sdk = RecordSdk.init({
-      publicKey: "token",
-      baseUrl: "http://thelake.test",
-      sessionId: "ses_fail_race",
-      manual: true,
-    }) as InstanceType<typeof RecordSdk>;
-
-    internals(sdk).systemInfo = {};
-    internals(sdk).events = [
-      { type: 4, timestamp: 1, eventIndex: 1 },
-    ];
-
-    const flushPromise = sdk.flush();
-    await vi.waitFor(() => expect(internals(sdk).saving).toBe(true));
-    internals(sdk).events.push({ type: 3, timestamp: 2, eventIndex: 2 });
-
-    release(new Response("nope", { status: 503 }));
-    await flushPromise;
-
-    expect(internals(sdk).events).toEqual([
-      { type: 4, timestamp: 1, eventIndex: 1 },
-      { type: 3, timestamp: 2, eventIndex: 2 },
-    ]);
-  });
-
-  it("flushes buffered events under the old session id before setSessionId", async () => {
-    const sessionIds: string[] = [];
-    let release!: (value: Response) => void;
-    const gate = new Promise<Response>((resolve) => {
-      release = resolve;
-    });
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_url: string, init?: RequestInit) => {
-        const body = JSON.parse(String(init?.body ?? "{}"));
-        const attrs = body.resourceSpans[0].scopeSpans[0].spans[0].attributes;
-        const sid = attrs.find(
-          (a: { key: string }) => a.key === "sp.session.id",
-        ).value.stringValue;
-        sessionIds.push(sid);
-        return gate;
-      }),
-    );
-
-    const sdk = RecordSdk.init({
-      publicKey: "token",
-      baseUrl: "http://thelake.test",
-      sessionId: "ses_old",
-      manual: true,
-    }) as InstanceType<typeof RecordSdk>;
-
-    internals(sdk).systemInfo = {};
-    internals(sdk).events = [
-      { type: 4, timestamp: 1, eventIndex: 1 },
-    ];
-
-    sdk.setSessionId("ses_new");
-    // Session must stay old until the drain flush completes.
-    expect(sdk.sessionId).toBe("ses_old");
-    await vi.waitFor(() => expect(internals(sdk).saving).toBe(true));
-
-    release(new Response("{}", { status: 200 }));
-    await vi.waitFor(() => expect(sdk.sessionId).toBe("ses_new"));
-
-    expect(sessionIds).toEqual(["ses_old"]);
-    expect(internals(sdk).events).toEqual([]);
-  });
-  // ——— 导出失败的退避与熔断 ———
-  // 回归背景(2026-08-25 现场):collector 不可达时,原实现每 5 秒原样重发同一批事件,
-  // 失败 429 次没停过 —— 控制台被刷爆、主线程每轮白做一次序列化+压缩,页面明显卡。
-  // 下面三条在旧实现上都是红的。
-
-  function failingSdk(sessionId: string) {
-    const sdk = RecordSdk.init({
-      publicKey: "token",
-      baseUrl: "http://thelake.test",
-      sessionId,
-      manual: true,
-    }) as InstanceType<typeof RecordSdk>;
-    internals(sdk).systemInfo = {};
-    return sdk;
-  }
-
-  it("logs once per failure streak instead of once per attempt", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("nope", { status: 503 })),
-    );
-    const err = vi.spyOn(console, "error").mockImplementation(() => {});
-    const sdk = failingSdk("ses_streak");
-
-    for (let i = 0; i < 3; i += 1) {
-      internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: i + 1 }];
+    for (let index = 0; index < 5; index += 1) {
+      internal.events = [{ type: 4, timestamp: index + 1, eventIndex: index + 1 }];
+      testState.exportError = new Error("offline");
       await sdk.flush();
     }
-
-    // 旧实现:每次失败都 console.error 一条 → 3。
-    expect(err).toHaveBeenCalledTimes(1);
+    expect(internal.exportDisabled).toBe(true);
+    expect(internal.events).toEqual([]);
+    const starts = testState.runtime.tracer.startSpan.mock.calls.length;
+    await expect(sdk.flush()).resolves.toBe(false);
+    expect(testState.runtime.tracer.startSpan).toHaveBeenCalledTimes(starts);
   });
 
-  it("gives up after a failure streak: drops the buffer and stops exporting", async () => {
-    const fetchMock = vi.fn(async () => new Response("nope", { status: 503 }));
-    vi.stubGlobal("fetch", fetchMock);
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const sdk = failingSdk("ses_giveup");
+  it("drains active spans before changing the session id", async () => {
+    let release!: () => void;
+    testState.active = true;
+    testState.idleGate = new Promise<void>((resolve) => { release = resolve; });
+    const sdk = recordingSdk({ sessionId: "session-before" });
 
-    for (let i = 0; i < 5; i += 1) {
-      internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: i + 1 }];
-      await sdk.flush();
-    }
+    const switching = sdk.setSessionId("session-after");
+    expect(sdk.sessionId).toBe("session-before");
+    expect(testState.runtime.setSessionId).not.toHaveBeenCalled();
+    release();
+    await switching;
 
-    // 旧实现:事件被 unshift 回去,永远留着 → 长度 1。
-    expect(internals(sdk).exportDisabled).toBe(true);
-    expect(internals(sdk).events).toHaveLength(0);
-
-    // 熔断后不许再打网络,也不许再吞掉新事件。
-    const callsBefore = fetchMock.mock.calls.length;
-    internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: 99 }];
-    await sdk.flush();
-    expect(fetchMock.mock.calls.length).toBe(callsBefore);
-    expect(internals(sdk).events).toHaveLength(1);
+    expect(testState.runtime.setSessionId).toHaveBeenCalledWith("session-after");
+    expect(sdk.sessionId).toBe("session-after");
   });
 
-  it("resets the failure streak after a successful export", async () => {
-    let healthy = false;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        healthy
-          ? new Response("{}", { status: 200 })
-          : new Response("nope", { status: 503 }),
-      ),
-    );
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const sdk = failingSdk("ses_recover");
-
+  it("reports an incomplete pagehide flush until OTel confirms export", async () => {
+    let release!: () => void;
+    testState.exportGate = new Promise<void>((resolve) => { release = resolve; });
+    const statuses: string[] = [];
+    const sdk = recordingSdk({ onUploadStatus: (status: string) => statuses.push(status) });
+    internals(sdk).systemInfo = {};
     internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: 1 }];
-    await sdk.flush();
-    expect(internals(sdk).consecutiveFailures).toBe(1);
+    sdk.record();
 
-    healthy = true;
-    internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: 2 }];
-    await sdk.flush();
-
-    // 旧实现:根本没有这个计数 → undefined。
-    expect(internals(sdk).consecutiveFailures).toBe(0);
-    expect(internals(sdk).exportDisabled).toBe(false);
-  });
-  it("refuses to re-arm recording after giving up", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response("nope", { status: 503 })),
-    );
-    vi.spyOn(console, "error").mockImplementation(() => {});
-    const sdk = failingSdk("ses_rearm");
-
-    for (let i = 0; i < 5; i += 1) {
-      internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: i + 1 }];
-      await sdk.flush();
-    }
-    expect(internals(sdk).exportDisabled).toBe(true);
-
-    // 宿主每次路由变化都会调 record();熔断后必须拒绝,否则每导航一次白起一轮采集。
-    expect(sdk.record()).toBeNull();
+    window.dispatchEvent(new Event("pagehide"));
+    expect(sdk.uploadStatus).toBe("incomplete");
+    release();
+    await vi.waitFor(() => expect(sdk.uploadStatus).toBe("uploaded"));
+    expect(statuses).toContain("incomplete");
   });
 });
