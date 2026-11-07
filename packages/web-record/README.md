@@ -10,6 +10,8 @@ npm install @softprobe/web-record
 
 The package includes the OpenTelemetry browser SDK, its Fetch/XHR instrumentations, and OTLP exporter as dependencies. Import `RecordSdk` from `@softprobe/web-record`; your app does not need to import or configure OpenTelemetry.
 
+`RecordSdk.init()` configures those official OpenTelemetry components for the app. OpenTelemetry creates and exports the HTTP spans. Softprobe adds only rrweb recording, the `sp.session.id` compatibility attribute, and optional route-scoped body capture. Body capture uses the instrumentation hooks and requires the `httpBodyCapture` extension because OpenTelemetry's browser instrumentations do not capture payloads.
+
 ## Start capture
 
 Initialize the SDK once when your app starts. For a site that loads a new page on navigation, add the setup to the shared page layout.

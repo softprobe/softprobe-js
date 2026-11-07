@@ -32,6 +32,21 @@ recorder.stop();
 
 `@opentelemetry/api`, `@opentelemetry/browser-sdk`, `@opentelemetry/browser-instrumentation`, the official trace SDK, and OTLP exporter are runtime dependencies of `@softprobe/web-record`. Consumers do not import OTel packages or configure a provider, instrumentation, or exporter.
 
+## OpenTelemetry API reuse
+
+`RecordSdk.init()` is the Softprobe facade around the official OpenTelemetry browser API. It translates the package's stable, product-level options into OTel resources, trace processors, Fetch/XHR instrumentation, and an OTLP exporter. This keeps OTel's provider and package versions bundled and compatible while the application has one import and one initialization point.
+
+| `RecordSdk.init()` option | OpenTelemetry setup |
+| --- | --- |
+| `serviceName` | Resource `service.name` |
+| `environment` | Resource `deployment.environment.name` |
+| `apiOrigins` | Official Fetch/XHR `ignoreUrls` and `propagateTraceHeaderCorsUrls` |
+| `apiKey`, `baseUrl` / `otlpEndpoint` | Official OTLP exporter endpoint and authorization header |
+| generated or supplied session ID | Official session span processor; Softprobe adds `sp.session.id` for compatibility |
+| `httpBodyCapture` | Softprobe extension, attached through official instrumentation hooks |
+
+The SDK uses the OTel implementations for HTTP client spans, context propagation, session processing, batching, protobuf encoding, and export. Softprobe-specific behavior is limited to rrweb recording, the `sp.session.id` compatibility attribute, and opt-in HTTP body capture. OTel browser instrumentation does not capture payload bodies, so body capture is an extension rather than an OTel option. It attaches through the official Fetch request/completion hooks and the XHR completion hook; the XHR request observer only supplies route and request-body data because that instrumentation version has no request-body hook. The observer does not create HTTP spans or own propagation.
+
 ## Ownership and data flow
 
 - `RecordSdk` resolves the Agent key and managed OTLP destination, persists the tab session ID, collects and masks rrweb events, applies route privacy rules, and exposes `record()`, `flush()`, `stop()`, and `setSessionId()`.
