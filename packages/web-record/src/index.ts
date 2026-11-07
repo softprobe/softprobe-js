@@ -5,17 +5,23 @@ export {
   randomHexId,
   EVENT_NAME,
   EVENTS_ATTR,
+  buildClientRequestExport,
   SPAN_NAME,
 } from "./otlp.js";
+export type { BuildClientRequestSpanInput } from "./otlp.js";
 export {
-  getSessionIdHeaderName,
   initializeHttpInterceptor,
-  updateHttpInterceptorSessionId,
+} from "./http-interceptor.js";
+export type {
+  HttpInterceptorOptions,
+  RequestSpanFactory,
+  RequestTraceHandle,
 } from "./http-interceptor.js";
 export type {
   CompressedRrwebEvent,
   RecordingHandle,
   RrwebEventBatchItem,
+  RecordingUploadStatus,
   SystemInfo,
   Tags,
   WebRecordController,

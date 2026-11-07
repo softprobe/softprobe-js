@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const { rrwebRecordMock } = vi.hoisted(() => ({
+  rrwebRecordMock: vi.fn(() => () => {}),
+}));
+
 vi.mock("rrweb", () => ({
   pack: (data: unknown) => JSON.stringify(data),
-  record: () => () => {},
+  record: rrwebRecordMock,
 }));
 
 import { EVENT_NAME, EVENTS_ATTR, SPAN_NAME } from "../src/otlp.js";
@@ -22,6 +26,8 @@ function internals(sdk: InstanceType<typeof RecordSdk>): SdkInternals {
 
 describe("RecordSdk.init", () => {
   afterEach(() => {
+    sessionStorage.clear();
+    rrwebRecordMock.mockClear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -53,6 +59,206 @@ describe("RecordSdk.init", () => {
     expect(sdk.sessionId).toBe("ses_next");
   });
 
+  it("applies first-class visible-text masking and blocked-region selectors", () => {
+    const sdk = RecordSdk.init({
+      publicKey: "pk",
+      baseUrl: "http://127.0.0.1:8091",
+      maskTextSelector: ".private-copy",
+      blockSelector: "#payment-form",
+    });
+
+    const recordOptions = rrwebRecordMock.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(recordOptions.maskAllInputs).toBe(true);
+    expect(recordOptions.maskTextSelector).toBe(".private-copy");
+    expect(recordOptions.blockSelector).toBe("#payment-form");
+    sdk.stop();
+  });
+
+  it("keeps a generated session id across SDK initialization in the same tab", async () => {
+    const options = {
+      publicKey: "pk",
+      baseUrl: "http://127.0.0.1:8091",
+      serviceName: "travel-ota-web",
+      manual: true,
+    };
+    const first = RecordSdk.init(options);
+    const originalId = first.sessionId;
+    expect(sessionStorage.getItem("_sp_session_id:travel-ota-web")).toBe(originalId);
+
+    const second = RecordSdk.init(options);
+    expect(second.sessionId).toBe(originalId);
+
+    await first.setSessionId("application-session");
+    const third = RecordSdk.init(options);
+    expect(third.sessionId).toBe("application-session");
+  });
+
+  it("keeps session storage independent for different service names", () => {
+    const first = RecordSdk.init({
+      apiKey: "agent-key",
+      baseUrl: "http://127.0.0.1:8091",
+      serviceName: "travel-ota-web",
+      manual: true,
+    });
+    const second = RecordSdk.init({
+      apiKey: "agent-key",
+      baseUrl: "http://127.0.0.1:8091",
+      serviceName: "admin-web",
+      manual: true,
+    });
+    expect(second.sessionId).not.toBe(first.sessionId);
+  });
+
+  it("attempts a keepalive export on pagehide and reports upload status", async () => {
+    let release!: (value: Response) => void;
+    const gate = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => gate);
+    vi.stubGlobal("fetch", fetchMock);
+    const statuses: string[] = [];
+
+    const sdk = RecordSdk.init({
+      publicKey: "token",
+      baseUrl: "http://thelake.test",
+      manual: true,
+      onUploadStatus: (status) => statuses.push(status),
+    }) as InstanceType<typeof RecordSdk>;
+    internals(sdk).systemInfo = {};
+    internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: 1 }];
+    sdk.record();
+
+    window.dispatchEvent(new Event("pagehide"));
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchMock.mock.calls[0]?.[1]?.keepalive).toBe(true);
+    expect(sdk.uploadStatus).toBe("incomplete");
+    expect(statuses).toContain("incomplete");
+
+    release(new Response("{}", { status: 200 }));
+    await vi.waitFor(() => expect(sdk.uploadStatus).toBe("uploaded"));
+  });
+
+  it("reports a failed pagehide upload", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("offline", { status: 503 })),
+    );
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const statuses: string[] = [];
+    const sdk = RecordSdk.init({
+      publicKey: "token",
+      baseUrl: "http://thelake.test",
+      manual: true,
+      onUploadStatus: (status) => statuses.push(status),
+    }) as InstanceType<typeof RecordSdk>;
+    internals(sdk).systemInfo = {};
+    internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: 1 }];
+    sdk.record();
+
+    window.dispatchEvent(new Event("pagehide"));
+
+    await vi.waitFor(() => expect(sdk.uploadStatus).toBe("failed"));
+    expect(statuses).toContain("incomplete");
+    expect(statuses).toContain("failed");
+  });
+
+  it("exports a request span and propagates trace context only to selected origins", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const originalFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return new Response("ok", { status: 200 });
+    });
+    vi.stubGlobal("fetch", originalFetch);
+    delete (globalThis.fetch as { __sp_sdk_patched_fetch?: boolean })
+      .__sp_sdk_patched_fetch;
+    vi.stubGlobal("location", {
+      href: "https://app.example.com/chat",
+      origin: "https://app.example.com",
+    });
+
+    RecordSdk.init({
+      apiKey: "agent-key",
+      baseUrl: "https://collector.example.com",
+      sessionId: "session-request",
+      apiOrigins: ["https://api.example.com"],
+      manual: true,
+    });
+
+    await fetch("https://api.example.com/api/orders?token=private");
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+
+    const requestHeaders = new Headers(calls[0]?.init?.headers);
+    const [version, traceId, spanId] = requestHeaders.get("traceparent")!.split("-");
+    expect(version).toBe("00");
+    expect(requestHeaders.has("x-sp-session-id")).toBe(false);
+    expect(requestHeaders.has("x-softprobe-capture-id")).toBe(false);
+
+    const exportCall = calls.find((call) => call.url.endsWith("/v1/traces"));
+    expect(exportCall).toBeDefined();
+    expect(exportCall?.init?.keepalive).toBe(true);
+    expect(new Headers(exportCall?.init?.headers).has("x-softprobe-capture-id"))
+      .toBe(false);
+    const envelope = JSON.parse(String(exportCall?.init?.body));
+    const span = envelope.resourceSpans[0].scopeSpans[0].spans[0];
+    expect(span.traceId).toBe(traceId);
+    expect(span.spanId).toBe(spanId);
+    const attrs = Object.fromEntries(
+      span.attributes.map((a: { key: string; value: { stringValue?: string } }) => [
+        a.key,
+        a.value.stringValue,
+      ]),
+    );
+    expect(attrs).not.toHaveProperty("sp.capture.id");
+    expect(attrs["sp.capture.source"]).toBe("browser");
+    expect(attrs["sp.session.id"]).toBe("session-request");
+    expect(attrs["url.path"]).toBe("/api/orders");
+    expect(String(exportCall?.init?.body)).not.toContain("private");
+  });
+
+  it("flush waits for in-flight request-span exports before navigation", async () => {
+    let releaseExport!: (response: Response) => void;
+    const exportGate = new Promise<Response>((resolve) => {
+      releaseExport = resolve;
+    });
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (url: string) => {
+      calls.push(url);
+      return url.endsWith("/v1/traces")
+        ? exportGate
+        : new Response("ok", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    delete (globalThis.fetch as { __sp_sdk_patched_fetch?: boolean })
+      .__sp_sdk_patched_fetch;
+    vi.stubGlobal("location", {
+      href: "https://app.example.com/chat",
+      origin: "https://app.example.com",
+    });
+
+    const sdk = RecordSdk.init({
+      apiKey: "agent-key",
+      baseUrl: "https://collector.example.com",
+      sessionId: "session-before-navigation",
+      apiOrigins: ["https://api.example.com"],
+      manual: true,
+    }) as InstanceType<typeof RecordSdk>;
+
+    await fetch("https://api.example.com/api/orders");
+    expect(calls).toHaveLength(2);
+    let flushSettled = false;
+    const pendingFlush = sdk.flush().then((result) => {
+      flushSettled = true;
+      return result;
+    });
+    await Promise.resolve();
+    expect(flushSettled).toBe(false);
+
+    releaseExport(new Response("{}", { status: 200 }));
+    await expect(pendingFlush).resolves.toBe(true);
+    expect(flushSettled).toBe(true);
+  });
+
   it("flushes OTLP envelope and clears buffer on success", async () => {
     const posts: Array<{ url: string; headers: HeadersInit; body: string }> =
       [];
@@ -69,7 +275,7 @@ describe("RecordSdk.init", () => {
     );
 
     const sdk = RecordSdk.init({
-      publicKey: "token",
+      apiKey: "agent-ingest-key",
       baseUrl: "http://thelake.test",
       sessionId: "ses_flush",
       manual: true,
@@ -96,9 +302,10 @@ describe("RecordSdk.init", () => {
     expect(posts).toHaveLength(1);
     expect(posts[0]?.url).toBe("http://thelake.test/v1/traces");
     expect(posts[0]?.headers).toMatchObject({
-      Authorization: "Bearer token",
+      Authorization: "Bearer agent-ingest-key",
       "Content-Type": "application/json",
     });
+    expect(new Headers(posts[0]?.headers).has("X-Softprobe-Capture-ID")).toBe(false);
 
     const payload = JSON.parse(posts[0]!.body);
     const span = payload.resourceSpans[0].scopeSpans[0].spans[0];
@@ -112,8 +319,11 @@ describe("RecordSdk.init", () => {
       ),
     );
     expect(attrs["sp.session.id"]).toBe("ses_flush");
+    expect(attrs).not.toHaveProperty("sp.capture.id");
+    expect(attrs["sp.capture.source"]).toBe("browser");
     expect(attrs["sp.observation.type"]).toBe("recording");
     expect(span.events[0].name).toBe(EVENT_NAME);
+    expect(posts[0]!.body).not.toContain("agent-ingest-key");
     const eventsJson = span.events[0].attributes.find(
       (a: { key: string }) => a.key === EVENTS_ATTR,
     ).value.stringValue;

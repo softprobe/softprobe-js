@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildClientRequestExport,
   buildRecordingExport,
   EVENT_NAME,
   EVENTS_ATTR,
@@ -48,6 +49,8 @@ describe("buildRecordingExport", () => {
       ]),
     );
     expect(keys["sp.session.id"]).toBe("ses_abc");
+    expect(keys["sp.capture.source"]).toBe("browser");
+    expect(keys).not.toHaveProperty("sp.capture.id");
     expect(keys["sp.observation.type"]).toBe("recording");
     expect(keys["sp.recording.batch_index"]).toBe("3");
     expect(keys._sp_browser).toBe("Chrome");
@@ -98,11 +101,55 @@ describe("buildRecordingExport", () => {
     const attr = (body.resourceSpans as any[])[0].scopeSpans[0].spans[0]
       .events[0].attributes[0];
     expect(JSON.parse(attr.value.stringValue)[0].isCompressed).toBe(true);
+    const span = (body.resourceSpans as any[])[0].scopeSpans[0].spans[0];
+    const attrs = Object.fromEntries(
+      span.attributes.map((item: { key: string; value: { stringValue?: string } }) => [
+        item.key,
+        item.value.stringValue,
+      ]),
+    );
+    expect(attrs["sp.capture.source"]).toBe("browser");
   });
 });
 
 describe("msToUnixNano", () => {
   it("converts ms to nanos as string", () => {
     expect(msToUnixNano(1_721_390_400_000)).toBe("1721390400000000000");
+  });
+});
+
+describe("buildClientRequestExport", () => {
+  it("keeps the selected API request in the same session and omits query data", () => {
+    const payload = buildClientRequestExport({
+      traceId: "0123456789abcdef0123456789abcdef",
+      spanId: "0123456789abcdef",
+      sessionId: "session-1",
+      method: "POST",
+      scheme: "https",
+      serverAddress: "api.example.test",
+      path: "/api/flights/search",
+      statusCode: 200,
+      failed: false,
+      startTimeUnixNano: "1000000",
+      endTimeUnixNano: "2000000",
+      serviceName: "travel-ota",
+    });
+    const span = (payload.resourceSpans as any[])[0].scopeSpans[0].spans[0];
+    const attrs = Object.fromEntries(
+      span.attributes.map((a: { key: string; value: { stringValue?: string } }) => [
+        a.key,
+        a.value.stringValue,
+      ]),
+    );
+
+    expect(span.traceId).toBe("0123456789abcdef0123456789abcdef");
+    expect(span.spanId).toBe("0123456789abcdef");
+    expect(span.kind).toBe(3);
+    expect(attrs["sp.session.id"]).toBe("session-1");
+    expect(attrs["sp.capture.source"]).toBe("browser");
+    expect(attrs).not.toHaveProperty("sp.capture.id");
+    expect(attrs["url.path"]).toBe("/api/flights/search");
+    expect(JSON.stringify(payload)).not.toContain("?token=");
+    expect(span.status.code).toBe(1);
   });
 });

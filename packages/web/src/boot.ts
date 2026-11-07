@@ -4,8 +4,14 @@ const SESSION_KEY = "x-sp-session-id";
 const BOOTED = "__softprobeSession";
 
 export type ScriptConfig = {
+  apiKey: string;
   baseUrl: string;
-  publicKey: string;
+  apiOrigins: string[];
+  environment?: string;
+  serviceName: string;
+  maskAllInputs: boolean;
+  maskTextSelector?: string;
+  blockSelector?: string;
 };
 
 type BootWindow = Window & {
@@ -17,22 +23,61 @@ export function readScriptConfig(
 ): ScriptConfig | null {
   if (!script) return null;
   const baseUrl = script.dataset.baseUrl?.trim() ?? "";
-  const publicKey = script.dataset.publicKey?.trim() ?? "";
-  if (!baseUrl || !publicKey) return null;
-  return { baseUrl, publicKey };
+  const apiKey = script.dataset.apiKey?.trim()
+    || script.dataset.publicKey?.trim()
+    || "";
+  // Agent keys identify the owning App. Keep the deprecated public-key path
+  // working for existing installations.
+  if (!baseUrl || !apiKey) return null;
+  const apiOrigins = [...new Set(
+    (script.dataset.apiOrigins ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  )];
+  const maskTextSelector = script.dataset.maskTextSelector?.trim() || undefined;
+  const blockSelector = script.dataset.blockSelector?.trim() || undefined;
+  return {
+    apiKey,
+    baseUrl,
+    apiOrigins,
+    environment: script.dataset.environment?.trim() || undefined,
+    serviceName: script.dataset.serviceName?.trim() || "softprobe-web",
+    maskAllInputs: script.dataset.maskAllInputs?.toLowerCase() !== "false",
+    maskTextSelector,
+    blockSelector,
+  };
 }
 
 /** Reuse the page's session id, or create one and keep it for later navigations. */
 export function readOrCreateSessionId(storage: Storage): string {
   const existing = storage.getItem(SESSION_KEY)?.trim();
   if (existing) return existing;
-  const id = `sp-session-${crypto.randomUUID()}`;
+  const id = `sp-session-${newUuid()}`;
   storage.setItem(SESSION_KEY, id);
   return id;
 }
 
 /**
- * Start recording and same-origin session headers from the current script tag.
+ * `crypto.randomUUID` exists only in a secure context. The demo is served over
+ * plain HTTP, where that call throws and the script never starts recording.
+ * `getRandomValues` works there.
+ */
+function newUuid(): string {
+  try {
+    if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  } catch {
+    // Insecure context: fall through.
+  }
+  return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => {
+    const n = Number(c);
+    const byte = crypto.getRandomValues(new Uint8Array(1))[0] ?? 0;
+    return (n ^ (byte & (15 >> (n / 4)))).toString(16);
+  });
+}
+
+/**
+ * Start recording and browser request tracing from the current script tag.
  * A second call on the same page does nothing.
  */
 export function boot(
@@ -45,21 +90,26 @@ export function boot(
   const config = readScriptConfig(script);
   if (!config) {
     console.warn(
-      "[@softprobe/web] data-base-url and data-public-key are required; session script disabled.",
+      "[@softprobe/web] data-base-url and data-api-key are required; session script disabled.",
     );
     return null;
   }
 
   const recorder = RecordSdk.init({
-    publicKey: config.publicKey,
+    apiKey: config.apiKey,
     baseUrl: config.baseUrl,
+    apiOrigins: config.apiOrigins,
+    environment: config.environment,
+    serviceName: config.serviceName,
+    maskAllInputs: config.maskAllInputs,
+    maskTextSelector: config.maskTextSelector,
+    blockSelector: config.blockSelector,
     sessionId: readOrCreateSessionId(window.sessionStorage),
-    serviceName: "softprobe-web",
+    onUploadStatus: (status) => {
+      document.documentElement.dataset.softprobeCaptureStatus = status;
+    },
   });
   host[BOOTED] = recorder;
-  window.addEventListener("pagehide", () => {
-    recorder.stop();
-  });
   return recorder;
 }
 
