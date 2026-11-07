@@ -1,6 +1,6 @@
 # @softprobe/web-record
 
-Browser session recording and request tracing SDK. For a one-tag setup, use [`@softprobe/web`](https://www.npmjs.com/package/@softprobe/web).
+Browser session recording and request tracing SDK.
 
 ## Install
 
