@@ -65,6 +65,8 @@ The SDK uses the OTel implementations for HTTP client spans, context propagation
 - A route must match the normalized origin, uppercased method, and exact path, and its origin must also be in `apiOrigins`. Only JSON content is considered. The default cap is 64 KiB, with a 256 KiB maximum. Redaction runs before a body is attached to telemetry.
 - Once the official HTTP span completes, the observer creates `softprobe.http.body.capture` as its child. It carries `http.request.body.content` and `http.response.body.content` only when valid, bounded, redacted JSON was captured; otherwise it marks capture as omitted. The child has the same trace and session IDs as its HTTP parent.
 
+The child span is needed because the official instrumentation hooks are synchronous, while reading a Fetch response body completes asynchronously. The child preserves parentage without delaying the application's response or trying to modify an already-ended OTel HTTP span. The XHR path uses the same child-span shape so body capture has one consistent representation across Fetch and XHR.
+
 ## Removed implementation
 
 `http-interceptor.ts` and the hand-built `otlp.ts` exporter are removed. There is one HTTP-span owner: the official OTel Fetch/XHR instrumentation. Trace IDs, propagation, semantic HTTP attributes, batching, OTLP protobuf encoding, and export come from OpenTelemetry.
