@@ -1,8 +1,4 @@
-import {
-  RecordSdk,
-  type HttpBodyCaptureOptions,
-  type WebRecordController,
-} from "@softprobe/web-record";
+import { RecordSdk, type WebRecordController } from "@softprobe/web-record";
 
 const SESSION_KEY = "x-sp-session-id";
 const BOOTED = "__softprobeSession";
@@ -16,7 +12,6 @@ export type ScriptConfig = {
   maskAllInputs: boolean;
   maskTextSelector?: string;
   blockSelector?: string;
-  httpBodyCapture?: HttpBodyCaptureOptions;
 };
 
 type BootWindow = Window & {
@@ -42,16 +37,6 @@ export function readScriptConfig(
   )];
   const maskTextSelector = script.dataset.maskTextSelector?.trim() || undefined;
   const blockSelector = script.dataset.blockSelector?.trim() || undefined;
-  let httpBodyCapture: HttpBodyCaptureOptions | undefined;
-  try {
-    const rawCapture = script.dataset.httpBodyCapture?.trim();
-    const parsedCapture: unknown = rawCapture ? JSON.parse(rawCapture) : undefined;
-    if (parsedCapture && typeof parsedCapture === "object" && Array.isArray((parsedCapture as { routes?: unknown }).routes)) {
-      httpBodyCapture = parsedCapture as HttpBodyCaptureOptions;
-    }
-  } catch {
-    httpBodyCapture = undefined;
-  }
   return {
     apiKey,
     baseUrl,
@@ -61,7 +46,6 @@ export function readScriptConfig(
     maskAllInputs: script.dataset.maskAllInputs?.toLowerCase() !== "false",
     maskTextSelector,
     blockSelector,
-    ...(httpBodyCapture ? { httpBodyCapture } : {}),
   };
 }
 
@@ -120,7 +104,6 @@ export function boot(
     maskAllInputs: config.maskAllInputs,
     maskTextSelector: config.maskTextSelector,
     blockSelector: config.blockSelector,
-    httpBodyCapture: config.httpBodyCapture,
     sessionId: readOrCreateSessionId(window.sessionStorage),
     onUploadStatus: (status) => {
       document.documentElement.dataset.softprobeCaptureStatus = status;
