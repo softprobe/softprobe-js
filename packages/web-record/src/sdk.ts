@@ -1,21 +1,14 @@
 import { EventType, type eventWithTime } from "@rrweb/types";
 import { pack, record as rrwebRecord } from "rrweb";
+import { SpanStatusCode } from "@opentelemetry/api";
 import {
   asNonEmptyString,
   deriveOtlpEndpoint,
   resolveSoftprobeConfigFromObject,
   MissingSoftprobeCredentialsError,
 } from "@softprobe/tracing/config";
-import {
-  type RequestTraceHandle,
-  initializeHttpInterceptor,
-} from "./http-interceptor.js";
-import {
-  buildClientRequestExport,
-  buildRecordingExport,
-  msToUnixNano,
-  randomHexId,
-} from "./otlp.js";
+import { createBrowserRuntime, type BrowserRuntime } from "./browser-runtime.js";
+import { createWebSessionState } from "./session-state.js";
 import type {
   RecordingHandle,
   RecordingUploadStatus,
@@ -33,6 +26,9 @@ const BACKOFF_MAX_MS = 5 * 60_000;
 const COOKIE_NAME = "_sp_vid";
 const COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
 const SESSION_ID_STORAGE_PREFIX = "_sp_session_id:";
+const RECORDING_SPAN_NAME = "softprobe.web.recording";
+const RECORDING_EVENT_NAME = "sp.recording.batch";
+const RECORDING_EVENTS_ATTRIBUTE = "sp.recording.events";
 
 type Compressible = eventWithTime & {
   data?: unknown;
@@ -57,6 +53,7 @@ export class RecordSdk implements WebRecordController {
   private readonly onUploadStatus?: (status: RecordingUploadStatus) => void;
   private readonly recordOptions: Record<string, unknown>;
   private readonly replacers: Record<string, string>;
+  private readonly browserRuntime: BrowserRuntime | null;
   private tags: Tags;
   private events: RrwebEventBatchItem[] = [];
   private eventIndex = 0;
@@ -67,26 +64,21 @@ export class RecordSdk implements WebRecordController {
   private stopHandle: RecordingHandle | null = null;
   private saving = false;
   private recordingFlush: Promise<boolean> | null = null;
-  private readonly pendingClientSpanExports = new Set<Promise<boolean>>();
   /** 连续导出失败次数;成功即归零。 */
   private consecutiveFailures = 0;
   /** 退避到期时间戳(ms);在此之前定时器不再尝试导出。 */
   private nextAttemptAt = 0;
   /** 熔断标志:连败到上限后置位,导出与采集一起停。 */
   private exportDisabled = false;
-  private fetchImpl: typeof fetch;
   /** Serializes setSessionId drains so overlapping navigations cannot race. */
   private sessionSwitch: Promise<void> = Promise.resolve();
   private _uploadStatus: RecordingUploadStatus = "idle";
   private readonly onPageHide = (): void => {
     if (!this.enabled || (
-      this.events.length === 0 && !this.saving && this.pendingClientSpanExports.size === 0
+      this.events.length === 0 && !this.saving && !this.browserRuntime?.hasPendingTelemetry()
     )) return;
     this.setUploadStatus("incomplete");
-    // A keepalive request is best-effort. If an ordinary export is already in
-    // flight, do not duplicate its batch; report it as incomplete until it
-    // resolves or fails.
-    if (!this.saving) void this.flush({ keepalive: true });
+    if (!this.saving) void this.flushInternal(true);
   };
 
   private constructor(
@@ -111,19 +103,19 @@ export class RecordSdk implements WebRecordController {
     this.tags = { ...(options.tags ?? {}) };
     if (this.userId && !this.tags.userId) this.tags.userId = this.userId;
     this.visitorId = getOrCreateVisitorId();
-    this.fetchImpl =
-      typeof globalThis.fetch === "function"
-        ? globalThis.fetch.bind(globalThis)
-        : (async () => {
-            throw new Error("fetch is not available");
-          }) as typeof fetch;
+    const sessionState = this.enabled ? createWebSessionState(this._sessionId) : null;
+    this.browserRuntime = this.enabled && sessionState
+      ? createBrowserRuntime({
+          apiKey: this.apiKey,
+          otlpEndpoint: this.otlpEndpoint,
+          serviceName: this.serviceName,
+          environment: this.environment,
+          apiOrigins: this.apiOrigins,
+          httpBodyCapture: options.httpBodyCapture,
+        }, sessionState)
+      : null;
 
     if (this.enabled) {
-      initializeHttpInterceptor({
-        apiOrigins: this.apiOrigins,
-        httpBodyCapture: options.httpBodyCapture,
-        createRequestSpan: (method, url) => this.createRequestSpan(method, url),
-      });
       if (!options.manual) {
         this.record();
       }
@@ -259,6 +251,7 @@ export class RecordSdk implements WebRecordController {
   private async switchSessionId(next: string): Promise<void> {
     await this.drainFlush();
     this._sessionId = next;
+    this.browserRuntime?.setSessionId(next);
     try {
       if (typeof sessionStorage !== "undefined") {
         sessionStorage.setItem(this.sessionIdStorageKey, next);
@@ -278,12 +271,12 @@ export class RecordSdk implements WebRecordController {
       while (this.saving) {
         await new Promise<void>((r) => setTimeout(r, 0));
       }
-      if (this.events.length === 0) return;
+      const pendingSpans = this.browserRuntime?.hasPendingTelemetry() ?? false;
+      if (this.events.length === 0 && !pendingSpans) return;
       const before = this.events.length;
       const ok = await this.flush();
       if (!ok) return;
-      // flush is a no-op when saving raced; avoid busy-loop.
-      if (this.events.length >= before) return;
+      if (this.events.length >= before && !this.browserRuntime?.hasPendingTelemetry()) return;
     }
   }
 
@@ -305,97 +298,83 @@ export class RecordSdk implements WebRecordController {
     return event;
   }
 
-  async flush(options: { keepalive?: boolean } = {}): Promise<boolean> {
-    if (this.exportDisabled) return false;
-    if (!this.enabled) return true;
-    let recordingResult = true;
-    if (this.saving) {
-      recordingResult = await (this.recordingFlush ?? Promise.resolve(true));
-    } else if (this.events.length > 0) {
-      const recordingFlush = this.flushRecordingBatch(options);
-      this.recordingFlush = recordingFlush;
-      try {
-        recordingResult = await recordingFlush;
-      } finally {
-        if (this.recordingFlush === recordingFlush) this.recordingFlush = null;
-      }
-    }
-    const clientSpansResult = await this.flushPendingClientSpanExports();
-    return recordingResult && clientSpansResult;
+  flush(): Promise<boolean> {
+    return this.flushInternal(false);
   }
 
-  private async flushRecordingBatch(options: { keepalive?: boolean }): Promise<boolean> {
-    if (this.exportDisabled || !this.enabled || this.events.length === 0) return !this.exportDisabled;
+  private async flushInternal(preserveIncompleteStatus: boolean): Promise<boolean> {
+    if (this.exportDisabled) return false;
+    if (!this.enabled) return true;
+    if (this.saving) {
+      return this.recordingFlush ?? false;
+    }
+    if (!this.browserRuntime) return true;
+    const flushPromise = this.flushOtlp(preserveIncompleteStatus);
+    this.recordingFlush = flushPromise;
+    try {
+      return await flushPromise;
+    } finally {
+      if (this.recordingFlush === flushPromise) this.recordingFlush = null;
+    }
+  }
+
+  private async flushOtlp(preserveIncompleteStatus: boolean): Promise<boolean> {
     this.saving = true;
-    if (!options.keepalive) this.setUploadStatus("pending");
-    // Splice out the batch BEFORE await so events recorded while export is in
-    // flight stay in `this.events` and are not dropped on success.
     const batch = this.events.splice(0, this.events.length);
     const batchIndex = this.batchIndex;
+    const hadTelemetry = batch.length > 0 || this.browserRuntime?.hasPendingTelemetry() === true;
+    let spanEnded = false;
     try {
-      if (!this.systemInfo) this.systemInfo = await this.collectSystemInfo();
-      const tags: Record<string, string | number | boolean | null | undefined> = {
-        ...this.systemInfo,
-        ...this.tags,
-      };
-      for (const [key, value] of Object.entries(this.replacers)) {
-        if (key in tags && value) tags[key] = value;
+      if (hadTelemetry && !preserveIncompleteStatus) {
+        this.setUploadStatus("pending");
+      }
+      if (batch.length > 0) {
+        if (!this.systemInfo) this.systemInfo = await this.collectSystemInfo();
+        const attributes: Record<string, string | number | boolean> = {};
+        for (const [key, value] of Object.entries({ ...this.systemInfo, ...this.tags })) {
+          const resolved = this.replacers[key] || value;
+          if (typeof resolved === "string" || typeof resolved === "number" || typeof resolved === "boolean") {
+            attributes[key] = resolved;
+          }
+        }
+        const now = Date.now();
+        const firstTimestamp = batch[0]?.timestamp;
+        const startTime = new Date(typeof firstTimestamp === "number" ? firstTimestamp : now);
+        const endTime = new Date(now);
+        const span = this.browserRuntime!.tracer.startSpan(RECORDING_SPAN_NAME, {
+          startTime,
+          attributes: {
+            ...attributes,
+            "sp.observation.type": "recording",
+            "sp.recording.batch_index": batchIndex,
+          },
+        });
+        try {
+          span.addEvent(RECORDING_EVENT_NAME, {
+            [RECORDING_EVENTS_ATTRIBUTE]: JSON.stringify(batch),
+          }, endTime);
+          span.setStatus({ code: SpanStatusCode.OK });
+        } finally {
+          span.end(endTime);
+          spanEnded = true;
+        }
       }
 
-      const now = Date.now();
-      const startMs =
-        typeof batch[0]?.timestamp === "number" ? batch[0].timestamp : now;
-      const body = buildRecordingExport({
-        traceId: randomHexId(16),
-        spanId: randomHexId(8),
-        sessionId: this._sessionId,
-        batchIndex,
-        startTimeUnixNano: msToUnixNano(startMs),
-        endTimeUnixNano: msToUnixNano(now),
-        events: batch,
-        attributes: tags,
-        serviceName: this.serviceName,
-        environment: this.environment,
-      });
-
-      const res = await this.fetchImpl(this.otlpEndpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        redirect: "follow",
-        ...(options.keepalive ? { keepalive: true } : {}),
-      });
-      if (!res.ok) {
-        throw new Error(
-          `OTLP export failed: ${res.status} ${await res.text()}`,
-        );
-      }
-      this.batchIndex = batchIndex + 1;
+      await this.browserRuntime!.waitForIdle();
+      await this.browserRuntime!.forceFlush();
+      if (batch.length > 0) this.batchIndex = batchIndex + 1;
       this.consecutiveFailures = 0;
       this.nextAttemptAt = 0;
-      this.setUploadStatus("uploaded");
+      if (hadTelemetry) this.setUploadStatus("uploaded");
       return true;
     } catch (error) {
-      this.events.unshift(...batch);
+      if (batch.length > 0) this.events.unshift(...batch);
       this.setUploadStatus("failed");
-      this.noteExportFailure(error);
+      if (batch.length > 0 || spanEnded) this.noteExportFailure(error);
       return false;
     } finally {
       this.saving = false;
     }
-  }
-
-  private async flushPendingClientSpanExports(): Promise<boolean> {
-    let succeeded = true;
-    while (this.pendingClientSpanExports.size > 0) {
-      const batch = [...this.pendingClientSpanExports];
-      const results = await Promise.all(batch);
-      succeeded = results.every(Boolean) && succeeded;
-    }
-    return succeeded;
   }
 
   private setUploadStatus(status: RecordingUploadStatus): void {
@@ -407,82 +386,6 @@ export class RecordSdk implements WebRecordController {
     }
   }
 
-  private createRequestSpan(method: string, rawUrl: string): RequestTraceHandle | null {
-    let url: URL;
-    try {
-      url = new URL(rawUrl, typeof location !== "undefined" ? location.href : undefined);
-      const endpoint = new URL(this.otlpEndpoint);
-      // Exclude only the collector endpoint itself. An application may use a
-      // same-origin gateway for its own API and telemetry ingestion.
-      if (url.origin === endpoint.origin && url.pathname === endpoint.pathname) return null;
-    } catch {
-      return null;
-    }
-
-    const traceId = randomHexId(16);
-    const spanId = randomHexId(8);
-    const sessionId = this._sessionId;
-    const startMs = Date.now();
-    let finished = false;
-    let resolveCompletion!: (succeeded: boolean) => void;
-    const completion = new Promise<boolean>((resolve) => { resolveCompletion = resolve; });
-    this.pendingClientSpanExports.add(completion);
-    void completion.finally(() => this.pendingClientSpanExports.delete(completion));
-    return {
-      traceparent: `00-${traceId}-${spanId}-01`,
-      finish: (statusCode, error, bodies) => {
-        if (finished) return;
-        finished = true;
-        const endMs = Date.now();
-        try {
-          const body = buildClientRequestExport({
-            traceId,
-            spanId,
-            sessionId,
-            method,
-            scheme: url.protocol.slice(0, -1),
-            serverAddress: url.hostname,
-            path: url.pathname,
-            statusCode,
-            failed: Boolean(error) || statusCode >= 500,
-            requestBody: bodies?.requestBody,
-            responseBody: bodies?.responseBody,
-            startTimeUnixNano: msToUnixNano(startMs),
-            endTimeUnixNano: msToUnixNano(endMs),
-            serviceName: this.serviceName,
-            environment: this.environment,
-          });
-          void this.exportClientRequestSpan(body).then(resolveCompletion, () => resolveCompletion(false));
-        } catch {
-          resolveCompletion(false);
-        }
-      },
-    };
-  }
-
-  private async exportClientRequestSpan(body: { resourceSpans: unknown[] }): Promise<boolean> {
-    this.setUploadStatus("pending");
-    try {
-      const response = await this.fetchImpl(this.otlpEndpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify(body),
-        redirect: "follow",
-        // Client spans close with the application request and are often
-        // exported immediately before a full-page navigation.
-        keepalive: true,
-      });
-      if (!response.ok) throw new Error(`OTLP export failed: ${response.status}`);
-      this.setUploadStatus("uploaded");
-      return true;
-    } catch {
-      this.setUploadStatus("failed");
-      return false;
-    }
-  }
 
   /**
    * 导出失败后的退避与熔断。
