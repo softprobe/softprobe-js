@@ -223,6 +223,26 @@ describe("RecordSdk", () => {
     expect(() => RecordSdk.init({ softDisable: false } as never)).toThrow(/publicKey and baseUrl/);
   });
 
+  it("uploads to production TheLake when baseUrl is omitted and stays off for a blank baseUrl", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    RecordSdk.init({
+      apiKey: "agent-key",
+      serviceName: "travel-ota-web",
+      manual: true,
+    });
+    expect(testState.runtimeOptions).toMatchObject({
+      otlpEndpoint: "https://explorer.softprobe.ai/api/thelake/v1/traces",
+    });
+
+    const disabled = RecordSdk.init({
+      apiKey: "agent-key",
+      baseUrl: "",
+      manual: true,
+    });
+    expect(disabled.enabled).toBe(false);
+    expect(warn).toHaveBeenCalled();
+  });
+
   it("keeps a generated session id in the tab and supports session switches", async () => {
     const options = {
       apiKey: "agent-key",
