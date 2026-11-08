@@ -60,7 +60,7 @@ export type WebRecordInitOptions = WebRecordCredentials & {
   sessionId?: string;
   /** Flush interval in ms (minimum 5000). */
   interval?: number;
-  /** Exact HTTP(S) origins that may receive traceparent/tracestate headers. */
+  /** Exact HTTP(S) origins to trace and allow to receive W3C trace headers. */
   apiOrigins?: string[];
   /** Opt-in JSON body capture for exact routes. Disabled when omitted. */
   httpBodyCapture?: HttpBodyCaptureOptions;
