@@ -46,6 +46,69 @@ describe("RecordSdk.init", () => {
     ).toThrow(/publicKey and baseUrl/);
   });
 
+  it("soft-disables when baseUrl is empty", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sdk = RecordSdk.init({
+      apiKey: "agent-key",
+      baseUrl: "",
+    });
+    expect(sdk.enabled).toBe(false);
+    expect(sdk.record()).toBeNull();
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it("uploads a client span to the production TheLake URL when baseUrl is omitted", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      calls.push(String(url));
+      return new Response("ok", { status: 200 });
+    }));
+    delete (globalThis.fetch as { __sp_sdk_patched_fetch?: boolean })
+      .__sp_sdk_patched_fetch;
+    vi.stubGlobal("location", {
+      href: "https://app.example.com/chat",
+      origin: "https://app.example.com",
+    });
+
+    RecordSdk.init({
+      apiKey: "agent-key",
+      serviceName: "travel-ota-web",
+      apiOrigins: ["https://api.example.com"],
+      manual: true,
+    });
+
+    await fetch("https://api.example.com/api/orders");
+    await vi.waitFor(() => expect(calls).toContain(
+      "https://explorer.softprobe.ai/api/thelake/v1/traces",
+    ));
+  });
+
+  it("uploads a client span to an explicit local baseUrl", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      calls.push(String(url));
+      return new Response("ok", { status: 200 });
+    }));
+    delete (globalThis.fetch as { __sp_sdk_patched_fetch?: boolean })
+      .__sp_sdk_patched_fetch;
+    vi.stubGlobal("location", {
+      href: "https://app.example.com/chat",
+      origin: "https://app.example.com",
+    });
+
+    RecordSdk.init({
+      apiKey: "agent-key",
+      baseUrl: "http://127.0.0.1:18080/api/thelake",
+      apiOrigins: ["https://api.example.com"],
+      manual: true,
+    });
+
+    await fetch("https://api.example.com/api/orders");
+    await vi.waitFor(() => expect(calls).toContain(
+      "http://127.0.0.1:18080/api/thelake/v1/traces",
+    ));
+  });
+
   it("honors explicit sessionId and setSessionId", async () => {
     const sdk = RecordSdk.init({
       publicKey: "pk",

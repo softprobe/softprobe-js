@@ -39,8 +39,11 @@ export type WebRecordCredentials = {
 };
 
 export type HttpBodyCaptureRoute = {
-  /** Exact HTTP(S) origin already listed in `apiOrigins`. */
-  origin: string;
+  /**
+   * Exact HTTP(S) origin already listed in `apiOrigins`.
+   * Omit when `apiOrigins` contains exactly one origin.
+   */
+  origin?: string;
   method: string;
   /** Exact URL path without query string or fragment. */
   path: string;
@@ -55,12 +58,17 @@ export type HttpBodyCaptureOptions = {
   routes: HttpBodyCaptureRoute[];
 };
 
-export type WebRecordInitOptions = WebRecordCredentials & {
+export type WebRecordInitOptions = Omit<WebRecordCredentials, "baseUrl"> & {
+  /**
+   * Ingest API root. Omit for https://explorer.softprobe.ai/api/thelake.
+   * Local and staging callers pass their own root. Blank still disables init.
+   */
+  baseUrl?: string;
   /** Correlate with LLM / OpenCode session (`sp.session.id`). */
   sessionId?: string;
   /** Flush interval in ms (minimum 5000). */
   interval?: number;
-  /** Exact HTTP(S) origins that may receive traceparent/tracestate headers. */
+  /** Exact HTTP(S) origins that may receive a traceparent header. */
   apiOrigins?: string[];
   /** Opt-in JSON body capture for exact routes. Disabled when omitted. */
   httpBodyCapture?: HttpBodyCaptureOptions;

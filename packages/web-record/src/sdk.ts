@@ -10,6 +10,7 @@ import {
   type RequestTraceHandle,
   initializeHttpInterceptor,
 } from "./http-interceptor.js";
+import { resolveInitBaseUrl } from "./record-init.js";
 import {
   buildClientRequestExport,
   buildRecordingExport,
@@ -138,12 +139,12 @@ export class RecordSdk implements WebRecordController {
     return this._uploadStatus;
   }
 
-  static init(options: WebRecordInitOptions = {} as WebRecordInitOptions): WebRecordController {
+  static init(options: WebRecordInitOptions = {}): WebRecordController {
     const softDisable = options.softDisable !== false;
     try {
       const resolved = resolveSoftprobeConfigFromObject({
         publicKey: options.apiKey ?? options.publicKey,
-        baseUrl: options.baseUrl,
+        baseUrl: resolveInitBaseUrl(options.baseUrl),
         otlpEndpoint: options.otlpEndpoint,
         environment: options.environment,
         userId: options.userId,

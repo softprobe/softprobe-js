@@ -1,8 +1,12 @@
-import type { HttpBodyCaptureOptions, HttpBodyCaptureRoute } from "./types.js";
-
-const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
-const MAX_BODY_BYTES = 256 * 1024;
-const REDACTED_VALUE = "[REDACTED]";
+import {
+  compileHttpCapture,
+  httpCaptureRouteKey,
+  parseExactHttpOrigin,
+  redactParsedJson,
+  type HttpCapturePlan,
+  type HttpCaptureRoute,
+} from "./record-init.js";
+import type { HttpBodyCaptureOptions } from "./types.js";
 
 export type CapturedHttpBodies = {
   requestBody?: string;
@@ -27,21 +31,9 @@ export type HttpInterceptorOptions = {
   createRequestSpan?: RequestSpanFactory;
 };
 
-type NormalizedBodyCaptureRoute = {
-  origin: string;
-  method: string;
-  path: string;
-  redactionPaths: string[][];
-};
-
-type NormalizedBodyCapture = {
-  maxBodyBytes: number;
-  routes: Map<string, NormalizedBodyCaptureRoute>;
-};
-
 let selectedApiOrigins = new Set<string>();
 let requestSpanFactory: RequestSpanFactory | null = null;
-let bodyCapture: NormalizedBodyCapture | null = null;
+let bodyCapture: HttpCapturePlan | null = null;
 
 /**
  * Patches XHR + fetch to inject W3C trace context only on explicitly selected
@@ -53,7 +45,7 @@ export function initializeHttpInterceptor(
 ): void {
   selectedApiOrigins = normalizeApiOrigins(options.apiOrigins ?? []);
   requestSpanFactory = options.createRequestSpan ?? null;
-  bodyCapture = normalizeBodyCapture(options.httpBodyCapture);
+  bodyCapture = compileHttpCapture(options.httpBodyCapture, selectedApiOrigins);
   patchXMLHttpRequest();
   patchFetchAPI();
 }
@@ -61,21 +53,9 @@ export function initializeHttpInterceptor(
 function normalizeApiOrigins(origins: string[]): Set<string> {
   const result = new Set<string>();
   for (const candidate of origins) {
-    try {
-      const parsed = new URL(candidate);
-      if (
-        (parsed.protocol === "https:" || parsed.protocol === "http:") &&
-        !parsed.username &&
-        !parsed.password &&
-        parsed.pathname === "/" &&
-        !parsed.search &&
-        !parsed.hash
-      ) {
-        result.add(parsed.origin);
-      }
-    } catch {
-      // Invalid entries never widen trace-context injection.
-    }
+    // Invalid entries never widen trace-context injection.
+    const origin = parseExactHttpOrigin(candidate);
+    if (origin) result.add(origin);
   }
   return result;
 }
@@ -110,81 +90,18 @@ function createRequestTrace(
   }
 }
 
-function normalizeBodyCapture(
-  options?: HttpBodyCaptureOptions,
-): NormalizedBodyCapture | null {
-  if (!options || !Array.isArray(options.routes)) return null;
-  const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
-  if (!Number.isInteger(maxBodyBytes) || maxBodyBytes <= 0 || maxBodyBytes > MAX_BODY_BYTES) {
-    return null;
-  }
-
-  const routes = new Map<string, NormalizedBodyCaptureRoute>();
-  for (const candidate of options.routes as HttpBodyCaptureRoute[]) {
-    if (!candidate || typeof candidate !== "object") continue;
-    const method = typeof candidate.method === "string" ? candidate.method.trim().toUpperCase() : "";
-    const path = typeof candidate.path === "string" ? candidate.path.trim() : "";
-    if (!/^[A-Z]+$/.test(method) || !path.startsWith("/") || path.includes("?") || path.includes("#")) {
-      continue;
-    }
-
-    let origin: string;
-    try {
-      const parsed = new URL(candidate.origin);
-      if (
-        (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
-        parsed.username || parsed.password || parsed.pathname !== "/" ||
-        parsed.search || parsed.hash
-      ) {
-        continue;
-      }
-      origin = parsed.origin;
-    } catch {
-      continue;
-    }
-
-    const redactionPaths = candidate.redactJsonPaths ?? [];
-    if (!Array.isArray(redactionPaths)) continue;
-    const parsedPaths = redactionPaths.map(parseRedactionPath);
-    if (parsedPaths.some((parts) => parts === null)) continue;
-    const route = {
-      origin,
-      method,
-      path,
-      redactionPaths: parsedPaths as string[][],
-    };
-    routes.set(bodyCaptureRouteKey(origin, method, path), route);
-  }
-
-  return routes.size > 0 ? { maxBodyBytes, routes } : null;
-}
-
-function parseRedactionPath(path: string): string[] | null {
-  if (typeof path !== "string" || !path.startsWith("$.")) return null;
-  const parts = path.slice(2).split(".");
-  if (parts.length === 0 || parts.some((part) =>
-    !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(part) ||
-    part === "__proto__" || part === "prototype" || part === "constructor"
-  )) return null;
-  return parts;
-}
-
 function bodyCaptureRouteFor(
   resource: RequestInfo | URL | string,
   method: string,
-): NormalizedBodyCaptureRoute | null {
+): HttpCaptureRoute | null {
   if (!bodyCapture || !selectedOriginFor(resource)) return null;
   try {
     const base = typeof location !== "undefined" ? location.href : undefined;
     const parsed = new URL(typeof resource === "string" ? resource : resourceUrl(resource), base);
-    return bodyCapture.routes.get(bodyCaptureRouteKey(parsed.origin, method.toUpperCase(), parsed.pathname)) ?? null;
+    return bodyCapture.routes.get(httpCaptureRouteKey(parsed.origin, method.toUpperCase(), parsed.pathname)) ?? null;
   } catch {
     return null;
   }
-}
-
-function bodyCaptureRouteKey(origin: string, method: string, path: string): string {
-  return `${origin}\n${method}\n${path}`;
 }
 
 function isJsonContentType(contentType: string | null): boolean {
@@ -193,37 +110,26 @@ function isJsonContentType(contentType: string | null): boolean {
 
 function sanitizedJsonBody(
   text: string,
-  route: NormalizedBodyCaptureRoute,
-  maxBodyBytes: number,
+  route: HttpCaptureRoute,
+  plan: HttpCapturePlan,
 ): string | undefined {
-  if (new TextEncoder().encode(text).byteLength > maxBodyBytes) return undefined;
+  if (new TextEncoder().encode(text).byteLength > plan.maxBodyBytes) return undefined;
   let value: unknown;
   try {
     value = JSON.parse(text);
   } catch {
     return undefined;
   }
-  for (const path of route.redactionPaths) redactJsonPath(value, path);
+  redactParsedJson(value, plan.builtinPropertyRedactions, route.extraRedactionPaths);
   const sanitized = JSON.stringify(value);
-  return new TextEncoder().encode(sanitized).byteLength <= maxBodyBytes ? sanitized : undefined;
-}
-
-function redactJsonPath(value: unknown, path: string[], index = 0): void {
-  if (value === null || typeof value !== "object") return;
-  const key = path[index]!;
-  if (!Object.hasOwn(value, key)) return;
-  if (index === path.length - 1) {
-    (value as Record<string, unknown>)[key] = REDACTED_VALUE;
-    return;
-  }
-  redactJsonPath((value as Record<string, unknown>)[key], path, index + 1);
+  return new TextEncoder().encode(sanitized).byteLength <= plan.maxBodyBytes ? sanitized : undefined;
 }
 
 async function readBoundedJsonStream(
   stream: ReadableStream<Uint8Array> | null,
   contentType: string | null,
-  route: NormalizedBodyCaptureRoute,
-  maxBodyBytes: number,
+  route: HttpCaptureRoute,
+  plan: HttpCapturePlan,
 ): Promise<string | undefined> {
   if (!stream || !isJsonContentType(contentType)) return undefined;
   let reader: ReadableStreamDefaultReader<Uint8Array>;
@@ -239,7 +145,7 @@ async function readBoundedJsonStream(
       const part = await reader.read();
       if (part.done) break;
       size += part.value.byteLength;
-      if (size > maxBodyBytes) {
+      if (size > plan.maxBodyBytes) {
         void reader.cancel().catch(() => undefined);
         return undefined;
       }
@@ -256,20 +162,20 @@ async function readBoundedJsonStream(
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return sanitizedJsonBody(new TextDecoder().decode(bytes), route, maxBodyBytes);
+  return sanitizedJsonBody(new TextDecoder().decode(bytes), route, plan);
 }
 
 function captureFetchRequestBody(
   resource: RequestInfo | URL,
   options: RequestInit | undefined,
   headers: Headers,
-  route: NormalizedBodyCaptureRoute,
-  maxBodyBytes: number,
+  route: HttpCaptureRoute,
+  plan: HttpCapturePlan,
 ): Promise<string | undefined> {
   if (!isJsonContentType(headers.get("content-type"))) return Promise.resolve(undefined);
   if (options && Object.hasOwn(options, "body")) {
     return Promise.resolve(typeof options.body === "string"
-      ? sanitizedJsonBody(options.body, route, maxBodyBytes)
+      ? sanitizedJsonBody(options.body, route, plan)
       : undefined);
   }
   if (typeof Request === "undefined" || !(resource instanceof Request) || !resource.body) {
@@ -277,7 +183,7 @@ function captureFetchRequestBody(
   }
   try {
     const clone = resource.clone();
-    return readBoundedJsonStream(clone.body, headers.get("content-type"), route, maxBodyBytes);
+    return readBoundedJsonStream(clone.body, headers.get("content-type"), route, plan);
   } catch {
     return Promise.resolve(undefined);
   }
@@ -359,7 +265,7 @@ function patchXMLHttpRequest(): void {
     const requestBody = route && bodyCapture
       && isJsonContentType(traced.__sp_request_headers?.get("content-type") ?? null)
       && typeof body === "string"
-      ? sanitizedJsonBody(body, route, bodyCapture.maxBodyBytes)
+      ? sanitizedJsonBody(body, route, bodyCapture)
       : undefined;
     if (span) {
       try {
@@ -384,7 +290,7 @@ function patchXMLHttpRequest(): void {
               ? this.responseText
               : undefined;
             if (typeof raw === "string") {
-              responseBody = sanitizedJsonBody(raw, route, bodyCapture.maxBodyBytes);
+              responseBody = sanitizedJsonBody(raw, route, bodyCapture);
             }
           } catch {
             responseBody = undefined;
@@ -455,7 +361,7 @@ function patchFetchAPI(): void {
     }
 
     const requestCapture = route && bodyCapture
-      ? captureFetchRequestBody(resource, requestOptions, headers, route, bodyCapture.maxBodyBytes)
+      ? captureFetchRequestBody(resource, requestOptions, headers, route, bodyCapture)
       : Promise.resolve(undefined);
 
     try {
@@ -465,7 +371,7 @@ function patchFetchAPI(): void {
           response.clone().body,
           response.headers.get("content-type"),
           route,
-          bodyCapture.maxBodyBytes,
+          bodyCapture,
         );
         void Promise.all([requestCapture, responseCapture]).then(([requestBody, responseBody]) => {
           finishRequestTrace(span, response.status, undefined, { requestBody, responseBody });

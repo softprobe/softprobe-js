@@ -332,4 +332,244 @@ describe("http interceptor", () => {
       responseBody: '{"ok":true}',
     });
   });
+
+  it("redacts builtin payment fields when the only API origin supplies the route origin", async () => {
+    let resolveCapture!: (bodies: { requestBody?: string; responseBody?: string } | undefined) => void;
+    const captured = new Promise<{ requestBody?: string; responseBody?: string } | undefined>(
+      (resolve) => { resolveCapture = resolve; },
+    );
+    const original = globalThis.fetch;
+    const responseBody = {
+      paymentDetails: { cardNumber: "5555444433332222", holder: "Ada" },
+      charges: [{ cvv: "111", password: "pw", secret: "sec", cvc: "222", sku: "seat" }],
+    };
+    resetFetchPatch(
+      vi.fn(async () => new Response(JSON.stringify(responseBody), {
+        headers: { "Content-Type": "application/json" },
+      })) as typeof fetch,
+    );
+    vi.stubGlobal("location", {
+      href: "https://app.example.com/chat",
+      origin: "https://app.example.com",
+    });
+
+    initializeHttpInterceptor({
+      apiOrigins: ["https://api.example.net"],
+      httpBodyCapture: {
+        routes: [{ method: "POST", path: "/api/pay" }],
+      },
+      createRequestSpan: () => ({
+        traceparent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+        finish: (_status, _error, bodies) => resolveCapture(bodies),
+      }),
+    });
+
+    await fetch("https://api.example.net/api/pay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        paymentDetails: { cardNumber: "4111111111111111", holder: "Ada" },
+        charges: [{ cvv: "123", password: "hunter2", secret: "s3cret", cvc: "999", sku: "seat" }],
+      }),
+    });
+    const result = await captured;
+    const redacted = {
+      paymentDetails: { cardNumber: "[REDACTED]", holder: "Ada" },
+      charges: [{
+        cvv: "[REDACTED]",
+        password: "[REDACTED]",
+        secret: "[REDACTED]",
+        cvc: "[REDACTED]",
+        sku: "seat",
+      }],
+    };
+
+    expect(JSON.parse(result?.requestBody ?? "{}")).toEqual({
+      paymentDetails: { cardNumber: "[REDACTED]", holder: "Ada" },
+      charges: [{
+        cvv: "[REDACTED]",
+        password: "[REDACTED]",
+        secret: "[REDACTED]",
+        cvc: "[REDACTED]",
+        sku: "seat",
+      }],
+    });
+    expect(JSON.parse(result?.responseBody ?? "{}")).toEqual(redacted);
+    expect(result?.requestBody).not.toContain("4111111111111111");
+    expect(result?.requestBody).not.toContain("hunter2");
+
+    globalThis.fetch = original;
+  });
+
+  it("captures no body when several API origins leave the route origin unset", async () => {
+    const finished: Array<{ requestBody?: string; responseBody?: string } | undefined> = [];
+    let traceparent: string | null = null;
+    const original = globalThis.fetch;
+    resetFetchPatch(
+      vi.fn(async (_url, init) => {
+        traceparent = new Headers(init?.headers).get("traceparent");
+        return new Response(JSON.stringify({ status: "ok" }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as typeof fetch,
+    );
+    vi.stubGlobal("location", {
+      href: "https://app.example.com/chat",
+      origin: "https://app.example.com",
+    });
+
+    initializeHttpInterceptor({
+      apiOrigins: ["https://api.example.net", "https://pay.example.net"],
+      httpBodyCapture: {
+        routes: [{ method: "POST", path: "/api/pay" }],
+      },
+      createRequestSpan: () => ({
+        traceparent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+        finish: (_status, _error, bodies) => finished.push(bodies),
+      }),
+    });
+
+    await fetch("https://api.example.net/api/pay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentDetails: { cardNumber: "4111111111111111" } }),
+    });
+
+    expect(traceparent).toBe("00-0123456789abcdef0123456789abcdef-0123456789abcdef-01");
+    expect(finished).toEqual([undefined]);
+    globalThis.fetch = original;
+  });
+
+  it("captures no body when the route origin is outside apiOrigins", async () => {
+    const finished: Array<{ requestBody?: string; responseBody?: string } | undefined> = [];
+    let traceparent: string | null = null;
+    const original = globalThis.fetch;
+    resetFetchPatch(
+      vi.fn(async (_url, init) => {
+        traceparent = new Headers(init?.headers).get("traceparent");
+        return new Response(JSON.stringify({ status: "ok" }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as typeof fetch,
+    );
+    vi.stubGlobal("location", {
+      href: "https://app.example.com/chat",
+      origin: "https://app.example.com",
+    });
+
+    initializeHttpInterceptor({
+      apiOrigins: ["https://api.example.net"],
+      httpBodyCapture: {
+        routes: [{
+          origin: "https://other.example.net",
+          method: "POST",
+          path: "/api/pay",
+        }],
+      },
+      createRequestSpan: () => ({
+        traceparent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+        finish: (_status, _error, bodies) => finished.push(bodies),
+      }),
+    });
+
+    await fetch("https://api.example.net/api/pay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentDetails: { cardNumber: "4111111111111111" } }),
+    });
+
+    expect(traceparent).toBe("00-0123456789abcdef0123456789abcdef-0123456789abcdef-01");
+    expect(finished).toEqual([undefined]);
+    globalThis.fetch = original;
+  });
+
+  it("captures no body when httpBodyCapture is omitted", async () => {
+    const finished: Array<{ requestBody?: string; responseBody?: string } | undefined> = [];
+    let traceparent: string | null = null;
+    const original = globalThis.fetch;
+    resetFetchPatch(
+      vi.fn(async (_url, init) => {
+        traceparent = new Headers(init?.headers).get("traceparent");
+        return new Response(JSON.stringify({ status: "ok" }), {
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as typeof fetch,
+    );
+    vi.stubGlobal("location", {
+      href: "https://app.example.com/chat",
+      origin: "https://app.example.com",
+    });
+
+    initializeHttpInterceptor({
+      apiOrigins: ["https://api.example.net"],
+      createRequestSpan: () => ({
+        traceparent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+        finish: (_status, _error, bodies) => finished.push(bodies),
+      }),
+    });
+
+    await fetch("https://api.example.net/api/pay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentDetails: { cardNumber: "4111111111111111" } }),
+    });
+
+    expect(traceparent).toBe("00-0123456789abcdef0123456789abcdef-0123456789abcdef-01");
+    expect(finished).toEqual([undefined]);
+    globalThis.fetch = original;
+  });
+
+  it("captures no body for a route with one invalid redactJsonPaths entry", async () => {
+    const captures: Array<{ requestBody?: string; responseBody?: string } | undefined> = [];
+    const original = globalThis.fetch;
+    resetFetchPatch(
+      vi.fn(async () => new Response(JSON.stringify({ note: "kept" }), {
+        headers: { "Content-Type": "application/json" },
+      })) as typeof fetch,
+    );
+    vi.stubGlobal("location", {
+      href: "https://app.example.com/chat",
+      origin: "https://app.example.com",
+    });
+
+    initializeHttpInterceptor({
+      apiOrigins: ["https://api.example.net"],
+      httpBodyCapture: {
+        routes: [
+          {
+            method: "POST",
+            path: "/api/pay",
+            redactJsonPaths: ["$.paymentDetails.holder", "$.charges[0].cvv"],
+          },
+          {
+            method: "POST",
+            path: "/api/note",
+          },
+        ],
+      },
+      createRequestSpan: () => ({
+        traceparent: "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+        finish: (_status, _error, bodies) => captures.push(bodies),
+      }),
+    });
+
+    await fetch("https://api.example.net/api/pay", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        paymentDetails: { cardNumber: "4111111111111111", holder: "Ada" },
+      }),
+    });
+    await fetch("https://api.example.net/api/note", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: "visible" }),
+    });
+    await vi.waitFor(() => expect(captures).toHaveLength(2));
+
+    expect(captures[0]).toBeUndefined();
+    expect(JSON.parse(captures[1]?.requestBody ?? "{}")).toEqual({ note: "visible" });
+    expect(JSON.parse(captures[1]?.responseBody ?? "{}")).toEqual({ note: "kept" });
+    globalThis.fetch = original;
+  });
 });
