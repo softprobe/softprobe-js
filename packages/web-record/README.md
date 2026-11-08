@@ -21,25 +21,19 @@ import { RecordSdk } from "@softprobe/web-record";
 
 RecordSdk.init({
   apiKey: "<Agent API key>",
-  baseUrl: "https://explorer.softprobe.ai/api/thelake",
   serviceName: "travel-ota-web",
-  environment: "production",
   apiOrigins: ["https://travel.example.com"],
   httpBodyCapture: {
-    maxBodyBytes: 65536,
     routes: [
-      { origin: "https://travel.example.com", method: "POST", path: "/api/flights/search" },
-      { origin: "https://travel.example.com", method: "POST", path: "/api/flights/book" },
-      {
-        origin: "https://travel.example.com",
-        method: "POST",
-        path: "/api/flights/payandissue",
-        redactJsonPaths: ["$.paymentDetails.cardNumber", "$.paymentDetails.cvv"],
-      },
+      { method: "POST", path: "/api/flights/search" },
+      { method: "POST", path: "/api/flights/book" },
+      { method: "POST", path: "/api/flights/payandissue" },
     ],
   },
 });
 ```
+
+That call uploads to `https://explorer.softprobe.ai/api/thelake/v1/traces`. Pass `baseUrl` when the page must upload to a local or staging Explorer. `environment` is an optional span attribute and does not choose the host.
 
 Replace the example Agent API key and website address with your values. Use an Agent ingest key. The key is visible in browser code, so do not use a user password, cookie, or account token.
 
@@ -49,7 +43,7 @@ Browser spans carry the OpenTelemetry `session.id` attribute and Softprobe's `sp
 
 ## Choose browser bodies
 
-Add each route by exact origin, method, and path. The origin must also appear in `apiOrigins`. The SDK captures JSON bodies up to `maxBodyBytes`. It omits other content types and bodies over the limit. Use `redactJsonPaths` for fields to replace with `[REDACTED]`, such as `$.paymentDetails.cardNumber`.
+Add each route by exact method and path. When `apiOrigins` has one entry, omit `origin` on the route. When it has several, set `origin` on every route to one of those entries. The SDK captures JSON bodies up to 64 KiB. Pass `maxBodyBytes` to change that cap. It replaces `cardNumber`, `cvv`, `cvc`, `password`, and `secret` with `[REDACTED]` anywhere in the JSON, including inside arrays. Use `redactJsonPaths` for any other exact object path. It omits other content types and bodies over the limit.
 
 `apiOrigins` is an exact-origin allowlist for browser HTTP spans and `traceparent` / `tracestate` propagation. Requests to other origins, including subdomains, are ignored. If your API uses a different origin from the website, allow those headers in the API's CORS settings.
 

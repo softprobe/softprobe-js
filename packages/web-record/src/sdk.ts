@@ -18,6 +18,13 @@ import type {
   WebRecordInitOptions,
 } from "./types.js";
 
+const PRODUCTION_THELAKE_BASE_URL = "https://explorer.softprobe.ai/api/thelake";
+
+function resolveInitBaseUrl(baseUrl: string | undefined): string {
+  if (baseUrl === undefined) return PRODUCTION_THELAKE_BASE_URL;
+  return baseUrl;
+}
+
 const MAX_EVENTS = 500;
 /** 连续导出失败多少次后彻底放弃采集(见 {@link RecordSdk.noteExportFailure})。 */
 const MAX_CONSECUTIVE_EXPORT_FAILURES = 5;
@@ -135,7 +142,7 @@ export class RecordSdk implements WebRecordController {
     try {
       const resolved = resolveSoftprobeConfigFromObject({
         publicKey: options.apiKey ?? options.publicKey,
-        baseUrl: options.baseUrl,
+        baseUrl: resolveInitBaseUrl(options.baseUrl),
         otlpEndpoint: options.otlpEndpoint,
         environment: options.environment,
         userId: options.userId,

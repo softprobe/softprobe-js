@@ -155,6 +155,68 @@ it("uses official XHR instrumentation and reads the body without changing the re
   });
 });
 
+it("binds a single API origin and redacts builtin secrets inside arrays", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response('{"ok":true}', {
+    headers: { "Content-Type": "application/json" },
+  })));
+  const memoryExporter = new InMemorySpanExporter();
+  const browserRuntime = createBrowserRuntime({
+    apiKey: "agent-key",
+    otlpEndpoint: "https://collector.example.test/v1/traces",
+    serviceName: "travel-ota-web",
+    apiOrigins: ["https://api.example.test"],
+    httpBodyCapture: {
+      routes: [{ method: "POST", path: "/api/pay" }],
+    },
+  }, createWebSessionState("journey-1"), memoryExporter);
+  runtime = browserRuntime;
+
+  await fetch("https://api.example.test/api/pay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      paymentDetails: { cardNumber: "4111111111111111", holder: "Ada" },
+      charges: [{ cvv: "123", password: "hunter2", secret: "s3cret", cvc: "999", sku: "seat" }],
+    }),
+  });
+  await browserRuntime.waitForIdle();
+  await browserRuntime.forceFlush();
+
+  const body = memoryExporter.getFinishedSpans().find((span) => span.name === "softprobe.http.body.capture");
+  expect(JSON.parse(String(body?.attributes["http.request.body.content"]))).toEqual({
+    paymentDetails: { cardNumber: "[REDACTED]", holder: "Ada" },
+    charges: [{ cvv: "[REDACTED]", password: "[REDACTED]", secret: "[REDACTED]", cvc: "[REDACTED]", sku: "seat" }],
+  });
+});
+
+it("captures no body when several API origins leave the route origin unset", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response('{"ok":true}', {
+    headers: { "Content-Type": "application/json" },
+  })));
+  const memoryExporter = new InMemorySpanExporter();
+  const browserRuntime = createBrowserRuntime({
+    apiKey: "agent-key",
+    otlpEndpoint: "https://collector.example.test/v1/traces",
+    serviceName: "travel-ota-web",
+    apiOrigins: ["https://api.example.test", "https://pay.example.test"],
+    httpBodyCapture: {
+      routes: [{ method: "POST", path: "/api/pay" }],
+    },
+  }, createWebSessionState("journey-1"), memoryExporter);
+  runtime = browserRuntime;
+
+  await fetch("https://api.example.test/api/pay", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paymentDetails: { cardNumber: "4111111111111111" } }),
+  });
+  await browserRuntime.waitForIdle();
+  await browserRuntime.forceFlush();
+
+  const body = memoryExporter.getFinishedSpans().find((span) => span.name === "softprobe.http.body.capture");
+  expect(body).toBeUndefined();
+});
+
 it("omits request and response bodies that exceed the configured byte limit", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response('{"long":"response"}', {
     headers: { "Content-Type": "application/json" },

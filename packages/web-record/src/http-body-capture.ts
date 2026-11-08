@@ -15,6 +15,7 @@ import type {
 } from "./types.js";
 
 const DEFAULT_MAX_BODY_BYTES = 64 * 1024;
+const BUILTIN_JSON_PROPERTY_REDACTIONS = ["cardNumber", "cvv", "cvc", "password", "secret"];
 const MAX_BODY_BYTES = 256 * 1024;
 const REDACTED_VALUE = "[REDACTED]";
 const BODY_SPAN_NAME = "softprobe.http.body.capture";
@@ -228,24 +229,8 @@ function normalizeCaptureOptions(
       continue;
     }
 
-    let origin: string;
-    try {
-      const parsed = new URL(candidate.origin);
-      if (
-        (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
-        parsed.username ||
-        parsed.password ||
-        parsed.pathname !== "/" ||
-        parsed.search ||
-        parsed.hash
-      ) {
-        continue;
-      }
-      origin = parsed.origin;
-    } catch {
-      continue;
-    }
-    if (!allowedOrigins.has(origin)) continue;
+    const origin = routeOrigin(candidate.origin, allowedOrigins);
+    if (!origin) continue;
 
     const redactionPaths = candidate.redactJsonPaths ?? [];
     if (!Array.isArray(redactionPaths)) continue;
@@ -260,6 +245,30 @@ function normalizeCaptureOptions(
   }
 
   return routes.size ? { maxBodyBytes, routes } : null;
+}
+
+function routeOrigin(value: string | undefined, allowedOrigins: Set<string>): string | null {
+  if (value === undefined) {
+    if (allowedOrigins.size !== 1) return null;
+    const only = allowedOrigins.values().next().value;
+    return typeof only === "string" ? only : null;
+  }
+  try {
+    const parsed = new URL(value);
+    if (
+      (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+      parsed.username ||
+      parsed.password ||
+      parsed.pathname !== "/" ||
+      parsed.search ||
+      parsed.hash
+    ) {
+      return null;
+    }
+    return allowedOrigins.has(parsed.origin) ? parsed.origin : null;
+  } catch {
+    return null;
+  }
 }
 
 function normalizeOrigins(origins: string[]): Set<string> {
@@ -494,6 +503,7 @@ function sanitizedJsonBody(
   } catch {
     return undefined;
   }
+  redactBuiltinProperties(value);
   for (const path of route.redactionPaths) redactJsonPath(value, path);
   const sanitized = JSON.stringify(value);
   return new TextEncoder().encode(sanitized).byteLength <= maxBodyBytes ? sanitized : undefined;
@@ -547,6 +557,22 @@ function parseRedactionPath(path: string): string[] | null {
     part === "__proto__" || part === "prototype" || part === "constructor"
   )) return null;
   return parts;
+}
+
+function redactBuiltinProperties(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const item of value) redactBuiltinProperties(item);
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+  const record = value as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (BUILTIN_JSON_PROPERTY_REDACTIONS.includes(key)) {
+      record[key] = REDACTED_VALUE;
+      continue;
+    }
+    redactBuiltinProperties(record[key]);
+  }
 }
 
 function redactJsonPath(value: unknown, path: string[], index = 0): void {
