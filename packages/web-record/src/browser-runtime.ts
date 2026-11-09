@@ -12,7 +12,7 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace";
 import type { HttpBodyCaptureOptions } from "./types.js";
-import { createHttpBodyCaptureHooks } from "./http-body-capture.js";
+import { createHttpBodyCaptureHooks, resolveEffectiveOrigins } from "./http-body-capture.js";
 import type { WebSessionState } from "./session-state.js";
 import { SpanLifecycleProcessor } from "./span-lifecycle.js";
 
@@ -25,7 +25,7 @@ export type BrowserRuntimeOptions = {
   otlpEndpoint: string;
   serviceName?: string;
   environment?: string;
-  apiOrigins: string[];
+  apiOrigins?: string[];
   httpBodyCapture?: HttpBodyCaptureOptions;
 };
 
@@ -75,7 +75,10 @@ export function createBrowserRuntime(
     lifecycle,
     batchProcessor,
   ];
-  const filter = createUrlFilter(options.apiOrigins, collectorUrl);
+  const filter = createUrlFilter(
+    resolveEffectiveOrigins(options.apiOrigins, options.httpBodyCapture),
+    collectorUrl,
+  );
   const sdk = startTracesSdk({
     serviceName: options.serviceName,
     resourceAttributes: {
@@ -145,11 +148,10 @@ class SoftprobeSessionAttributeProcessor implements SpanProcessor {
   }
 }
 
-function createUrlFilter(apiOrigins: string[], collectorUrl: URL): {
+function createUrlFilter(origins: string[], collectorUrl: URL): {
   ignoreUrls: RegExp[];
   propagateUrls: RegExp[];
 } {
-  const origins = normalizeOrigins(apiOrigins);
   const allowlistPattern = origins.map(escapeRegExp).join("|");
   const ignoreUnselected = origins.length
     ? new RegExp(`^(?!(?:${allowlistPattern})(?:[/?#]|$))`)
@@ -164,28 +166,6 @@ function createUrlFilter(apiOrigins: string[], collectorUrl: URL): {
       new RegExp(`^${escapeRegExp(origin)}(?:[/?#]|$)`),
     ),
   };
-}
-
-function normalizeOrigins(origins: string[]): string[] {
-  const normalized = new Set<string>();
-  for (const candidate of origins) {
-    try {
-      const url = new URL(candidate);
-      if (
-        (url.protocol === "http:" || url.protocol === "https:") &&
-        !url.username &&
-        !url.password &&
-        url.pathname === "/" &&
-        !url.search &&
-        !url.hash
-      ) {
-        normalized.add(url.origin);
-      }
-    } catch {
-      // Invalid origins never widen instrumentation or propagation.
-    }
-  }
-  return [...normalized];
 }
 
 function sanitizeUrl(rawUrl: string): string {
