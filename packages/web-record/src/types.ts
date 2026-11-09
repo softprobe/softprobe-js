@@ -40,12 +40,12 @@ export type WebRecordCredentials = {
 
 export type HttpBodyCaptureRoute = {
   /**
-   * Exact HTTP(S) origin already listed in `apiOrigins`.
-   * Omit when `apiOrigins` contains exactly one origin.
+   * Exact HTTP(S) origin for a cross-origin route when `path` is relative.
+   * Omit for same-origin routes, when `path` is a full HTTP(S) URL, or when `apiOrigins` has one entry.
    */
   origin?: string;
   method: string;
-  /** Exact URL path without query string or fragment. */
+  /** Exact URL path (`/api/...`) or full HTTP(S) URL (`https://api.example.com/api/...`) without query string or fragment. */
   path: string;
   /** JSONPath property paths such as `$.paymentDetails.cardNumber`. */
   redactJsonPaths?: string[];
@@ -68,7 +68,10 @@ export type WebRecordInitOptions = Omit<WebRecordCredentials, "baseUrl"> & {
   sessionId?: string;
   /** Flush interval in ms (minimum 5000). */
   interval?: number;
-  /** Exact HTTP(S) origins to trace and allow to receive W3C trace headers. */
+  /**
+   * Optional exact HTTP(S) origins to trace and receive W3C trace headers.
+   * Defaults to `window.location.origin` plus any origin declared in `httpBodyCapture.routes`.
+   */
   apiOrigins?: string[];
   /** Opt-in JSON body capture for exact routes. Disabled when omitted. */
   httpBodyCapture?: HttpBodyCaptureOptions;

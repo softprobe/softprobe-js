@@ -69,13 +69,14 @@ export type HttpBodyCaptureHooks = {
 };
 
 export function createHttpBodyCaptureHooks(options: {
-  apiOrigins: string[];
+  apiOrigins?: string[];
   httpBodyCapture?: HttpBodyCaptureOptions;
   collectorUrl: string;
   getTracer: () => Tracer;
 }): HttpBodyCaptureHooks {
-  const allowedOrigins = normalizeOrigins(options.apiOrigins);
-  const capture = normalizeCaptureOptions(options.httpBodyCapture, allowedOrigins);
+  const explicitOrigins = normalizeOrigins(options.apiOrigins ?? []);
+  const allowedOrigins = new Set(resolveEffectiveOrigins(options.apiOrigins, options.httpBodyCapture));
+  const capture = normalizeCaptureOptions(options.httpBodyCapture, explicitOrigins, allowedOrigins);
   const collectorUrl = new URL(options.collectorUrl);
   const fetchStates = new WeakMap<Span, BodyState>();
   const xhrStates = new WeakMap<XMLHttpRequest, XhrState>();
@@ -212,6 +213,7 @@ async function finishBodySpan(
 
 function normalizeCaptureOptions(
   options: HttpBodyCaptureOptions | undefined,
+  explicitOrigins: Set<string>,
   allowedOrigins: Set<string>,
 ): BodyCaptureConfig | null {
   if (!options || !Array.isArray(options.routes)) return null;
@@ -224,22 +226,19 @@ function normalizeCaptureOptions(
   for (const candidate of options.routes as HttpBodyCaptureRoute[]) {
     if (!candidate || typeof candidate !== "object") continue;
     const method = typeof candidate.method === "string" ? candidate.method.trim().toUpperCase() : "";
-    const path = typeof candidate.path === "string" ? candidate.path.trim() : "";
-    if (!/^[A-Z]+$/.test(method) || !path.startsWith("/") || path.includes("?") || path.includes("#")) {
-      continue;
-    }
+    if (!/^[A-Z]+$/.test(method)) continue;
 
-    const origin = routeOrigin(candidate.origin, allowedOrigins);
-    if (!origin) continue;
+    const target = parseRouteTarget(candidate, explicitOrigins, allowedOrigins);
+    if (!target) continue;
 
     const redactionPaths = candidate.redactJsonPaths ?? [];
     if (!Array.isArray(redactionPaths)) continue;
     const parsedPaths = redactionPaths.map(parseRedactionPath);
     if (parsedPaths.some((parts) => parts === null)) continue;
-    routes.set(routeKey(origin, method, path), {
-      origin,
+    routes.set(routeKey(target.origin, method, target.path), {
+      origin: target.origin,
       method,
-      path,
+      path: target.path,
       redactionPaths: parsedPaths as string[][],
     });
   }
@@ -247,48 +246,139 @@ function normalizeCaptureOptions(
   return routes.size ? { maxBodyBytes, routes } : null;
 }
 
-function routeOrigin(value: string | undefined, allowedOrigins: Set<string>): string | null {
-  if (value === undefined) {
-    if (allowedOrigins.size !== 1) return null;
-    const only = allowedOrigins.values().next().value;
-    return typeof only === "string" ? only : null;
+function parseRouteTarget(
+  candidate: HttpBodyCaptureRoute,
+  explicitOrigins: Set<string>,
+  allowedOrigins: Set<string>,
+): { origin: string; path: string } | null {
+  const rawPath = typeof candidate.path === "string" ? candidate.path.trim() : "";
+  if (!rawPath || rawPath.includes("?") || rawPath.includes("#")) return null;
+
+  if (rawPath.startsWith("/")) {
+    const origin = routeOrigin(candidate.origin, explicitOrigins, allowedOrigins);
+    return origin ? { origin, path: rawPath } : null;
   }
+
   try {
-    const parsed = new URL(value);
+    const parsed = new URL(rawPath);
     if (
       (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
       parsed.username ||
       parsed.password ||
-      parsed.pathname !== "/" ||
+      !parsed.pathname.startsWith("/") ||
       parsed.search ||
       parsed.hash
     ) {
       return null;
     }
-    return allowedOrigins.has(parsed.origin) ? parsed.origin : null;
+    if (candidate.origin !== undefined) {
+      const explicitRouteOrigin = parseExactOrigin(candidate.origin);
+      if (!explicitRouteOrigin || explicitRouteOrigin !== parsed.origin) return null;
+    }
+    if (!allowedOrigins.has(parsed.origin)) return null;
+    return { origin: parsed.origin, path: parsed.pathname };
   } catch {
     return null;
   }
 }
 
+function routeOrigin(
+  value: string | undefined,
+  explicitOrigins: Set<string>,
+  allowedOrigins: Set<string>,
+): string | null {
+  if (value === undefined) {
+    if (explicitOrigins.size === 1) {
+      const only = explicitOrigins.values().next().value;
+      return typeof only === "string" ? only : null;
+    }
+    if (explicitOrigins.size > 1) return null;
+    const pageOrigin = currentPageOrigin();
+    return pageOrigin && allowedOrigins.has(pageOrigin) ? pageOrigin : null;
+  }
+  const parsedOrigin = parseExactOrigin(value);
+  if (!parsedOrigin) return null;
+  return allowedOrigins.has(parsedOrigin) ? parsedOrigin : null;
+}
+
+export function parseExactOrigin(candidate: string | undefined): string | null {
+  if (!candidate || typeof candidate !== "string") return null;
+  try {
+    const url = new URL(candidate);
+    if (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      !url.username &&
+      !url.password &&
+      url.pathname === "/" &&
+      !url.search &&
+      !url.hash
+    ) {
+      return url.origin;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function parseRouteUrlOrigin(rawPath: string | undefined): string | null {
+  if (!rawPath || typeof rawPath !== "string") return null;
+  const trimmed = rawPath.trim();
+  if (!trimmed || trimmed.startsWith("/") || trimmed.includes("?") || trimmed.includes("#")) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (
+      (parsed.protocol === "https:" || parsed.protocol === "http:") &&
+      !parsed.username &&
+      !parsed.password &&
+      parsed.pathname.startsWith("/") &&
+      !parsed.search &&
+      !parsed.hash
+    ) {
+      return parsed.origin;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export function currentPageOrigin(): string | null {
+  if (typeof location === "undefined") return null;
+  const fromOrigin = parseExactOrigin(location.origin);
+  if (fromOrigin) return fromOrigin;
+  try {
+    return location.href ? parseExactOrigin(new URL(location.href).origin) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveEffectiveOrigins(
+  apiOrigins: string[] | undefined,
+  httpBodyCapture?: HttpBodyCaptureOptions,
+): string[] {
+  const explicitOrigins = normalizeOrigins(apiOrigins ?? []);
+  if (explicitOrigins.size > 0) return [...explicitOrigins];
+
+  const derived = new Set<string>();
+  const pageOrigin = currentPageOrigin();
+  if (pageOrigin) derived.add(pageOrigin);
+  for (const route of httpBodyCapture?.routes ?? []) {
+    if (!route || typeof route !== "object") continue;
+    const explicitRouteOrigin = parseExactOrigin(route.origin);
+    if (explicitRouteOrigin) derived.add(explicitRouteOrigin);
+    const fullUrlRouteOrigin = parseRouteUrlOrigin(route.path);
+    if (fullUrlRouteOrigin) derived.add(fullUrlRouteOrigin);
+  }
+  return [...derived];
+}
+
 function normalizeOrigins(origins: string[]): Set<string> {
   const result = new Set<string>();
   for (const candidate of origins) {
-    try {
-      const url = new URL(candidate);
-      if (
-        (url.protocol === "https:" || url.protocol === "http:") &&
-        !url.username &&
-        !url.password &&
-        url.pathname === "/" &&
-        !url.search &&
-        !url.hash
-      ) {
-        result.add(url.origin);
-      }
-    } catch {
-      // Invalid origins do not grant body capture.
-    }
+    const origin = parseExactOrigin(candidate);
+    if (origin) result.add(origin);
   }
   return result;
 }

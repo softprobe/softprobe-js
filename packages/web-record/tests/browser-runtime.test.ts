@@ -217,6 +217,66 @@ it("captures no body when several API origins leave the route origin unset", asy
   expect(body).toBeUndefined();
 });
 
+it("defaults to window.location.origin and route origins when apiOrigins is omitted", async () => {
+  const requests: Array<{ url: string; headers: Headers }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push({ url: String(input), headers: new Headers(init?.headers) });
+    return new Response('{"status":"ok"}', {
+      headers: { "Content-Type": "application/json" },
+    });
+  }));
+  const memoryExporter = new InMemorySpanExporter();
+  const browserRuntime = createBrowserRuntime({
+    apiKey: "agent-key",
+    otlpEndpoint: "https://collector.example.test/v1/traces",
+    serviceName: "travel-ota-web",
+    httpBodyCapture: {
+      routes: [
+        { method: "POST", path: "/api/flights/search" },
+        {
+          method: "POST",
+          path: "https://api.checkout.example.test:8443/api/orders/checkout",
+          redactJsonPaths: ["$.payment.billingTaxId"],
+        },
+      ],
+    },
+  }, createWebSessionState("journey-default-origins"), memoryExporter);
+  runtime = browserRuntime;
+
+  await fetch(`${window.location.origin}/api/flights/search`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ from: "LHR", to: "CDG" }),
+  });
+  await fetch("https://api.checkout.example.test:8443/api/orders/checkout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      payment: { cardNumber: "4111111111111111", billingTaxId: "TAX-999" },
+    }),
+  });
+  await fetch("https://third-party.example.test/collect", { method: "POST" });
+
+  expect(requests[0]?.headers.get("traceparent")).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+  expect(requests[1]?.headers.get("traceparent")).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+  expect(requests[2]?.headers.has("traceparent")).toBe(false);
+
+  await browserRuntime.waitForIdle();
+  await browserRuntime.forceFlush();
+
+  const spans = memoryExporter.getFinishedSpans();
+  const httpSpans = spans.filter((span) => span.kind === 2);
+  expect(httpSpans).toHaveLength(2);
+  const bodySpans = spans.filter((span) => span.name === "softprobe.http.body.capture");
+  expect(bodySpans).toHaveLength(2);
+  const checkoutBody = bodySpans.find(
+    (span) => span.attributes["url.full"] === "https://api.checkout.example.test:8443/api/orders/checkout",
+  );
+  expect(JSON.parse(String(checkoutBody?.attributes["http.request.body.content"]))).toEqual({
+    payment: { cardNumber: "[REDACTED]", billingTaxId: "[REDACTED]" },
+  });
+});
+
 it("omits request and response bodies that exceed the configured byte limit", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response('{"long":"response"}', {
     headers: { "Content-Type": "application/json" },
