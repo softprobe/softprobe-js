@@ -6,8 +6,8 @@
     "start": "tsx src/main.ts"
   },
   "dependencies": {
-    "@softprobe/opencode-plugin": "^0.1.6",
-    "@softprobe/tracing": "^0.1.6"
+    "@softprobe/opencode-plugin": "^0.1.13",
+    "@softprobe/tracing": "^0.1.13"
   },
   "devDependencies": {
     "tsx": "^4.19.3",

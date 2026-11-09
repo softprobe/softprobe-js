@@ -6,7 +6,7 @@ versions, and `main` sync commit in the release record or final report.
 Set `VERSION` to the version being released:
 
 ```sh
-VERSION=0.1.9 # update this value when checking a later release
+VERSION=0.1.13 # update this value when checking a later release
 TAG="v$VERSION"
 ```
 
