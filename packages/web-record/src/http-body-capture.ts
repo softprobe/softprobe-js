@@ -29,6 +29,7 @@ type NormalizedRoute = {
 
 type BodyCaptureConfig = {
   maxBodyBytes: number;
+  captureAllOnAllowedOrigins: boolean;
   routes: Map<string, NormalizedRoute>;
 };
 
@@ -39,6 +40,7 @@ type BodyState = {
   requestBody: Promise<string | undefined>;
   responseBody: Promise<string | undefined>;
   responseStatus?: number;
+  discoveredSessionId?: string;
 };
 
 type FetchCall = {
@@ -54,6 +56,7 @@ type XhrState = {
   contentType: string;
   maxBodyBytes: number;
   requestBody?: string;
+  discoveredSessionId?: string;
 };
 
 export type HttpBodyCaptureHooks = {
@@ -70,9 +73,10 @@ export type HttpBodyCaptureHooks = {
 
 export function createHttpBodyCaptureHooks(options: {
   apiOrigins?: string[];
-  httpBodyCapture?: HttpBodyCaptureOptions;
+  httpBodyCapture?: boolean | HttpBodyCaptureOptions;
   collectorUrl: string;
   getTracer: () => Tracer;
+  onSessionId?: (sessionId: string) => void;
 }): HttpBodyCaptureHooks {
   const explicitOrigins = normalizeOrigins(options.apiOrigins ?? []);
   const allowedOrigins = new Set(resolveEffectiveOrigins(options.apiOrigins, options.httpBodyCapture));
@@ -84,7 +88,7 @@ export function createHttpBodyCaptureHooks(options: {
   let disposeFetchObserver = (): void => undefined;
   let fetchObserverInstalled = false;
   const disposeXhrObserver = capture
-    ? installXhrBodyObserver(xhrStates, capture, allowedOrigins, collectorUrl)
+    ? installXhrBodyObserver(xhrStates, capture, allowedOrigins, collectorUrl, options.onSessionId)
     : () => undefined;
 
   const requestHook: FetchRequestHookFunction = (span, request) => {
@@ -99,13 +103,25 @@ export function createHttpBodyCaptureHooks(options: {
     } catch {
       headers = new Headers();
     }
+    const pathSessionId = options.onSessionId ? extractSessionIdFromPath(route.path) : undefined;
+    if (pathSessionId) {
+      options.onSessionId?.(pathSessionId);
+      applySessionIdToSpan(span, pathSessionId);
+    }
     const state: BodyState = {
       route,
       requestUrl: `${route.origin}${route.path}`,
       requestMethod: call.method,
-      requestBody: captureRequestBody(request, headers, route, capture.maxBodyBytes),
+      requestBody: Promise.resolve(undefined),
       responseBody: Promise.resolve(undefined),
+      discoveredSessionId: pathSessionId,
     };
+    state.requestBody = captureRequestBody(request, headers, route, capture.maxBodyBytes, (discovered) => {
+      if (! options.onSessionId) return;
+      state.discoveredSessionId = discovered;
+      options.onSessionId(discovered);
+      applySessionIdToSpan(span, discovered);
+    });
     call.state = state;
     fetchStates.set(span, state);
   };
@@ -121,6 +137,7 @@ export function createHttpBodyCaptureHooks(options: {
       state.responseBody,
       state.responseStatus,
       options.getTracer,
+      options.onSessionId,
     );
   };
 
@@ -128,6 +145,9 @@ export function createHttpBodyCaptureHooks(options: {
     const state = xhrStates.get(xhr);
     if (!state || !capture) return;
     xhrStates.delete(xhr);
+    if (state.discoveredSessionId) {
+      applySessionIdToSpan(span, state.discoveredSessionId);
+    }
     let responseText: string | undefined;
     try {
       if (isJsonContentType(xhr.getResponseHeader("content-type"))) {
@@ -143,7 +163,12 @@ export function createHttpBodyCaptureHooks(options: {
     const responseBody = Promise.resolve(
       responseText === undefined
         ? undefined
-        : sanitizedJsonBody(responseText, state.route, capture.maxBodyBytes),
+        : sanitizedJsonBody(responseText, state.route, capture.maxBodyBytes, (discovered) => {
+            if (!options.onSessionId) return;
+            state.discoveredSessionId = discovered;
+            options.onSessionId(discovered);
+            applySessionIdToSpan(span, discovered);
+          }),
     );
     void finishBodySpan(
       span,
@@ -152,6 +177,7 @@ export function createHttpBodyCaptureHooks(options: {
       responseBody,
       xhr.status || undefined,
       options.getTracer,
+      options.onSessionId,
     );
   };
 
@@ -162,7 +188,13 @@ export function createHttpBodyCaptureHooks(options: {
       installObserver: () => {
         if (fetchObserverInstalled || !capture || typeof globalThis.fetch !== "function") return;
         fetchObserverInstalled = true;
-        disposeFetchObserver = installFetchBodyObserver(fetchCalls, capture, allowedOrigins, collectorUrl);
+        disposeFetchObserver = installFetchBodyObserver(
+          fetchCalls,
+          capture,
+          allowedOrigins,
+          collectorUrl,
+          options.onSessionId,
+        );
       },
     },
     xhr: { applyCustomAttributesOnSpan: applyXhrCustomAttributes },
@@ -180,6 +212,7 @@ async function finishBodySpan(
   responseBody: Promise<string | undefined>,
   statusCode: number | undefined,
   getTracer: () => Tracer,
+  onSessionId?: (sessionId: string) => void,
 ): Promise<void> {
   let child: Span | undefined;
   try {
@@ -198,6 +231,11 @@ async function finishBodySpan(
       parentContext,
     );
     const [request, response] = await Promise.all([requestBody, responseBody]);
+    if (state.discoveredSessionId) {
+      onSessionId?.(state.discoveredSessionId);
+      applySessionIdToSpan(parentSpan, state.discoveredSessionId);
+      applySessionIdToSpan(child, state.discoveredSessionId);
+    }
     if (request !== undefined) child.setAttribute("http.request.body.content", request);
     if (response !== undefined) child.setAttribute("http.response.body.content", response);
     child.setAttribute(
@@ -212,18 +250,26 @@ async function finishBodySpan(
 }
 
 function normalizeCaptureOptions(
-  options: HttpBodyCaptureOptions | undefined,
+  options: boolean | HttpBodyCaptureOptions | undefined,
   explicitOrigins: Set<string>,
   allowedOrigins: Set<string>,
 ): BodyCaptureConfig | null {
-  if (!options || !Array.isArray(options.routes)) return null;
-  const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
+  if (!options) return null;
+  const resolved: HttpBodyCaptureOptions = options === true ? {} : options;
+  const maxBodyBytes = resolved.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   if (!Number.isInteger(maxBodyBytes) || maxBodyBytes <= 0 || maxBodyBytes > MAX_BODY_BYTES) {
     return null;
   }
 
+  if (resolved.routes === undefined) {
+    return allowedOrigins.size > 0
+      ? { maxBodyBytes, captureAllOnAllowedOrigins: true, routes: new Map() }
+      : null;
+  }
+  if (!Array.isArray(resolved.routes)) return null;
+
   const routes = new Map<string, NormalizedRoute>();
-  for (const candidate of options.routes as HttpBodyCaptureRoute[]) {
+  for (const candidate of resolved.routes as HttpBodyCaptureRoute[]) {
     if (!candidate || typeof candidate !== "object") continue;
     const method = typeof candidate.method === "string" ? candidate.method.trim().toUpperCase() : "";
     if (!/^[A-Z]+$/.test(method)) continue;
@@ -243,7 +289,7 @@ function normalizeCaptureOptions(
     });
   }
 
-  return routes.size ? { maxBodyBytes, routes } : null;
+  return routes.size ? { maxBodyBytes, captureAllOnAllowedOrigins: false, routes } : null;
 }
 
 function parseRouteTarget(
@@ -356,7 +402,7 @@ export function currentPageOrigin(): string | null {
 
 export function resolveEffectiveOrigins(
   apiOrigins: string[] | undefined,
-  httpBodyCapture?: HttpBodyCaptureOptions,
+  httpBodyCapture?: boolean | HttpBodyCaptureOptions,
 ): string[] {
   const explicitOrigins = normalizeOrigins(apiOrigins ?? []);
   if (explicitOrigins.size > 0) return [...explicitOrigins];
@@ -364,7 +410,10 @@ export function resolveEffectiveOrigins(
   const derived = new Set<string>();
   const pageOrigin = currentPageOrigin();
   if (pageOrigin) derived.add(pageOrigin);
-  for (const route of httpBodyCapture?.routes ?? []) {
+  const routes = typeof httpBodyCapture === "object" && httpBodyCapture !== null
+    ? (httpBodyCapture.routes ?? [])
+    : [];
+  for (const route of routes) {
     if (!route || typeof route !== "object") continue;
     const explicitRouteOrigin = parseExactOrigin(route.origin);
     if (explicitRouteOrigin) derived.add(explicitRouteOrigin);
@@ -392,7 +441,18 @@ function findRoute(
   try {
     const url = new URL(rawUrl, typeof location === "undefined" ? undefined : location.href);
     if (!allowedOrigins.has(url.origin)) return undefined;
-    return capture.routes.get(routeKey(url.origin, method.toUpperCase(), url.pathname));
+    const normalizedMethod = method.toUpperCase();
+    const matched = capture.routes.get(routeKey(url.origin, normalizedMethod, url.pathname));
+    if (matched) return matched;
+    if (capture.captureAllOnAllowedOrigins && /^[A-Z]+$/.test(normalizedMethod)) {
+      return {
+        origin: url.origin,
+        method: normalizedMethod,
+        path: url.pathname,
+        redactionPaths: [],
+      };
+    }
+    return undefined;
   } catch {
     return undefined;
   }
@@ -416,27 +476,39 @@ function captureRequestBody(
   headers: Headers,
   route: NormalizedRoute,
   maxBodyBytes: number,
+  onDiscoveredSessionId?: (sessionId: string) => void,
 ): Promise<string | undefined> {
   if (!isJsonContentType(headers.get("content-type"))) return Promise.resolve(undefined);
   if (typeof Request !== "undefined" && request instanceof Request) {
     if (!request.body) return Promise.resolve(undefined);
     try {
-      return readBoundedJsonStream(request.clone().body, headers.get("content-type"), route, maxBodyBytes);
+      return readBoundedJsonStream(
+        request.clone().body,
+        headers.get("content-type"),
+        route,
+        maxBodyBytes,
+        onDiscoveredSessionId,
+      );
     } catch {
       return Promise.resolve(undefined);
     }
   }
   const body = request.body;
   if (typeof body === "string") {
-    return Promise.resolve(sanitizedJsonBody(body, route, maxBodyBytes));
+    return Promise.resolve(sanitizedJsonBody(body, route, maxBodyBytes, onDiscoveredSessionId));
   }
   if (typeof Blob !== "undefined" && body instanceof Blob) {
     if (body.size > maxBodyBytes) return Promise.resolve(undefined);
-    return body.text().then((text) => sanitizedJsonBody(text, route, maxBodyBytes)).catch(() => undefined);
+    return body
+      .text()
+      .then((text) => sanitizedJsonBody(text, route, maxBodyBytes, onDiscoveredSessionId))
+      .catch(() => undefined);
   }
   if (body instanceof ArrayBuffer) {
     if (body.byteLength > maxBodyBytes) return Promise.resolve(undefined);
-    return Promise.resolve(sanitizedJsonBody(new TextDecoder().decode(body), route, maxBodyBytes));
+    return Promise.resolve(
+      sanitizedJsonBody(new TextDecoder().decode(body), route, maxBodyBytes, onDiscoveredSessionId),
+    );
   }
   if (ArrayBuffer.isView(body)) {
     if (body.byteLength > maxBodyBytes) return Promise.resolve(undefined);
@@ -444,6 +516,7 @@ function captureRequestBody(
       new TextDecoder().decode(new Uint8Array(body.buffer, body.byteOffset, body.byteLength)),
       route,
       maxBodyBytes,
+      onDiscoveredSessionId,
     ));
   }
   return Promise.resolve(undefined);
@@ -454,6 +527,7 @@ function installFetchBodyObserver(
   capture: BodyCaptureConfig,
   allowedOrigins: Set<string>,
   collectorUrl: URL,
+  onSessionId?: (sessionId: string) => void,
 ): () => void {
   const original = globalThis.fetch as typeof fetch & { __original?: typeof fetch };
   const underlying = original.__original ?? original;
@@ -500,6 +574,11 @@ function installFetchBodyObserver(
           value.headers.get("content-type"),
           state.route,
           capture.maxBodyBytes,
+          (discovered) => {
+            if (!onSessionId) return;
+            state.discoveredSessionId = discovered;
+            onSessionId(discovered);
+          },
         );
       } catch {
         state.responseBody = Promise.resolve(undefined);
@@ -521,6 +600,7 @@ function installXhrBodyObserver(
   capture: BodyCaptureConfig,
   allowedOrigins: Set<string>,
   collectorUrl: URL,
+  onSessionId?: (sessionId: string) => void,
 ): () => void {
   if (typeof XMLHttpRequest === "undefined") return () => undefined;
   const prototype = XMLHttpRequest.prototype;
@@ -545,12 +625,17 @@ function installXhrBodyObserver(
         ? undefined
         : findRoute(capture, allowedOrigins, rawUrl, normalizedMethod);
       if (route) {
+        const discoveredSessionId = onSessionId ? extractSessionIdFromPath(route.path) : undefined;
+        if (discoveredSessionId) {
+          onSessionId?.(discoveredSessionId);
+        }
         states.set(this, {
           route,
           requestUrl: `${route.origin}${route.path}`,
           requestMethod: normalizedMethod,
           contentType: "",
           maxBodyBytes: capture.maxBodyBytes,
+          discoveredSessionId,
         });
       }
     }
@@ -567,7 +652,11 @@ function installXhrBodyObserver(
   prototype.send = function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null): void {
     const state = active ? states.get(this) : undefined;
     if (state && isJsonContentType(state.contentType) && typeof body === "string") {
-      state.requestBody = sanitizedJsonBody(body, state.route, state.maxBodyBytes);
+      state.requestBody = sanitizedJsonBody(body, state.route, state.maxBodyBytes, (discovered) => {
+        if (!onSessionId) return;
+        state.discoveredSessionId = discovered;
+        onSessionId(discovered);
+      });
     }
     Reflect.apply(originalSend, this, [body]);
   };
@@ -585,6 +674,7 @@ function sanitizedJsonBody(
   text: string,
   route: NormalizedRoute,
   maxBodyBytes: number,
+  onDiscoveredSessionId?: (sessionId: string) => void,
 ): string | undefined {
   if (new TextEncoder().encode(text).byteLength > maxBodyBytes) return undefined;
   let value: unknown;
@@ -592,6 +682,10 @@ function sanitizedJsonBody(
     value = JSON.parse(text);
   } catch {
     return undefined;
+  }
+  if (onDiscoveredSessionId) {
+    const discovered = extractSessionIdFromJson(value, route.path);
+    if (discovered) onDiscoveredSessionId(discovered);
   }
   redactBuiltinProperties(value);
   for (const path of route.redactionPaths) redactJsonPath(value, path);
@@ -604,6 +698,7 @@ async function readBoundedJsonStream(
   contentType: string | null,
   route: NormalizedRoute,
   maxBodyBytes: number,
+  onDiscoveredSessionId?: (sessionId: string) => void,
 ): Promise<string | undefined> {
   if (!stream || !isJsonContentType(contentType)) return undefined;
   let reader: ReadableStreamDefaultReader<Uint8Array>;
@@ -636,7 +731,56 @@ async function readBoundedJsonStream(
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return sanitizedJsonBody(new TextDecoder().decode(bytes), route, maxBodyBytes);
+  return sanitizedJsonBody(
+    new TextDecoder().decode(bytes),
+    route,
+    maxBodyBytes,
+    onDiscoveredSessionId,
+  );
+}
+
+function isValidSessionId(candidate: string): boolean {
+  return /^[!-~]{1,128}$/.test(candidate);
+}
+
+function extractSessionIdFromPath(path: string): string | undefined {
+  const match = path.match(/(?:^|\/)sessions\/([!-~]{1,128}?)(?:\/|$)/);
+  const candidate = match?.[1];
+  return candidate && isValidSessionId(candidate) ? candidate : undefined;
+}
+
+function extractSessionIdFromJson(value: unknown, routePath: string): string | undefined {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  for (const key of ["sessionId", "session_id"]) {
+    const candidate = record[key];
+    if (typeof candidate === "string" && isValidSessionId(candidate.trim())) {
+      return candidate.trim();
+    }
+  }
+  if (/(?:^|\/)sessions?\/?$/i.test(routePath)) {
+    const idCandidate = record.id;
+    if (typeof idCandidate === "string" && isValidSessionId(idCandidate.trim())) {
+      return idCandidate.trim();
+    }
+  }
+  return undefined;
+}
+
+function applySessionIdToSpan(span: Span, sessionId: string): void {
+  try {
+    const candidate = span as unknown as {
+      ended?: boolean;
+      attributes?: Record<string, unknown>;
+    };
+    if (!candidate.ended) {
+      span.setAttribute("session.id", sessionId);
+      span.setAttribute("sp.session.id", sessionId);
+    } else if (candidate.attributes && typeof candidate.attributes === "object") {
+      candidate.attributes["session.id"] = sessionId;
+      candidate.attributes["sp.session.id"] = sessionId;
+    }
+  } catch {}
 }
 
 function parseRedactionPath(path: string): string[] | null {

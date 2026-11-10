@@ -35,4 +35,21 @@ describe("createSoftprobeObservationAttributes", () => {
     expect(attrs["gen_ai.tool.call.id"]).toBe("call_lookup_1");
     expect(attrs["sp.tool.kind"]).toBe("function");
   });
+
+  it("maps operation spans to agent and populates session and user identity attributes", () => {
+    const attrs = createSoftprobeObservationAttributes({
+      spanType: "operation",
+      operationId: "ai.generateText",
+      runtimeContext: {
+        sessionId: "ses_travel_01",
+        userId: "usr_ada",
+      },
+    });
+    expect(attrs["sp.observation.type"]).toBe("agent");
+    expect(attrs["session.id"]).toBe("ses_travel_01");
+    expect(attrs["sp.session.id"]).toBe("ses_travel_01");
+    expect(attrs["gen_ai.conversation.id"]).toBe("ses_travel_01");
+    expect(attrs["user.id"]).toBe("usr_ada");
+    expect(attrs["sp.user.id"]).toBe("usr_ada");
+  });
 });

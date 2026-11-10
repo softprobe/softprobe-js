@@ -289,9 +289,15 @@ describe("createHooksFromTracer", () => {
 describe("SoftprobePlugin", () => {
   it("returns empty hooks when credentials are missing", async () => {
     delete process.env.SOFTPROBE_PUBLIC_KEY;
+    delete process.env.SOFTPROBE_API_KEY;
     delete process.env.SOFTPROBE_BASE_URL;
-    const hooks = await SoftprobePlugin({} as never);
-    expect(hooks).toEqual({});
+    process.env.OPENCODE_CONFIG_DIR = "/tmp/does-not-exist-softprobe-dir";
+    try {
+      const hooks = await SoftprobePlugin({} as never);
+      expect(hooks).toEqual({});
+    } finally {
+      delete process.env.OPENCODE_CONFIG_DIR;
+    }
   });
 
   it("wires credentials from env into working hooks", async () => {

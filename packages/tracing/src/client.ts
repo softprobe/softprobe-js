@@ -41,7 +41,15 @@ import type {
   StartToolOptions,
 } from "./types.js";
 
-export interface SoftprobeClientOptions extends SoftprobeConfig {
+const DEFAULT_THELAKE_BASE_URL = "https://explorer.softprobe.ai/api/thelake";
+
+export interface SoftprobeClientOptions extends Omit<SoftprobeConfig, "publicKey" | "baseUrl"> {
+  /** Agent or project ingest key (`spk_...`). */
+  publicKey?: string;
+  /** Alias for `publicKey`. */
+  apiKey?: string;
+  /** Ingest API root. Defaults to `https://explorer.softprobe.ai/api/thelake`. */
+  baseUrl?: string;
   /** Injected exporter for tests (skips OTLP setup). */
   spanExporter?: SpanExporter;
   /** Injected score transport for tests. */
@@ -74,27 +82,37 @@ export class SoftprobeClient {
   private readonly disableGlobalTracerOnShutdown: boolean;
   private shutDown = false;
 
-  /** Build from `SOFTPROBE_*` env. Requires public key + base URL. */
+  /** Build from `SOFTPROBE_*` env. Defaults `baseUrl` to production TheLake when omitted. */
   static fromEnv(
     overrides: Partial<SoftprobeClientOptions> = {},
   ): SoftprobeClient {
-    const cfg = resolveSoftprobeConfigFromEnv();
-    if (!cfg) {
+    const cfg = resolveSoftprobeConfigFromEnv({
+      ...process.env,
+      SOFTPROBE_BASE_URL:
+        process.env.SOFTPROBE_BASE_URL ||
+        overrides.baseUrl ||
+        DEFAULT_THELAKE_BASE_URL,
+    });
+    const overrideKey = (overrides.publicKey ?? overrides.apiKey)?.trim();
+    if (!cfg && !overrideKey) {
       throw new MissingSoftprobeCredentialsError(
-        "Set SOFTPROBE_PUBLIC_KEY and SOFTPROBE_BASE_URL",
+        "Set SOFTPROBE_PUBLIC_KEY (or SOFTPROBE_API_KEY)",
       );
     }
-    return new SoftprobeClient({ ...cfg, ...overrides });
+    return new SoftprobeClient({ ...(cfg ?? {}), ...overrides });
   }
 
   constructor(options: SoftprobeClientOptions) {
-    if (!options.publicKey?.trim()) {
+    const resolvedPublicKey = (options.publicKey ?? options.apiKey)?.trim();
+    if (!resolvedPublicKey) {
       throw new Error("publicKey is required");
     }
-    if (!options.baseUrl?.trim()) {
+    const rawBaseUrl =
+      options.baseUrl === undefined ? DEFAULT_THELAKE_BASE_URL : options.baseUrl;
+    if (!rawBaseUrl?.trim()) {
       throw new Error("baseUrl is required");
     }
-    const baseUrl = options.baseUrl.trim();
+    const baseUrl = rawBaseUrl.trim();
     const otlpEndpoint =
       options.otlpEndpoint?.trim() || deriveOtlpEndpoint(baseUrl);
     if (!options.spanExporter && !otlpEndpoint) {
@@ -122,7 +140,7 @@ export class SoftprobeClient {
       new OTLPTraceExporter({
         url: otlpEndpoint,
         headers: {
-          Authorization: `Bearer ${options.publicKey}`,
+          Authorization: `Bearer ${resolvedPublicKey}`,
           ...(options.headers ?? {}),
         },
         timeoutMillis: options.timeoutMs ?? 10_000,
@@ -176,7 +194,7 @@ export class SoftprobeClient {
       options.scoreTransport ??
       new HttpScoreTransport(
         baseUrl,
-        options.publicKey.trim(),
+        resolvedPublicKey,
         options.headers ?? {},
         options.timeoutMs ?? 10_000,
       );

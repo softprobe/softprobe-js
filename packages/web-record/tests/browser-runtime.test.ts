@@ -296,3 +296,70 @@ it("omits request and response bodies that exceed the configured byte limit", as
   expect(body?.attributes).not.toHaveProperty("http.request.body.content");
   expect(body?.attributes).not.toHaveProperty("http.response.body.content");
 });
+
+it("captures same-origin JSON bodies without a route allowlist and adopts session ids from /sessions endpoints", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/agent/api/sessions")) {
+      return new Response('{"id":"ses_auto_123","provider":"google"}', {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response('{"status":"queued"}', {
+      status: 202,
+      headers: { "Content-Type": "application/json" },
+    });
+  }));
+  const memoryExporter = new InMemorySpanExporter();
+  const sessionState = createWebSessionState("initial-tab-uuid");
+  const discoveredIds: string[] = [];
+  const browserRuntime = createBrowserRuntime({
+    apiKey: "agent-key",
+    otlpEndpoint: "https://collector.example.test/v1/traces",
+    serviceName: "travel-ota-web",
+    httpBodyCapture: {},
+    onSessionId: (id) => {
+      discoveredIds.push(id);
+      sessionState.setSessionId(id);
+    },
+  }, sessionState, memoryExporter);
+  runtime = browserRuntime;
+
+  const createRes = await fetch(`${window.location.origin}/agent/api/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  await createRes.json();
+
+  const messageRes = await fetch(`${window.location.origin}/agent/api/sessions/ses_auto_123/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt: "Book LHR to CDG", secret: "top-secret" }),
+  });
+  await messageRes.json();
+
+  await browserRuntime.waitForIdle();
+  await browserRuntime.forceFlush();
+
+  expect(discoveredIds).toContain("ses_auto_123");
+  expect(sessionState.getSessionId()).toBe("ses_auto_123");
+
+  const spans = memoryExporter.getFinishedSpans();
+  const bodySpans = spans.filter((span) => span.name === "softprobe.http.body.capture");
+  expect(bodySpans).toHaveLength(2);
+  for (const span of spans) {
+    expect(span.attributes).toMatchObject({
+      "session.id": "ses_auto_123",
+      "sp.session.id": "ses_auto_123",
+    });
+  }
+  const messageBodySpan = bodySpans.find((span) =>
+    String(span.attributes["url.full"]).endsWith("/agent/api/sessions/ses_auto_123/messages"),
+  );
+  expect(JSON.parse(String(messageBodySpan?.attributes["http.request.body.content"]))).toEqual({
+    prompt: "Book LHR to CDG",
+    secret: "[REDACTED]",
+  });
+});

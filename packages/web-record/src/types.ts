@@ -54,8 +54,8 @@ export type HttpBodyCaptureRoute = {
 export type HttpBodyCaptureOptions = {
   /** Bodies larger than this many bytes are omitted. Defaults to 64 KiB. */
   maxBodyBytes?: number;
-  /** Only listed JSON routes can export body content. */
-  routes: HttpBodyCaptureRoute[];
+  /** Optional route allowlist. Omit to capture JSON bodies on all traced API origins. */
+  routes?: HttpBodyCaptureRoute[];
 };
 
 export type WebRecordInitOptions = Omit<WebRecordCredentials, "baseUrl"> & {
@@ -73,8 +73,11 @@ export type WebRecordInitOptions = Omit<WebRecordCredentials, "baseUrl"> & {
    * Defaults to `window.location.origin` plus any origin declared in `httpBodyCapture.routes`.
    */
   apiOrigins?: string[];
-  /** Opt-in JSON body capture for exact routes. Disabled when omitted. */
-  httpBodyCapture?: HttpBodyCaptureOptions;
+  /**
+   * JSON body capture for traced API origins. Enabled by default for same-origin JSON requests.
+   * Pass `{ routes: [...] }` to restrict to specific routes, or `false` to disable.
+   */
+  httpBodyCapture?: boolean | HttpBodyCaptureOptions;
   /** When true, do not auto-start rrweb. */
   manual?: boolean;
   tags?: Tags;
