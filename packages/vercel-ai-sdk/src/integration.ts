@@ -9,6 +9,11 @@ export type SoftprobePrompt = {
 
 export type SoftprobeVercelAiSdkIntegrationOptions = {
   tracer?: Tracer;
+  apiKey?: string;
+  publicKey?: string;
+  baseUrl?: string;
+  serviceName?: string;
+  environment?: string;
 };
 
 export type OpenTelemetrySpanType = string;
@@ -22,9 +27,24 @@ const PROMPT_SPAN_TYPES = new Set<string>([
   "generate",
 ]);
 
-function observationTypeFor(spanType: string): string {
+const SESSION_ID_KEYS = [
+  "sessionId",
+  "session_id",
+  "threadId",
+  "thread_id",
+  "conversationId",
+  "conversation_id",
+  "chatId",
+  "chat_id",
+];
+
+const USER_ID_KEYS = ["userId", "user_id"];
+
+function observationTypeFor(spanType: string, operationId?: string): string {
   if (spanType.includes("tool")) return "tool";
-  if (spanType.includes("embed")) return "embedding";
+  if (spanType.includes("embed") || operationId?.includes("embed")) {
+    return "embedding";
+  }
   if (
     spanType.includes("languageModel") ||
     spanType.toLowerCase().includes("generate") ||
@@ -33,8 +53,23 @@ function observationTypeFor(spanType: string): string {
   ) {
     return "generation";
   }
-  if (spanType.includes("rerank")) return "retriever";
+  if (spanType.includes("rerank") || operationId?.includes("rerank")) {
+    return "retriever";
+  }
+  if (spanType === "operation") return "agent";
   return "span";
+}
+
+function readPropagatedIdentity(): { sessionId?: string; userId?: string } {
+  try {
+    const require = createRequire(import.meta.url);
+    const tracing = require("@softprobe/tracing") as {
+      getPropagatedAttributes?: () => { sessionId?: string; userId?: string };
+    };
+    return tracing.getPropagatedAttributes?.() ?? {};
+  } catch {
+    return {};
+  }
 }
 
 function firstString(
@@ -83,12 +118,31 @@ function normalizePrompt(value: unknown): SoftprobePrompt | undefined {
 export function createSoftprobeObservationAttributes(params: {
   runtimeContext?: Record<string, unknown>;
   spanType: OpenTelemetrySpanType;
+  operationId?: string;
 }): Attributes {
-  const { runtimeContext, spanType } = params;
-  const observationType = observationTypeFor(String(spanType));
+  const { runtimeContext, spanType, operationId } = params;
+  const observationType = observationTypeFor(String(spanType), operationId);
   const attributes: Attributes = {
     "sp.observation.type": observationType,
   };
+
+  const propagated = readPropagatedIdentity();
+  const sessionId =
+    firstString(runtimeContext, SESSION_ID_KEYS)?.trim() ||
+    propagated.sessionId?.trim();
+  if (sessionId) {
+    attributes["session.id"] = sessionId;
+    attributes["sp.session.id"] = sessionId;
+    attributes["gen_ai.conversation.id"] = sessionId;
+  }
+
+  const userId =
+    firstString(runtimeContext, USER_ID_KEYS)?.trim() ||
+    propagated.userId?.trim();
+  if (userId) {
+    attributes["user.id"] = userId;
+    attributes["sp.user.id"] = userId;
+  }
 
   if (!runtimeContext) return attributes;
 
@@ -145,6 +199,30 @@ export function createSoftprobeObservationAttributes(params: {
   return attributes;
 }
 
+function resolveDefaultTracer(
+  options: SoftprobeVercelAiSdkIntegrationOptions,
+): Tracer | undefined {
+  if (options.tracer) return options.tracer;
+  try {
+    const require = createRequire(import.meta.url);
+    const tracing = require("@softprobe/tracing") as {
+      SoftprobeClient?: {
+        fromEnv: (overrides?: Record<string, unknown>) => { tracer: Tracer };
+      };
+    };
+    const client = tracing.SoftprobeClient?.fromEnv({
+      apiKey: options.apiKey,
+      publicKey: options.publicKey,
+      baseUrl: options.baseUrl,
+      serviceName: options.serviceName,
+      environment: options.environment,
+    });
+    return client?.tracer;
+  } catch {
+    return undefined;
+  }
+}
+
 type AiSdkOtelDelegate = {
   executeTool: (params: unknown) => PromiseLike<unknown>;
   executeLanguageModelCall: (params: unknown) => PromiseLike<unknown>;
@@ -187,17 +265,22 @@ export class SoftprobeVercelAiSdkIntegration {
       );
     }
 
+    const tracer = resolveDefaultTracer(options);
+
     this.delegate = new OpenTelemetryCtor({
-      tracer: options.tracer,
+      tracer,
       enrichSpan: ({
         spanType,
+        operationId,
         runtimeContext,
       }: {
         spanType: OpenTelemetrySpanType;
+        operationId?: string;
         runtimeContext?: Record<string, unknown>;
       }) =>
         createSoftprobeObservationAttributes({
           spanType,
+          operationId,
           runtimeContext,
         }),
     });
@@ -266,4 +349,23 @@ export class SoftprobeVercelAiSdkIntegration {
   onError(...args: unknown[]): void {
     this.delegate.onError(...args);
   }
+}
+
+/**
+ * Initialize Softprobe telemetry and register it with the Vercel AI SDK in one call.
+ * Reads `SOFTPROBE_PUBLIC_KEY` (or `SOFTPROBE_API_KEY`) and defaults `SOFTPROBE_BASE_URL`
+ * to `https://explorer.softprobe.ai/api/thelake`.
+ */
+export function initVercelAiTelemetry(
+  options: SoftprobeVercelAiSdkIntegrationOptions = {},
+): SoftprobeVercelAiSdkIntegration {
+  const integration = new SoftprobeVercelAiSdkIntegration(options);
+  try {
+    const require = createRequire(import.meta.url);
+    const ai = require("ai") as {
+      registerTelemetry?: (integration: unknown) => void;
+    };
+    ai.registerTelemetry?.(integration);
+  } catch {}
+  return integration;
 }

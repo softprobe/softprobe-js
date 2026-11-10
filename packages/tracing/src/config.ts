@@ -41,7 +41,9 @@ export type SoftprobeEnvSource = Record<string, string | undefined>;
 export function resolveSoftprobeConfigFromEnv(
   env: SoftprobeEnvSource = process.env,
 ): ResolvedSoftprobeConfig | null {
-  const publicKey = asNonEmptyString(env.SOFTPROBE_PUBLIC_KEY);
+  const publicKey =
+    asNonEmptyString(env.SOFTPROBE_PUBLIC_KEY) ??
+    asNonEmptyString(env.SOFTPROBE_API_KEY);
   const baseUrl = asNonEmptyString(env.SOFTPROBE_BASE_URL);
   if (!publicKey || !baseUrl) return null;
 
@@ -55,7 +57,9 @@ export function resolveSoftprobeConfigFromEnv(
     environment: asNonEmptyString(env.SOFTPROBE_ENVIRONMENT),
     sessionId: asNonEmptyString(env.SOFTPROBE_SESSION_ID),
     userId: asNonEmptyString(env.SOFTPROBE_USER_ID),
-    serviceName: asNonEmptyString(env.SOFTPROBE_SERVICE_NAME),
+    serviceName:
+      asNonEmptyString(env.SOFTPROBE_SERVICE_NAME) ??
+      asNonEmptyString(env.SOFTPROBE_AGENT_NAME),
   };
 }
 

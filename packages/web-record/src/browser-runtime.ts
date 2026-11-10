@@ -26,7 +26,8 @@ export type BrowserRuntimeOptions = {
   serviceName?: string;
   environment?: string;
   apiOrigins?: string[];
-  httpBodyCapture?: HttpBodyCaptureOptions;
+  httpBodyCapture?: boolean | HttpBodyCaptureOptions;
+  onSessionId?: (sessionId: string) => void;
 };
 
 export type BrowserRuntime = {
@@ -56,6 +57,7 @@ export function createBrowserRuntime(
     httpBodyCapture: options.httpBodyCapture,
     collectorUrl: options.otlpEndpoint,
     getTracer: () => trace.getTracer(SCOPE_NAME, SCOPE_VERSION),
+    onSessionId: options.onSessionId,
   });
   const collectorUrl = new URL(options.otlpEndpoint);
   const exporter = exporterOverride ?? new OTLPTraceExporter({

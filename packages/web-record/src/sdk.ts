@@ -96,7 +96,8 @@ export class RecordSdk implements WebRecordController {
     this.apiOrigins = [...(options.apiOrigins ?? [])];
     this.otlpEndpoint = options.otlpEndpoint;
     this.sessionIdStorageKey = `${SESSION_ID_STORAGE_PREFIX}${options.serviceName ?? "default"}`;
-    this._sessionId = getOrCreateSessionId(options.sessionId, this.sessionIdStorageKey);
+    const explicitSessionId = asNonEmptyString(options.sessionId);
+    this._sessionId = getOrCreateSessionId(explicitSessionId, this.sessionIdStorageKey);
     this.intervalMs = Math.max(options.interval ?? 5000, 5000);
     this.serviceName = options.serviceName;
     this.environment = options.environment;
@@ -111,6 +112,11 @@ export class RecordSdk implements WebRecordController {
     if (this.userId && !this.tags.userId) this.tags.userId = this.userId;
     this.visitorId = getOrCreateVisitorId();
     const sessionState = this.enabled ? createWebSessionState(this._sessionId) : null;
+    const resolvedBodyCapture = options.httpBodyCapture === false
+      ? undefined
+      : (options.httpBodyCapture === undefined || options.httpBodyCapture === true
+        ? {}
+        : options.httpBodyCapture);
     this.browserRuntime = this.enabled && sessionState
       ? createBrowserRuntime({
           apiKey: this.apiKey,
@@ -118,7 +124,10 @@ export class RecordSdk implements WebRecordController {
           serviceName: this.serviceName,
           environment: this.environment,
           apiOrigins: this.apiOrigins,
-          httpBodyCapture: options.httpBodyCapture,
+          httpBodyCapture: resolvedBodyCapture,
+          onSessionId: explicitSessionId
+            ? undefined
+            : (discovered) => this.adoptDiscoveredSessionId(discovered),
         }, sessionState)
       : null;
 
@@ -265,6 +274,23 @@ export class RecordSdk implements WebRecordController {
       }
     } catch {
       // Storage can be unavailable in restricted browser contexts.
+    }
+  }
+
+  private adoptDiscoveredSessionId(candidate: string): void {
+    const next = asNonEmptyString(candidate);
+    if (!next || !/^[!-~]{1,128}$/.test(next) || next === this._sessionId) return;
+    this._sessionId = next;
+    this.browserRuntime?.setSessionId(next);
+    try {
+      if (typeof sessionStorage !== "undefined") {
+        sessionStorage.setItem(this.sessionIdStorageKey, next);
+      }
+    } catch {}
+    if (this.stopHandle && typeof rrwebRecord.takeFullSnapshot === "function") {
+      try {
+        rrwebRecord.takeFullSnapshot();
+      } catch {}
     }
   }
 
@@ -507,6 +533,11 @@ function getOrCreateSessionId(candidate: unknown, storageKey: string): string {
         sessionStorage.setItem(storageKey, provided);
         return provided;
       }
+      const discovered = discoverHostSessionId();
+      if (discovered) {
+        sessionStorage.setItem(storageKey, discovered);
+        return discovered;
+      }
       const stored = asNonEmptyString(sessionStorage.getItem(storageKey));
       if (stored) return stored;
       const generated = uuid();
@@ -517,6 +548,25 @@ function getOrCreateSessionId(candidate: unknown, storageKey: string): string {
     // sessionStorage may throw for blocked or opaque origins; use an in-memory ID.
   }
   return provided ?? uuid();
+}
+
+function discoverHostSessionId(): string | undefined {
+  try {
+    if (typeof sessionStorage === "undefined") return undefined;
+    for (const key of ["sessionId", "session_id", "sp.session.id"]) {
+      const direct = asNonEmptyString(sessionStorage.getItem(key));
+      if (direct && /^[!-~]{1,128}$/.test(direct)) return direct;
+    }
+    for (let index = 0; index < sessionStorage.length; index += 1) {
+      const key = sessionStorage.key(index);
+      if (!key || key.startsWith(SESSION_ID_STORAGE_PREFIX)) continue;
+      if (/(?:^|[._-])session(?:_?id)$/i.test(key)) {
+        const value = asNonEmptyString(sessionStorage.getItem(key));
+        if (value && /^[!-~]{1,128}$/.test(value)) return value;
+      }
+    }
+  } catch {}
+  return undefined;
 }
 
 function getOrCreateVisitorId(): string {

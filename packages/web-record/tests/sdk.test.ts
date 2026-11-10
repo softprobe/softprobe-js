@@ -232,6 +232,16 @@ describe("RecordSdk", () => {
     });
     expect(testState.runtimeOptions).toMatchObject({
       otlpEndpoint: "https://explorer.softprobe.ai/api/thelake/v1/traces",
+      httpBodyCapture: {},
+    });
+
+    RecordSdk.init({
+      apiKey: "agent-key",
+      httpBodyCapture: false,
+      manual: true,
+    });
+    expect(testState.runtimeOptions).toMatchObject({
+      httpBodyCapture: undefined,
     });
 
     const disabled = RecordSdk.init({
@@ -259,6 +269,22 @@ describe("RecordSdk", () => {
     await first.setSessionId("application-session");
     expect(testState.runtime.setSessionId).toHaveBeenCalledWith("application-session");
     expect(RecordSdk.init(options).sessionId).toBe("application-session");
+  });
+
+  it("discovers host session id from sessionStorage and adopts runtime-discovered session ids", () => {
+    sessionStorage.setItem("demo-ota.travel.sessionId", "ses_host_initial");
+    const sdk = RecordSdk.init({
+      apiKey: "agent-key",
+      baseUrl: "https://collector.example.test",
+      manual: true,
+    });
+    expect(sdk.sessionId).toBe("ses_host_initial");
+
+    const runtimeOptions = testState.runtimeOptions as { onSessionId?: (id: string) => void };
+    expect(typeof runtimeOptions.onSessionId).toBe("function");
+    runtimeOptions.onSessionId?.("ses_created_from_api");
+    expect(sdk.sessionId).toBe("ses_created_from_api");
+    expect(testState.runtime.setSessionId).toHaveBeenCalledWith("ses_created_from_api");
   });
 
   it("keeps session storage independent for different service names", () => {
@@ -399,5 +425,23 @@ describe("RecordSdk", () => {
     release();
     await vi.waitFor(() => expect(sdk.uploadStatus).toBe("uploaded"));
     expect(statuses).toContain("incomplete");
+  });
+
+  it("auto-initializes from a script tag with data-api-key", async () => {
+    const { autoInitFromScript } = await import("../src/browser.js");
+    const script = document.createElement("script");
+    script.dataset.apiKey = "spk_script_tag";
+    document.head.appendChild(script);
+    try {
+      const session = autoInitFromScript(document);
+      expect(session?.sessionId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(testState.runtimeOptions).toMatchObject({
+        apiKey: "spk_script_tag",
+        otlpEndpoint: "https://explorer.softprobe.ai/api/thelake/v1/traces",
+        httpBodyCapture: {},
+      });
+    } finally {
+      script.remove();
+    }
   });
 });

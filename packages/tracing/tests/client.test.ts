@@ -81,6 +81,19 @@ describe("SoftprobeClient configuration", () => {
     expect(exporter.getFinishedSpans()).toHaveLength(1);
     await client.shutdown();
   });
+
+  it("defaults baseUrl to production TheLake and accepts apiKey alias", async () => {
+    const exporter = new InMemorySpanExporter();
+    const client = new SoftprobeClient({
+      apiKey: "spk_test_alias",
+      spanExporter: exporter,
+      useSimpleProcessor: true,
+    });
+    client.startObservation({ name: "default-base-url", asType: "span" }).end();
+    await client.forceFlush();
+    expect(exporter.getFinishedSpans()).toHaveLength(1);
+    await client.shutdown();
+  });
 });
 
 describe("historical timestamps", () => {
