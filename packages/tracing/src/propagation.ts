@@ -19,8 +19,8 @@ export function getPropagatedAttributes(): PropagatedAttributes {
 
 export function withAttributes<T>(
   attributes: PropagatedAttributes,
-  fn: () => Promise<T> | T,
-): Promise<T> | T {
+  fn: () => T,
+): T {
   const current = getPropagatedAttributes();
   const merged: PropagatedAttributes = {
     ...current,

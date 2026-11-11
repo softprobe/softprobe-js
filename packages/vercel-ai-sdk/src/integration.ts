@@ -1,5 +1,20 @@
+import http from "node:http";
+import https from "node:https";
 import { createRequire } from "node:module";
-import type { Attributes, Tracer } from "@opentelemetry/api";
+import {
+  context as otelContext,
+  propagation as otelPropagation,
+  trace as otelTrace,
+  TraceFlags,
+  type Attributes,
+  type Context,
+  type Tracer,
+} from "@opentelemetry/api";
+import {
+  SoftprobeClient,
+  getPropagatedAttributes,
+  withAttributes,
+} from "@softprobe/tracing";
 
 export type SoftprobePrompt = {
   name: string;
@@ -62,14 +77,126 @@ function observationTypeFor(spanType: string, operationId?: string): string {
 
 function readPropagatedIdentity(): { sessionId?: string; userId?: string } {
   try {
-    const require = createRequire(import.meta.url);
-    const tracing = require("@softprobe/tracing") as {
-      getPropagatedAttributes?: () => { sessionId?: string; userId?: string };
-    };
-    return tracing.getPropagatedAttributes?.() ?? {};
+    return getPropagatedAttributes() ?? {};
   } catch {
     return {};
   }
+}
+
+const kSoftprobeHttpPatched = Symbol.for("softprobe.vercelAi.httpPatched");
+const TRACEPARENT_RE =
+  /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})(?:$|-[0-9a-f])/i;
+const SESSION_HEADER_KEYS = [
+  "x-softprobe-session-id",
+  "x-session-id",
+  "x-conversation-id",
+  "x-thread-id",
+  "x-chat-id",
+];
+
+function headerString(
+  headers: Record<string, unknown> | undefined,
+  name: string,
+): string | undefined {
+  if (!headers) return undefined;
+  const raw = headers[name] ?? headers[name.toLowerCase()];
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  if (Array.isArray(raw) && typeof raw[0] === "string" && raw[0].trim()) {
+    return raw[0].trim();
+  }
+  return undefined;
+}
+
+function extractIncomingTraceContext(
+  headers: Record<string, unknown> | undefined,
+): Context {
+  let ctx = otelContext.active();
+  if (!headers) return ctx;
+  try {
+    ctx = otelPropagation.extract(ctx, headers);
+  } catch {}
+  const existing = otelTrace.getSpanContext(ctx);
+  if (existing?.traceId && existing.spanId) return ctx;
+
+  const traceparent = headerString(headers, "traceparent");
+  if (!traceparent) return ctx;
+  const match = TRACEPARENT_RE.exec(traceparent);
+  if (!match) return ctx;
+  const traceId = match[1]!.toLowerCase();
+  const spanId = match[2]!.toLowerCase();
+  const flags = Number.parseInt(match[3]!, 16);
+  if (/^0+$/.test(traceId) || /^0+$/.test(spanId)) return ctx;
+  return otelTrace.setSpanContext(ctx, {
+    traceId,
+    spanId,
+    traceFlags:
+      (flags & 0x01) === 0x01 ? TraceFlags.SAMPLED : TraceFlags.NONE,
+    isRemote: true,
+  });
+}
+
+function extractIncomingSessionId(req: {
+  url?: string;
+  headers?: Record<string, unknown>;
+}): string | undefined {
+  for (const key of SESSION_HEADER_KEYS) {
+    const value = headerString(req.headers, key);
+    if (value && /^[!-~]{1,128}$/.test(value)) return value;
+  }
+  const rawUrl = typeof req.url === "string" ? req.url : "";
+  if (rawUrl) {
+    const pathMatch = rawUrl.match(/(?:^|\/)sessions?\/([!-~]{1,128}?)(?:\/|\?|$)/);
+    if (pathMatch?.[1] && /^[!-~]{1,128}$/.test(pathMatch[1])) {
+      return decodeURIComponent(pathMatch[1]);
+    }
+    try {
+      const parsed = new URL(rawUrl, "http://127.0.0.1");
+      for (const key of SESSION_ID_KEYS) {
+        const param = parsed.searchParams.get(key)?.trim();
+        if (param && /^[!-~]{1,128}$/.test(param)) return param;
+      }
+    } catch {}
+  }
+  return undefined;
+}
+
+function patchServerPrototype(proto: unknown): void {
+  const target = proto as
+    | ({ emit: (...args: unknown[]) => boolean } & Record<symbol, boolean>)
+    | null
+    | undefined;
+  if (!target || typeof target.emit !== "function" || target[kSoftprobeHttpPatched]) {
+    return;
+  }
+  target[kSoftprobeHttpPatched] = true;
+  const originalEmit = target.emit;
+  target.emit = function patchedEmit(
+    this: unknown,
+    event: unknown,
+    ...args: unknown[]
+  ): boolean {
+    if (event === "request" && args[0] && typeof args[0] === "object") {
+      const req = args[0] as {
+        url?: string;
+        headers?: Record<string, unknown>;
+      };
+      const nextContext = extractIncomingTraceContext(req.headers);
+      const sessionId = extractIncomingSessionId(req);
+      const invoke = (): boolean =>
+        Reflect.apply(originalEmit, this, [event, ...args]) as boolean;
+      return otelContext.with(nextContext, () =>
+        sessionId ? (withAttributes({ sessionId }, invoke) as boolean) : invoke(),
+      );
+    }
+    return Reflect.apply(originalEmit, this, [event, ...args]) as boolean;
+  };
+}
+
+export function installIncomingHttpContextPropagation(): void {
+  try {
+    patchServerPrototype(http.Server.prototype);
+    patchServerPrototype(https.Server.prototype);
+  } catch {}
 }
 
 function firstString(
@@ -204,13 +331,7 @@ function resolveDefaultTracer(
 ): Tracer | undefined {
   if (options.tracer) return options.tracer;
   try {
-    const require = createRequire(import.meta.url);
-    const tracing = require("@softprobe/tracing") as {
-      SoftprobeClient?: {
-        fromEnv: (overrides?: Record<string, unknown>) => { tracer: Tracer };
-      };
-    };
-    const client = tracing.SoftprobeClient?.fromEnv({
+    const client = SoftprobeClient.fromEnv({
       apiKey: options.apiKey,
       publicKey: options.publicKey,
       baseUrl: options.baseUrl,
@@ -265,6 +386,7 @@ export class SoftprobeVercelAiSdkIntegration {
       );
     }
 
+    installIncomingHttpContextPropagation();
     const tracer = resolveDefaultTracer(options);
 
     this.delegate = new OpenTelemetryCtor({
@@ -302,7 +424,43 @@ export class SoftprobeVercelAiSdkIntegration {
   }
 
   onStart(...args: unknown[]): void {
+    const parentSpanContext = otelTrace.getSpanContext(otelContext.active());
+    const hasRemoteParent = Boolean(parentSpanContext?.isRemote && parentSpanContext.traceId);
     this.delegate.onStart(...args);
+    if (hasRemoteParent) return;
+
+    const event = (args[0] ?? {}) as {
+      callId?: string;
+      runtimeContext?: Record<string, unknown>;
+    };
+    const propagated = readPropagatedIdentity();
+    const explicitSessionId =
+      firstString(event.runtimeContext, SESSION_ID_KEYS)?.trim() ||
+      propagated.sessionId?.trim();
+    if (explicitSessionId || !event.callId) return;
+
+    const callStates = (
+      this.delegate as unknown as {
+        callStates?: Map<
+          string,
+          {
+            rootSpan?: {
+              spanContext?: () => { traceId?: string };
+              setAttributes?: (attrs: Attributes) => void;
+            };
+          }
+        >;
+      }
+    ).callStates;
+    const rootSpan = callStates?.get(event.callId)?.rootSpan;
+    const traceId = rootSpan?.spanContext?.()?.traceId;
+    if (traceId && rootSpan?.setAttributes) {
+      rootSpan.setAttributes({
+        "session.id": traceId,
+        "sp.session.id": traceId,
+        "gen_ai.conversation.id": traceId,
+      });
+    }
   }
   onStepStart(...args: unknown[]): void {
     this.delegate.onStepStart(...args);
