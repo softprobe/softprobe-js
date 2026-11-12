@@ -2,7 +2,7 @@
 
 ## Goal
 
-`@softprobe/web-record` captures rrweb recordings, standard browser HTTP spans, and optional route-scoped HTTP bodies. OpenTelemetry owns HTTP spans, context propagation, OTLP encoding, and export. Softprobe owns the product configuration, session value, recording behavior, and body privacy policy.
+`@softprobe/web-record` captures rrweb recordings, standard browser HTTP spans, and optional route-scoped HTTP bodies. OpenTelemetry owns HTTP spans, context propagation, batching, and OTLP protobuf encoding. Softprobe owns the product configuration, session value, recording behavior, body privacy policy, and browser OTLP HTTP export transport.
 
 ## Consumer boundary
 
@@ -27,7 +27,7 @@ await recorder.flush();
 recorder.stop();
 ```
 
-`@opentelemetry/api`, `@opentelemetry/browser-sdk`, `@opentelemetry/browser-instrumentation`, the official trace SDK, and OTLP exporter are runtime dependencies of `@softprobe/web-record`. Consumers do not import OTel packages or configure a provider, instrumentation, or exporter.
+`@opentelemetry/api`, `@opentelemetry/browser-sdk`, `@opentelemetry/browser-instrumentation`, `@opentelemetry/core`, `@opentelemetry/otlp-transformer`, and `@opentelemetry/sdk-trace` are runtime dependencies of `@softprobe/web-record`. Consumers do not import OTel packages or configure a provider, instrumentation, or exporter.
 
 ## OpenTelemetry API reuse
 
@@ -38,16 +38,16 @@ recorder.stop();
 | `serviceName` | Resource `service.name` |
 | `environment` | Resource `deployment.environment.name` |
 | `httpBodyCapture.routes` / `apiOrigins` | Official Fetch/XHR `ignoreUrls` and `propagateTraceHeaderCorsUrls` (defaults to `window.location.origin` plus route origins) |
-| `apiKey`, `baseUrl` / `otlpEndpoint` | Official OTLP exporter endpoint and authorization header |
+| `apiKey`, `baseUrl` / `otlpEndpoint` | `BrowserOtlpProtoSpanExporter` endpoint and authorization header |
 | generated or supplied session ID | Official session span processor; Softprobe adds `sp.session.id` for compatibility |
 | `httpBodyCapture` | Softprobe extension, attached through official instrumentation hooks |
 
-The SDK uses the OTel implementations for HTTP client spans, context propagation, session processing, batching, protobuf encoding, and export. Softprobe-specific behavior is limited to rrweb recording, the `sp.session.id` compatibility attribute, and opt-in HTTP body capture. OTel browser instrumentation does not capture payload bodies, so body capture is an extension rather than an OTel option. It attaches through the official Fetch request/completion hooks and the XHR completion hook; the XHR request observer only supplies route and request-body data because that instrumentation version has no request-body hook. The observer does not create HTTP spans or own propagation.
+The SDK uses the OTel implementations for HTTP client spans, context propagation, session processing, batching, and protobuf encoding. Softprobe-specific behavior is limited to rrweb recording, the `sp.session.id` compatibility attribute, opt-in HTTP body capture, and browser `fetch` OTLP export. OTel browser instrumentation does not capture payload bodies, so body capture is an extension rather than an OTel option. It attaches through the official Fetch request/completion hooks and the XHR completion hook; the XHR request observer only supplies route and request-body data because that instrumentation version has no request-body hook. The observer does not create HTTP spans or own propagation.
 
 ## Ownership and data flow
 
 - `RecordSdk` resolves the Agent key and managed OTLP destination, persists the tab session ID, collects and masks rrweb events, applies route privacy rules, and exposes `record()`, `flush()`, `stop()`, and `setSessionId()`.
-- `browser-runtime.ts` starts `startTracesSdk()` from `@opentelemetry/browser-sdk/traces`. It registers official `FetchInstrumentation` and `XhrInstrumentation` from `@opentelemetry/browser-instrumentation`, an official `SessionSpanProcessor`, the official HTTP/protobuf `OTLPTraceExporter`, and an official `BatchSpanProcessor`. It supplies the trace processors so `flush()` can retain the batch processor and call its `forceFlush()` directly; exporter failures already reject that promise and flow into the recorder's retry logic. The protobuf exporter matches TheLake's supported OTLP wire format.
+- `browser-runtime.ts` starts `startTracesSdk()` from `@opentelemetry/browser-sdk/traces`. It registers official `FetchInstrumentation` and `XhrInstrumentation` from `@opentelemetry/browser-instrumentation`, an official `SessionSpanProcessor`, `BrowserOtlpProtoSpanExporter` (encoding spans with `@opentelemetry/otlp-transformer`'s `ProtobufTraceSerializer`), and an official `BatchSpanProcessor`. It supplies the trace processors so `flush()` can retain the batch processor and call its `forceFlush()` directly; exporter failures already reject that promise and flow into the recorder's retry logic. The protobuf exporter matches TheLake's supported OTLP wire format.
 - `resolveEffectiveOrigins` derives exact-origin filters from `window.location.origin` plus any origin declared on `httpBodyCapture.routes` (or from `apiOrigins` when explicitly provided). When `httpBodyCapture.routes` is configured, `resolveRouteAllowlistUrlSources` narrows `ignoreUrls` so OTel traces and injects W3C propagation headers only on matching route paths (supporting `*` single-segment and `**` multi-segment wildcards). OTel ignores requests outside selected origins/routes and ignores the configured collector endpoint. URL attributes omit query strings and fragments.
 - The OTel session processor adds `session.id` when each span starts. A small Softprobe processor also writes `sp.session.id` as the existing Explorer compatibility attribute. The session provider reads the current tab session ID at span start, so an in-flight HTTP span keeps its original session.
 - rrweb batches are internal OTel spans named `softprobe.web.recording` with `sp.observation.type=recording`, `sp.recording.batch_index`, and a `sp.recording.batch` event containing the batch. OTel generates IDs and encodes the OTLP payload.
@@ -66,13 +66,13 @@ The child span is needed because the official instrumentation hooks are synchron
 
 ## Removed implementation
 
-`http-interceptor.ts` and the hand-built `otlp.ts` exporter are removed. There is one HTTP-span owner: the official OTel Fetch/XHR instrumentation. Trace IDs, propagation, semantic HTTP attributes, batching, OTLP protobuf encoding, and export come from OpenTelemetry.
+`http-interceptor.ts` and the hand-built JSON `otlp.ts` serializer are removed. There is one HTTP-span owner: the official OTel Fetch/XHR instrumentation. Trace IDs, propagation, semantic HTTP attributes, batching, and OTLP protobuf encoding come from OpenTelemetry.
 
 ## Tradeoffs
 
-- The official browser packages currently use experimental package versions. `@softprobe/web-record` pins the browser SDK, instrumentation, OTel API, trace SDK, and exporter to compatible exact versions.
+- The official browser packages currently use experimental package versions. `@softprobe/web-record` pins the browser SDK, instrumentation, OTel API, trace SDK, and protobuf transformer to compatible exact versions.
 - Bodies appear on a child span so OTel's HTTP span stays owned by the official instrumentation. Explorer should display child spans with their parents.
-- The official OTLP exporter uses `fetch` and requests keepalive delivery when browser payload-size and concurrency limits allow it. `pagehide` flushing still remains best-effort; upload status can report `incomplete` during navigation.
+- `otlp-exporter.ts` sends protobuf payloads via `fetch` with `keepalive: false` while the page is visible, drains response bodies immediately, and reserves `keepalive: true` (with automatic `keepalive: false` fallback on `TypeError`) for small hidden-page unload flushes so Chromium's 64 KiB cumulative renderer `keepalive` quota is never exhausted during active sessions. `pagehide` flushing still remains best-effort; upload status can report `incomplete` during navigation.
 - On exporter failure, the SDK restores the rrweb event batch for retry. A transport failure can occur after a collector accepted data, so retrying that batch can produce a duplicate recording span, as with any ambiguous HTTP export result.
 
 ## References

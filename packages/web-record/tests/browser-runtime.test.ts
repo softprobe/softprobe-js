@@ -470,3 +470,113 @@ it("supports wildcard route patterns in httpBodyCapture.routes and ignores unsel
     paymentDetails: { cardNumber: "[REDACTED]", cvv: "[REDACTED]" },
   });
 });
+
+it("exports active-page OTLP protobuf batches with keepalive disabled and drains response bodies", async () => {
+  const collectorCalls: Array<{
+    url: string;
+    headers: Headers;
+    keepalive: boolean | undefined;
+    byteLength: number;
+    response: Response;
+  }> = [];
+
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === "https://collector.example.test/v1/traces") {
+      const body = init?.body as Uint8Array | undefined;
+      const response = new Response("", { status: 200 });
+      collectorCalls.push({
+        url,
+        headers: new Headers(init?.headers),
+        keepalive: init?.keepalive,
+        byteLength: body?.byteLength ?? 0,
+        response,
+      });
+      return response;
+    }
+    return new Response(JSON.stringify({ payload: "x".repeat(36_000) }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }));
+
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    value: "visible",
+  });
+
+  const browserRuntime = createBrowserRuntime({
+    apiKey: "agent-key",
+    otlpEndpoint: "https://collector.example.test/v1/traces",
+    serviceName: "travel-ota-web",
+    httpBodyCapture: {
+      routes: [{ method: "POST", path: "/api/orders" }],
+    },
+  }, createWebSessionState("journey-keepalive"));
+  runtime = browserRuntime;
+
+  for (let i = 0; i < 2; i += 1) {
+    const res = await fetch(`${window.location.origin}/api/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ step: i }),
+    });
+    await res.json();
+    await browserRuntime.waitForIdle();
+    await browserRuntime.forceFlush();
+  }
+
+  expect(collectorCalls).toHaveLength(2);
+  for (const call of collectorCalls) {
+    expect(call.headers.get("authorization")).toBe("Bearer agent-key");
+    expect(call.headers.get("content-type")).toBe("application/x-protobuf");
+    expect(call.keepalive).toBe(false);
+    expect(call.byteLength).toBeGreaterThan(36_000);
+    expect(call.response.bodyUsed).toBe(true);
+  }
+});
+
+it("falls back to non-keepalive fetch when hidden-page keepalive quota throws TypeError", async () => {
+  const keepaliveAttempts: Array<boolean | undefined> = [];
+
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url === "https://collector.example.test/v1/traces") {
+      keepaliveAttempts.push(init?.keepalive);
+      if (init?.keepalive) {
+        throw new TypeError("Failed to fetch");
+      }
+      return new Response("", { status: 200 });
+    }
+    return new Response('{"ok":true}', {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }));
+
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    value: "hidden",
+  });
+
+  const browserRuntime = createBrowserRuntime({
+    apiKey: "agent-key",
+    otlpEndpoint: "https://collector.example.test/v1/traces",
+    serviceName: "travel-ota-web",
+    httpBodyCapture: {
+      routes: [{ method: "POST", path: "/api/orders" }],
+    },
+  }, createWebSessionState("journey-hidden"));
+  runtime = browserRuntime;
+
+  const res = await fetch(`${window.location.origin}/api/orders`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ step: 1 }),
+  });
+  await res.json();
+  await browserRuntime.waitForIdle();
+  await expect(browserRuntime.forceFlush()).resolves.toBeUndefined();
+
+  expect(keepaliveAttempts).toEqual([true, false]);
+});

@@ -3,7 +3,6 @@ import { FetchInstrumentation } from "@opentelemetry/browser-instrumentation/exp
 import { XhrInstrumentation } from "@opentelemetry/browser-instrumentation/experimental/xhr";
 import { createSessionSpanProcessor, type SessionProvider } from "@opentelemetry/browser-sdk/session";
 import { startTracesSdk } from "@opentelemetry/browser-sdk/traces";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import {
   BatchSpanProcessor,
   type ReadableSpan,
@@ -17,6 +16,7 @@ import {
   resolveEffectiveOrigins,
   resolveRouteAllowlistUrlSources,
 } from "./http-body-capture.js";
+import { BrowserOtlpProtoSpanExporter } from "./otlp-exporter.js";
 import type { WebSessionState } from "./session-state.js";
 import { SpanLifecycleProcessor } from "./span-lifecycle.js";
 
@@ -45,8 +45,8 @@ export type BrowserRuntime = {
 
 /**
  * Starts the official browser trace SDK and its official Fetch/XHR
- * instrumentations. OTel owns HTTP spans, context propagation, batching,
- * OTLP encoding, and export.
+ * instrumentations. OTel owns HTTP spans, context propagation, batching, and
+ * OTLP protobuf encoding; BrowserOtlpProtoSpanExporter owns HTTP export.
  */
 export function createBrowserRuntime(
   options: BrowserRuntimeOptions,
@@ -64,9 +64,9 @@ export function createBrowserRuntime(
     onSessionId: options.onSessionId,
   });
   const collectorUrl = new URL(options.otlpEndpoint);
-  const exporter = exporterOverride ?? new OTLPTraceExporter({
+  const exporter = exporterOverride ?? new BrowserOtlpProtoSpanExporter({
     url: collectorUrl.toString(),
-    headers: { Authorization: `Bearer ${options.apiKey}` },
+    apiKey: options.apiKey,
   });
   const batchProcessor = new BatchSpanProcessor({
     exporter,
