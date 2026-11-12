@@ -1,6 +1,6 @@
 import http from "node:http";
 import https from "node:https";
-import { createRequire } from "node:module";
+import { createRequire, syncBuiltinESMExports } from "node:module";
 import {
   context as otelContext,
   propagation as otelPropagation,
@@ -84,6 +84,10 @@ function readPropagatedIdentity(): { sessionId?: string; userId?: string } {
 }
 
 const kSoftprobeHttpPatched = Symbol.for("softprobe.vercelAi.httpPatched");
+const kSoftprobeFetchPatched = Symbol.for("softprobe.vercelAi.fetchPatched");
+const kSoftprobeHttpClientPatched = Symbol.for(
+  "softprobe.vercelAi.httpClientPatched",
+);
 const TRACEPARENT_RE =
   /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})(?:$|-[0-9a-f])/i;
 const SESSION_HEADER_KEYS = [
@@ -93,6 +97,235 @@ const SESSION_HEADER_KEYS = [
   "x-thread-id",
   "x-chat-id",
 ];
+const excludedCollectorPrefixes = new Set<string>([
+  "https://explorer.softprobe.ai/api/thelake",
+  "https://explorer-staging.softprobe.ai/api/thelake",
+]);
+
+function registerExcludedBaseUrl(candidate: string | undefined): void {
+  const trimmed = candidate?.trim().replace(/\/+$/, "");
+  if (trimmed) excludedCollectorPrefixes.add(trimmed);
+}
+
+function shouldSkipOutgoingTracePropagation(rawUrl: string): boolean {
+  if (!rawUrl) return false;
+  for (const prefix of excludedCollectorPrefixes) {
+    if (
+      rawUrl === prefix ||
+      rawUrl.startsWith(`${prefix}/`) ||
+      rawUrl.startsWith(`${prefix}?`)
+    ) {
+      return true;
+    }
+  }
+  try {
+    const parsed = new URL(rawUrl, "http://127.0.0.1");
+    if (/\/v1\/(?:traces|logs|metrics|scores)\/?$/i.test(parsed.pathname)) {
+      return true;
+    }
+    if (/\/api\/thelake(?:\/|$)/i.test(parsed.pathname)) {
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+function activeOutgoingTraceHeaders():
+  | { traceparent: string; tracestate?: string }
+  | undefined {
+  const spanCtx = otelTrace.getSpanContext(otelContext.active());
+  if (!spanCtx || !otelTrace.isSpanContextValid(spanCtx)) return undefined;
+  const flags =
+    (spanCtx.traceFlags & TraceFlags.SAMPLED) === TraceFlags.SAMPLED
+      ? "01"
+      : "00";
+  const tracestate = spanCtx.traceState?.serialize();
+  return {
+    traceparent: `00-${spanCtx.traceId}-${spanCtx.spanId}-${flags}`,
+    ...(tracestate ? { tracestate } : {}),
+  };
+}
+
+function patchGlobalFetch(): void {
+  const current = globalThis.fetch as
+    | (typeof fetch & Record<symbol, boolean> & { __original?: typeof fetch })
+    | undefined;
+  if (typeof current !== "function" || current[kSoftprobeFetchPatched]) return;
+
+  const wrapped = function patchedFetch(
+    this: unknown,
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ): Promise<Response> {
+    const traceHeaders = activeOutgoingTraceHeaders();
+    if (!traceHeaders) {
+      return Reflect.apply(current, this, [input, init]) as Promise<Response>;
+    }
+    let urlString = "";
+    try {
+      urlString =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : typeof Request !== "undefined" && input instanceof Request
+              ? input.url
+              : String(input);
+    } catch {}
+    if (shouldSkipOutgoingTracePropagation(urlString)) {
+      return Reflect.apply(current, this, [input, init]) as Promise<Response>;
+    }
+    try {
+      const baseHeaders =
+        init?.headers ??
+        (typeof Request !== "undefined" && input instanceof Request
+          ? input.headers
+          : undefined);
+      const headers = new Headers(baseHeaders);
+      if (headers.has("traceparent")) {
+        return Reflect.apply(current, this, [input, init]) as Promise<Response>;
+      }
+      headers.set("traceparent", traceHeaders.traceparent);
+      if (traceHeaders.tracestate && !headers.has("tracestate")) {
+        headers.set("tracestate", traceHeaders.tracestate);
+      }
+      return Reflect.apply(current, this, [
+        input,
+        { ...(init ?? {}), headers },
+      ]) as Promise<Response>;
+    } catch {
+      return Reflect.apply(current, this, [input, init]) as Promise<Response>;
+    }
+  };
+  Object.defineProperty(wrapped, kSoftprobeFetchPatched, { value: true });
+  if (current.__original) {
+    Object.defineProperty(wrapped, "__original", { value: current.__original });
+  }
+  globalThis.fetch = wrapped as typeof fetch;
+}
+
+function hasHeaderIgnoreCase(
+  headers: Record<string, unknown>,
+  target: string,
+): boolean {
+  const lower = target.toLowerCase();
+  return Object.keys(headers).some((key) => key.toLowerCase() === lower);
+}
+
+function withInjectedNodeHeaders(
+  existing: unknown,
+  traceHeaders: { traceparent: string; tracestate?: string },
+): unknown {
+  if (Array.isArray(existing)) return existing;
+  if (existing && typeof existing === "object") {
+    const record = existing as Record<string, unknown>;
+    if (hasHeaderIgnoreCase(record, "traceparent")) return existing;
+    return {
+      ...record,
+      traceparent: traceHeaders.traceparent,
+      ...(traceHeaders.tracestate && !hasHeaderIgnoreCase(record, "tracestate")
+        ? { tracestate: traceHeaders.tracestate }
+        : {}),
+    };
+  }
+  return {
+    traceparent: traceHeaders.traceparent,
+    ...(traceHeaders.tracestate ? { tracestate: traceHeaders.tracestate } : {}),
+  };
+}
+
+function resolveNodeRequestUrl(
+  defaultProtocol: string,
+  firstArg: unknown,
+  secondArg: unknown,
+): string {
+  if (typeof firstArg === "string") return firstArg;
+  if (firstArg instanceof URL) return firstArg.href;
+  const opts = (
+    firstArg && typeof firstArg === "object"
+      ? firstArg
+      : secondArg && typeof secondArg === "object"
+        ? secondArg
+        : undefined
+  ) as
+    | {
+        protocol?: string;
+        hostname?: string;
+        host?: string;
+        port?: string | number;
+        path?: string;
+      }
+    | undefined;
+  if (!opts) return "";
+  const protocol = opts.protocol || defaultProtocol;
+  const host =
+    opts.host ||
+    (opts.hostname
+      ? `${opts.hostname}${opts.port ? `:${opts.port}` : ""}`
+      : "127.0.0.1");
+  const path = opts.path || "/";
+  return `${protocol}//${host}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+function patchHttpClientModule(
+  mod: { request: (...args: unknown[]) => unknown; get: (...args: unknown[]) => unknown } &
+    Record<symbol, boolean>,
+  defaultProtocol: string,
+): void {
+  if (!mod || mod[kSoftprobeHttpClientPatched]) return;
+  mod[kSoftprobeHttpClientPatched] = true;
+
+  const wrapMethod = (
+    original: (...args: unknown[]) => unknown,
+  ): ((...args: unknown[]) => unknown) =>
+    function patchedClientMethod(this: unknown, ...args: unknown[]): unknown {
+      const traceHeaders = activeOutgoingTraceHeaders();
+      if (!traceHeaders) return Reflect.apply(original, this, args);
+      const url = resolveNodeRequestUrl(defaultProtocol, args[0], args[1]);
+      if (shouldSkipOutgoingTracePropagation(url)) {
+        return Reflect.apply(original, this, args);
+      }
+      if (typeof args[0] === "string" || args[0] instanceof URL) {
+        if (
+          args[1] &&
+          typeof args[1] === "object" &&
+          !(args[1] instanceof URL)
+        ) {
+          const opts = args[1] as Record<string, unknown>;
+          const nextOpts = {
+            ...opts,
+            headers: withInjectedNodeHeaders(opts.headers, traceHeaders),
+          };
+          return Reflect.apply(original, this, [
+            args[0],
+            nextOpts,
+            ...args.slice(2),
+          ]);
+        }
+        return Reflect.apply(original, this, [
+          args[0],
+          { headers: withInjectedNodeHeaders(undefined, traceHeaders) },
+          ...args.slice(1),
+        ]);
+      }
+      if (args[0] && typeof args[0] === "object") {
+        const opts = args[0] as Record<string, unknown>;
+        const nextOpts = {
+          ...opts,
+          headers: withInjectedNodeHeaders(opts.headers, traceHeaders),
+        };
+        return Reflect.apply(original, this, [nextOpts, ...args.slice(1)]);
+      }
+      return Reflect.apply(original, this, args);
+    };
+
+  if (typeof mod.request === "function") {
+    mod.request = wrapMethod(mod.request);
+  }
+  if (typeof mod.get === "function") {
+    mod.get = wrapMethod(mod.get);
+  }
+}
 
 function headerString(
   headers: Record<string, unknown> | undefined,
@@ -192,10 +425,31 @@ function patchServerPrototype(proto: unknown): void {
   };
 }
 
-export function installIncomingHttpContextPropagation(): void {
+export function installIncomingHttpContextPropagation(options?: {
+  excludedBaseUrl?: string;
+}): void {
+  registerExcludedBaseUrl(options?.excludedBaseUrl);
+  registerExcludedBaseUrl(process.env.SOFTPROBE_BASE_URL);
+  registerExcludedBaseUrl(process.env.SOFTPROBE_OTLP_ENDPOINT);
   try {
     patchServerPrototype(http.Server.prototype);
     patchServerPrototype(https.Server.prototype);
+    patchGlobalFetch();
+    patchHttpClientModule(
+      http as unknown as {
+        request: (...args: unknown[]) => unknown;
+        get: (...args: unknown[]) => unknown;
+      } & Record<symbol, boolean>,
+      "http:",
+    );
+    patchHttpClientModule(
+      https as unknown as {
+        request: (...args: unknown[]) => unknown;
+        get: (...args: unknown[]) => unknown;
+      } & Record<symbol, boolean>,
+      "https:",
+    );
+    syncBuiltinESMExports();
   } catch {}
 }
 
@@ -386,7 +640,9 @@ export class SoftprobeVercelAiSdkIntegration {
       );
     }
 
-    installIncomingHttpContextPropagation();
+    installIncomingHttpContextPropagation({
+      excludedBaseUrl: options.baseUrl,
+    });
     const tracer = resolveDefaultTracer(options);
 
     this.delegate = new OpenTelemetryCtor({

@@ -12,7 +12,11 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace";
 import type { HttpBodyCaptureOptions } from "./types.js";
-import { createHttpBodyCaptureHooks, resolveEffectiveOrigins } from "./http-body-capture.js";
+import {
+  createHttpBodyCaptureHooks,
+  resolveEffectiveOrigins,
+  resolveRouteAllowlistUrlSources,
+} from "./http-body-capture.js";
 import type { WebSessionState } from "./session-state.js";
 import { SpanLifecycleProcessor } from "./span-lifecycle.js";
 
@@ -80,6 +84,7 @@ export function createBrowserRuntime(
   const filter = createUrlFilter(
     resolveEffectiveOrigins(options.apiOrigins, options.httpBodyCapture),
     collectorUrl,
+    resolveRouteAllowlistUrlSources(options.apiOrigins, options.httpBodyCapture),
   );
   const sdk = startTracesSdk({
     serviceName: options.serviceName,
@@ -150,14 +155,20 @@ class SoftprobeSessionAttributeProcessor implements SpanProcessor {
   }
 }
 
-function createUrlFilter(origins: string[], collectorUrl: URL): {
+function createUrlFilter(
+  origins: string[],
+  collectorUrl: URL,
+  routeAllowlistUrlSources: string[] | null = null,
+): {
   ignoreUrls: RegExp[];
   propagateUrls: RegExp[];
 } {
   const allowlistPattern = origins.map(escapeRegExp).join("|");
-  const ignoreUnselected = origins.length
-    ? new RegExp(`^(?!(?:${allowlistPattern})(?:[/?#]|$))`)
-    : /^/;
+  const ignoreUnselected = routeAllowlistUrlSources && routeAllowlistUrlSources.length > 0
+    ? new RegExp(`^(?!(?:${routeAllowlistUrlSources.join("|")}))`)
+    : origins.length
+      ? new RegExp(`^(?!(?:${allowlistPattern})(?:[/?#]|$))`)
+      : /^/;
   const collectorPath = collectorUrl.pathname.replace(/\/+$/, "") || "/";
   const ignoreCollector = new RegExp(
     `^${escapeRegExp(collectorUrl.origin + collectorPath)}(?:[?#]|$)`,

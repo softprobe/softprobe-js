@@ -6,7 +6,7 @@
     "start": "tsx src/main.ts"
   },
   "dependencies": {
-    "@softprobe/tracing": "^0.1.15"
+    "@softprobe/tracing": "^0.1.16"
   },
   "devDependencies": {
     "tsx": "^4.19.3",

@@ -1,4 +1,12 @@
-import { diag, DiagConsoleLogger, DiagLogLevel, trace } from "@opentelemetry/api";
+import {
+  context,
+  diag,
+  DiagConsoleLogger,
+  DiagLogLevel,
+  ROOT_CONTEXT,
+  trace,
+} from "@opentelemetry/api";
+import { suppressTracing } from "@opentelemetry/core";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
 import { Resource } from "@opentelemetry/resources";
 import {
@@ -135,7 +143,7 @@ export class SoftprobeClient {
       resourceAttrs["deployment.environment.name"] = options.environment;
     }
 
-    const rawExporter =
+    const baseExporter =
       options.spanExporter ??
       new OTLPTraceExporter({
         url: otlpEndpoint,
@@ -145,6 +153,17 @@ export class SoftprobeClient {
         },
         timeoutMillis: options.timeoutMs ?? 10_000,
       });
+    const rawExporter: SpanExporter = {
+      export(spans, resultCallback) {
+        context.with(suppressTracing(ROOT_CONTEXT), () => {
+          baseExporter.export(spans, resultCallback);
+        });
+      },
+      shutdown: () => baseExporter.shutdown(),
+      ...(typeof baseExporter.forceFlush === "function"
+        ? { forceFlush: () => baseExporter.forceFlush!() }
+        : {}),
+    };
     // Real OTLP to thelake often times out once under load; retry instead of
     // dropping generations/tools while smaller event spans happen to land.
     const retryExport =
