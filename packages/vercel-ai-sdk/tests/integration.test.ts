@@ -188,4 +188,175 @@ describe("createSoftprobeObservationAttributes", () => {
       await client.shutdown();
     }
   });
+
+  it("propagates W3C traceparent to outgoing fetch and http.request calls across async 202 background turns and direct routes while excluding OTLP collector uploads", async () => {
+    const receivedJavaHeaders: Array<{ path: string; traceparent?: string }> = [];
+    const receivedCollectorHeaders: Array<{ path: string; traceparent?: string }> = [];
+
+    const javaServer = http.createServer((req, res) => {
+      receivedJavaHeaders.push({
+        path: req.url ?? "",
+        traceparent:
+          typeof req.headers.traceparent === "string"
+            ? req.headers.traceparent
+            : undefined,
+      });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true }));
+    });
+
+    const collectorServer = http.createServer((req, res) => {
+      receivedCollectorHeaders.push({
+        path: req.url ?? "",
+        traceparent:
+          typeof req.headers.traceparent === "string"
+            ? req.headers.traceparent
+            : undefined,
+      });
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end("{}");
+    });
+
+    await Promise.all([
+      new Promise<void>((resolve) => javaServer.listen(0, "127.0.0.1", resolve)),
+      new Promise<void>((resolve) =>
+        collectorServer.listen(0, "127.0.0.1", resolve),
+      ),
+    ]);
+
+    const javaAddr = javaServer.address();
+    const javaPort = typeof javaAddr === "object" && javaAddr ? javaAddr.port : 0;
+    const collectorAddr = collectorServer.address();
+    const collectorPort =
+      typeof collectorAddr === "object" && collectorAddr ? collectorAddr.port : 0;
+
+    const client = new SoftprobeClient({
+      apiKey: "spk_test_e2e",
+      baseUrl: `http://127.0.0.1:${collectorPort}/api/thelake`,
+      useSimpleProcessor: true,
+    });
+    installIncomingHttpContextPropagation();
+
+    let toolSpanId = "";
+    let backgroundDoneResolve!: () => void;
+    const backgroundDone = new Promise<void>((resolve) => {
+      backgroundDoneResolve = resolve;
+    });
+
+    const nodeGateway = http.createServer(async (req, res) => {
+      if (req.url?.endsWith("/messages")) {
+        // demo-ota server.mjs queues the AI turn on a timer after returning 202 Accepted.
+        setTimeout(() => {
+          void client.tracer.startActiveSpan(
+            "execute_tool travel_search",
+            async (toolSpan) => {
+              toolSpanId = toolSpan.spanContext().spanId;
+              await fetch(`http://127.0.0.1:${javaPort}/api/flights/search`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fromCity: "LHR", toCity: "CDG" }),
+              });
+              await new Promise<void>((resolve, reject) => {
+                const out = http.request(
+                  `http://127.0.0.1:${javaPort}/api/flights/orders/query`,
+                  { method: "POST" },
+                  (resp) => {
+                    resp.resume();
+                    resp.on("end", () => resolve());
+                  },
+                );
+                out.on("error", reject);
+                out.end("{}");
+              });
+              await fetch(
+                `http://127.0.0.1:${collectorPort}/api/thelake/v1/traces`,
+                { method: "POST", body: "{}" },
+              );
+              toolSpan.end();
+              backgroundDoneResolve();
+            },
+          );
+        }, 25);
+        res.writeHead(202, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ accepted: true }));
+        return;
+      }
+
+      if (req.url?.endsWith("/pay")) {
+        await fetch(`http://127.0.0.1:${javaPort}/api/flights/payandissue`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bookingId: "BK1" }),
+        });
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ paid: true }));
+        return;
+      }
+
+      res.writeHead(404);
+      res.end();
+    });
+
+    await new Promise<void>((resolve) =>
+      nodeGateway.listen(0, "127.0.0.1", resolve),
+    );
+
+    try {
+      const gwAddr = nodeGateway.address();
+      const gwPort = typeof gwAddr === "object" && gwAddr ? gwAddr.port : 0;
+
+      const msgRes = await fetch(
+        `http://127.0.0.1:${gwPort}/agent/api/sessions/ses_live_1/messages`,
+        {
+          method: "POST",
+          headers: {
+            traceparent:
+              "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+          },
+        },
+      );
+      expect(msgRes.status).toBe(202);
+      await backgroundDone;
+      await client.forceFlush();
+
+      const payRes = await fetch(
+        `http://127.0.0.1:${gwPort}/agent/api/sessions/ses_live_1/pay`,
+        {
+          method: "POST",
+          headers: {
+            traceparent:
+              "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01",
+          },
+        },
+      );
+      expect(payRes.status).toBe(200);
+
+      expect(receivedJavaHeaders).toEqual([
+        {
+          path: "/api/flights/search",
+          traceparent: `00-4bf92f3577b34da6a3ce929d0e0e4736-${toolSpanId}-01`,
+        },
+        {
+          path: "/api/flights/orders/query",
+          traceparent: `00-4bf92f3577b34da6a3ce929d0e0e4736-${toolSpanId}-01`,
+        },
+        {
+          path: "/api/flights/payandissue",
+          traceparent: "00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01",
+        },
+      ]);
+
+      expect(receivedCollectorHeaders.length).toBeGreaterThanOrEqual(2);
+      for (const item of receivedCollectorHeaders) {
+        expect(item.traceparent).toBeUndefined();
+      }
+    } finally {
+      await Promise.all([
+        new Promise<void>((resolve) => nodeGateway.close(() => resolve())),
+        new Promise<void>((resolve) => javaServer.close(() => resolve())),
+        new Promise<void>((resolve) => collectorServer.close(() => resolve())),
+      ]);
+      await client.shutdown();
+    }
+  });
 });

@@ -363,3 +363,110 @@ it("captures same-origin JSON bodies without a route allowlist and adopts sessio
     secret: "[REDACTED]",
   });
 });
+
+it("supports wildcard route patterns in httpBodyCapture.routes and ignores unselected polling and status routes", async () => {
+  const requests: Array<{ url: string; method: string; headers: Headers }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
+    requests.push({ url, method, headers: new Headers(init?.headers) });
+    if (url.endsWith("/agent/api/status")) {
+      return new Response('{"ready":true}', {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.endsWith("/agent/api/sessions") && method === "POST") {
+      return new Response('{"id":"ses_wild_77","provider":"google"}', {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.endsWith("/agent/api/sessions/ses_wild_77") && method === "GET") {
+      return new Response('{"id":"ses_wild_77","busy":true,"messages":[]}', {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response('{"accepted":true}', {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }));
+
+  const memoryExporter = new InMemorySpanExporter();
+  const sessionState = createWebSessionState("tab-pre-session");
+  const browserRuntime = createBrowserRuntime({
+    apiKey: "agent-key",
+    otlpEndpoint: "https://collector.example.test/v1/traces",
+    serviceName: "travel-ota-web",
+    httpBodyCapture: {
+      routes: [
+        { method: "POST", path: "/agent/api/sessions" },
+        { method: "POST", path: "/agent/api/sessions/*/messages" },
+        { method: "POST", path: "/agent/api/sessions/*/pay" },
+      ],
+    },
+    onSessionId: (id) => sessionState.setSessionId(id),
+  }, sessionState, memoryExporter);
+  runtime = browserRuntime;
+
+  await (await fetch(`${window.location.origin}/agent/api/status`)).json();
+  await (await fetch(`${window.location.origin}/agent/api/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ provider: "google" }),
+  })).json();
+  await (await fetch(`${window.location.origin}/agent/api/sessions/ses_wild_77/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: "Find LHR to CDG" }),
+  })).json();
+  await (await fetch(`${window.location.origin}/agent/api/sessions/ses_wild_77`)).json();
+  await (await fetch(`${window.location.origin}/agent/api/sessions/ses_wild_77/pay`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      requestId: "req_1",
+      paymentDetails: { cardNumber: "4111111111111111", cvv: "123" },
+    }),
+  })).json();
+
+  await browserRuntime.waitForIdle();
+  await browserRuntime.forceFlush();
+
+  expect(requests.find((r) => r.url.endsWith("/agent/api/status"))?.headers.has("traceparent")).toBe(false);
+  expect(
+    requests.find((r) => r.method === "GET" && r.url.endsWith("/agent/api/sessions/ses_wild_77"))?.headers.has("traceparent"),
+  ).toBe(false);
+  expect(requests.find((r) => r.url.endsWith("/agent/api/sessions"))?.headers.get("traceparent")).toMatch(
+    /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/,
+  );
+  expect(
+    requests.find((r) => r.url.endsWith("/agent/api/sessions/ses_wild_77/messages"))?.headers.get("traceparent"),
+  ).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+  expect(
+    requests.find((r) => r.url.endsWith("/agent/api/sessions/ses_wild_77/pay"))?.headers.get("traceparent"),
+  ).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+
+  const spans = memoryExporter.getFinishedSpans();
+  const httpSpans = spans.filter((span) => span.kind === 2);
+  const bodySpans = spans.filter((span) => span.name === "softprobe.http.body.capture");
+  expect(httpSpans).toHaveLength(3);
+  expect(bodySpans).toHaveLength(3);
+  for (const span of spans) {
+    expect(span.attributes).toMatchObject({
+      "session.id": "ses_wild_77",
+      "sp.session.id": "ses_wild_77",
+    });
+    expect(String(span.attributes["url.full"] ?? "")).not.toContain("*");
+    expect(String(span.attributes["url.full"] ?? "")).not.toContain("/agent/api/status");
+  }
+  const payBody = bodySpans.find((span) =>
+    String(span.attributes["url.full"]).endsWith("/agent/api/sessions/ses_wild_77/pay"),
+  );
+  expect(JSON.parse(String(payBody?.attributes["http.request.body.content"]))).toEqual({
+    requestId: "req_1",
+    paymentDetails: { cardNumber: "[REDACTED]", cvv: "[REDACTED]" },
+  });
+});

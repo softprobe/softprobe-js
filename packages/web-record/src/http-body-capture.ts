@@ -27,10 +27,15 @@ type NormalizedRoute = {
   redactionPaths: string[][];
 };
 
+type PatternRoute = NormalizedRoute & {
+  pathRegex: RegExp;
+};
+
 type BodyCaptureConfig = {
   maxBodyBytes: number;
   captureAllOnAllowedOrigins: boolean;
   routes: Map<string, NormalizedRoute>;
+  patternRoutes: PatternRoute[];
 };
 
 type BodyState = {
@@ -263,12 +268,13 @@ function normalizeCaptureOptions(
 
   if (resolved.routes === undefined) {
     return allowedOrigins.size > 0
-      ? { maxBodyBytes, captureAllOnAllowedOrigins: true, routes: new Map() }
+      ? { maxBodyBytes, captureAllOnAllowedOrigins: true, routes: new Map(), patternRoutes: [] }
       : null;
   }
   if (!Array.isArray(resolved.routes)) return null;
 
   const routes = new Map<string, NormalizedRoute>();
+  const patternRoutes: PatternRoute[] = [];
   for (const candidate of resolved.routes as HttpBodyCaptureRoute[]) {
     if (!candidate || typeof candidate !== "object") continue;
     const method = typeof candidate.method === "string" ? candidate.method.trim().toUpperCase() : "";
@@ -281,15 +287,25 @@ function normalizeCaptureOptions(
     if (!Array.isArray(redactionPaths)) continue;
     const parsedPaths = redactionPaths.map(parseRedactionPath);
     if (parsedPaths.some((parts) => parts === null)) continue;
-    routes.set(routeKey(target.origin, method, target.path), {
+    const normalized: NormalizedRoute = {
       origin: target.origin,
       method,
       path: target.path,
       redactionPaths: parsedPaths as string[][],
-    });
+    };
+    if (target.path.includes("*")) {
+      patternRoutes.push({
+        ...normalized,
+        pathRegex: new RegExp(`^${routePathRegexSource(target.path)}$`),
+      });
+    } else {
+      routes.set(routeKey(target.origin, method, target.path), normalized);
+    }
   }
 
-  return routes.size ? { maxBodyBytes, captureAllOnAllowedOrigins: false, routes } : null;
+  return routes.size || patternRoutes.length
+    ? { maxBodyBytes, captureAllOnAllowedOrigins: false, routes, patternRoutes }
+    : null;
 }
 
 function parseRouteTarget(
@@ -423,6 +439,58 @@ export function resolveEffectiveOrigins(
   return [...derived];
 }
 
+export function resolveRouteAllowlistUrlSources(
+  apiOrigins: string[] | undefined,
+  httpBodyCapture?: boolean | HttpBodyCaptureOptions,
+): string[] | null {
+  if (
+    typeof httpBodyCapture !== "object" ||
+    httpBodyCapture === null ||
+    !Array.isArray(httpBodyCapture.routes)
+  ) {
+    return null;
+  }
+  const explicitOrigins = normalizeOrigins(apiOrigins ?? []);
+  const allowedOrigins = new Set(resolveEffectiveOrigins(apiOrigins, httpBodyCapture));
+  const capture = normalizeCaptureOptions(httpBodyCapture, explicitOrigins, allowedOrigins);
+  if (!capture) return null;
+
+  const sources = new Set<string>();
+  const originsWithRoutes = new Set<string>();
+  for (const route of [...capture.routes.values(), ...capture.patternRoutes]) {
+    originsWithRoutes.add(route.origin);
+    sources.add(`${escapeForRegex(route.origin)}${routePathRegexSource(route.path)}(?:[?#]|$)`);
+  }
+  for (const explicitOrigin of explicitOrigins) {
+    if (!originsWithRoutes.has(explicitOrigin)) {
+      sources.add(`${escapeForRegex(explicitOrigin)}(?:[/?#]|$)`);
+    }
+  }
+  return sources.size > 0 ? [...sources] : null;
+}
+
+function escapeForRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function routePathRegexSource(path: string): string {
+  let out = "";
+  for (let i = 0; i < path.length; i += 1) {
+    const ch = path[i]!;
+    if (ch === "*") {
+      if (path[i + 1] === "*") {
+        out += "[^?#]*";
+        i += 1;
+      } else {
+        out += "[^/?#]+";
+      }
+    } else {
+      out += escapeForRegex(ch);
+    }
+  }
+  return out;
+}
+
 function normalizeOrigins(origins: string[]): Set<string> {
   const result = new Set<string>();
   for (const candidate of origins) {
@@ -444,6 +512,20 @@ function findRoute(
     const normalizedMethod = method.toUpperCase();
     const matched = capture.routes.get(routeKey(url.origin, normalizedMethod, url.pathname));
     if (matched) return matched;
+    for (const patternRoute of capture.patternRoutes) {
+      if (
+        patternRoute.origin === url.origin &&
+        patternRoute.method === normalizedMethod &&
+        patternRoute.pathRegex.test(url.pathname)
+      ) {
+        return {
+          origin: patternRoute.origin,
+          method: patternRoute.method,
+          path: url.pathname,
+          redactionPaths: patternRoute.redactionPaths,
+        };
+      }
+    }
     if (capture.captureAllOnAllowedOrigins && /^[A-Z]+$/.test(normalizedMethod)) {
       return {
         origin: url.origin,
@@ -746,7 +828,7 @@ function isValidSessionId(candidate: string): boolean {
 function extractSessionIdFromPath(path: string): string | undefined {
   const match = path.match(/(?:^|\/)sessions\/([!-~]{1,128}?)(?:\/|$)/);
   const candidate = match?.[1];
-  return candidate && isValidSessionId(candidate) ? candidate : undefined;
+  return candidate && candidate !== "*" && isValidSessionId(candidate) ? candidate : undefined;
 }
 
 function extractSessionIdFromJson(value: unknown, routePath: string): string | undefined {
