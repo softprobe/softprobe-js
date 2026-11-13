@@ -1,9 +1,15 @@
 import http from "node:http";
-import { context as otelContext, trace as otelTrace } from "@opentelemetry/api";
-import { SoftprobeClient } from "@softprobe/tracing";
+import {
+  context as otelContext,
+  propagation as otelPropagation,
+  trace as otelTrace,
+} from "@opentelemetry/api";
+import { InMemorySpanExporter } from "@opentelemetry/sdk-trace-base";
+import { SoftprobeClient, withAttributes } from "@softprobe/tracing";
 import { describe, expect, it } from "vitest";
 import {
   createSoftprobeObservationAttributes,
+  initVercelAiTelemetry,
   installIncomingHttpContextPropagation,
   SoftprobeVercelAiSdkIntegration,
 } from "../src/integration.js";
@@ -108,84 +114,115 @@ describe("createSoftprobeObservationAttributes", () => {
     }
   });
 
-  it("falls back to root span traceId as session.id only when no remote traceparent or sessionId exists", async () => {
-    const client = new SoftprobeClient({ apiKey: "spk_test_fallback" });
+  it("omits gen_ai.conversation.id and session.id when no session exists and resolves explicit, metadata, and baggage sessions", async () => {
+    const standaloneAttrs = createSoftprobeObservationAttributes({
+      spanType: "operation",
+      operationId: "ai.generateText",
+    });
+    expect(standaloneAttrs["sp.observation.type"]).toBe("agent");
+    expect(standaloneAttrs["session.id"]).toBeUndefined();
+    expect(standaloneAttrs["sp.session.id"]).toBeUndefined();
+    expect(standaloneAttrs["gen_ai.conversation.id"]).toBeUndefined();
+
+    const metadataAttrs = createSoftprobeObservationAttributes({
+      spanType: "operation",
+      operationId: "ai.generateText",
+      runtimeContext: {
+        "ai.telemetry.metadata.conversationId": "conv_meta_42",
+      },
+    });
+    expect(metadataAttrs["session.id"]).toBe("conv_meta_42");
+    expect(metadataAttrs["sp.session.id"]).toBe("conv_meta_42");
+    expect(metadataAttrs["gen_ai.conversation.id"]).toBe("conv_meta_42");
+
+    const baggageCtx = otelPropagation.setBaggage(
+      otelContext.active(),
+      otelPropagation.createBaggage({
+        "session.id": { value: "ses_baggage_07" },
+      }),
+    );
+    otelContext.with(baggageCtx, () => {
+      const baggageAttrs = createSoftprobeObservationAttributes({
+        spanType: "operation",
+        operationId: "ai.generateText",
+      });
+      expect(baggageAttrs["session.id"]).toBe("ses_baggage_07");
+      expect(baggageAttrs["sp.session.id"]).toBe("ses_baggage_07");
+      expect(baggageAttrs["gen_ai.conversation.id"]).toBe("ses_baggage_07");
+    });
+
+    const exporter = new InMemorySpanExporter();
+    const telemetry = initVercelAiTelemetry({
+      apiKey: "spk_test_semconv",
+      serviceName: "travel-concierge-agent",
+      spanExporter: exporter,
+      useSimpleProcessor: true,
+    });
     try {
-      const makeFakeDelegate = (traceId: string) => {
-        const callStates = new Map<
-          string,
-          {
-            rootSpan: {
-              attributes: Record<string, unknown>;
-              spanContext: () => { traceId: string };
-              setAttributes: (attrs: Record<string, unknown>) => void;
-            };
-          }
-        >();
-        return {
-          callStates,
-          onStart(event: { callId: string; runtimeContext?: Record<string, unknown> }) {
-            const attributes = createSoftprobeObservationAttributes({
-              spanType: "operation",
-              operationId: "ai.generateText",
-              runtimeContext: event.runtimeContext,
-            });
-            callStates.set(event.callId, {
-              rootSpan: {
-                attributes,
-                spanContext: () => ({ traceId }),
-                setAttributes(attrs: Record<string, unknown>) {
-                  Object.assign(attributes, attrs);
-                },
-              },
-            });
+      const aiTracer = otelTrace.getTracer("ai");
+      aiTracer.startActiveSpan(
+        "ai.generateText",
+        { attributes: { "ai.operationId": "ai.generateText" } },
+        (span) => {
+          span.end();
+        },
+      );
+
+      withAttributes({ sessionId: "ses_propagated_11" }, () => {
+        aiTracer.startActiveSpan(
+          "ai.generateText",
+          { attributes: { "ai.operationId": "ai.generateText" } },
+          (span) => {
+            span.end();
           },
-        };
-      };
-
-      const standaloneDelegate = makeFakeDelegate(
-        "11111111111111111111111111111111",
-      );
-      const standaloneIntegration = Object.create(
-        SoftprobeVercelAiSdkIntegration.prototype,
-      ) as SoftprobeVercelAiSdkIntegration;
-      Object.assign(standaloneIntegration, { delegate: standaloneDelegate });
-
-      standaloneIntegration.onStart({ callId: "call_standalone" });
-      const standaloneAttrs =
-        standaloneDelegate.callStates.get("call_standalone")?.rootSpan.attributes;
-      expect(standaloneAttrs?.["session.id"]).toBe(
-        "11111111111111111111111111111111",
-      );
-      expect(standaloneAttrs?.["sp.session.id"]).toBe(
-        "11111111111111111111111111111111",
-      );
-      expect(standaloneAttrs?.["gen_ai.conversation.id"]).toBe(
-        "11111111111111111111111111111111",
-      );
-
-      const remoteDelegate = makeFakeDelegate(
-        "4bf92f3577b34da6a3ce929d0e0e4736",
-      );
-      const remoteIntegration = Object.create(
-        SoftprobeVercelAiSdkIntegration.prototype,
-      ) as SoftprobeVercelAiSdkIntegration;
-      Object.assign(remoteIntegration, { delegate: remoteDelegate });
-
-      const remoteParentCtx = otelTrace.setSpanContext(otelContext.active(), {
-        traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
-        spanId: "00f067aa0ba902b7",
-        traceFlags: 1,
-        isRemote: true,
+        );
       });
-      otelContext.with(remoteParentCtx, () => {
-        remoteIntegration.onStart({ callId: "call_remote" });
-        const remoteAttrs =
-          remoteDelegate.callStates.get("call_remote")?.rootSpan.attributes;
-        expect(remoteAttrs?.["session.id"]).toBeUndefined();
+
+      aiTracer.startActiveSpan(
+        "ai.generateText",
+        {
+          attributes: {
+            "ai.operationId": "ai.generateText",
+            "ai.telemetry.metadata.sessionId": "ses_meta_22",
+          },
+        },
+        (span) => {
+          span.end();
+        },
+      );
+
+      await telemetry.forceFlush();
+      const spans = exporter.getFinishedSpans();
+      expect(spans).toHaveLength(3);
+      for (const span of spans) {
+        expect(span.resource.attributes["service.name"]).toBe(
+          "travel-concierge-agent",
+        );
+        expect(span.attributes["sp.observation.type"]).toBe("agent");
+      }
+
+      expect(spans[0]?.attributes["gen_ai.conversation.id"]).toBeUndefined();
+      expect(spans[0]?.attributes["session.id"]).toBeUndefined();
+      expect(spans[0]?.attributes["sp.session.id"]).toBeUndefined();
+
+      expect(spans[1]?.attributes["gen_ai.conversation.id"]).toBe(
+        "ses_propagated_11",
+      );
+      expect(spans[1]?.attributes["session.id"]).toBe("ses_propagated_11");
+      expect(spans[1]?.attributes["sp.session.id"]).toBe("ses_propagated_11");
+
+      expect(spans[2]?.attributes["gen_ai.conversation.id"]).toBe("ses_meta_22");
+      expect(spans[2]?.attributes["session.id"]).toBe("ses_meta_22");
+      expect(spans[2]?.attributes["sp.session.id"]).toBe("ses_meta_22");
+
+      const integration = new SoftprobeVercelAiSdkIntegration({
+        tracer: telemetry.tracer,
       });
+      expect(() =>
+        integration.onStart({ callId: "call_standalone" }),
+      ).not.toThrow();
     } finally {
-      await client.shutdown();
+      await telemetry.shutdown();
     }
   });
 

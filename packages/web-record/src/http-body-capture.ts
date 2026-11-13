@@ -24,6 +24,7 @@ type NormalizedRoute = {
   origin: string;
   method: string;
   path: string;
+  urlTemplate?: string;
   redactionPaths: string[][];
 };
 
@@ -102,6 +103,11 @@ export function createHttpBodyCaptureHooks(options: {
     if (!call || isCollectorUrl(call.url, collectorUrl)) return;
     const route = findRoute(capture, allowedOrigins, call.url, call.method);
     if (!route) return;
+    // OTel HTTP client span naming and Blackbox E2E require low-cardinality `{method}` span.name;
+    // attach wildcard route patterns on `url.template` instead of mutating `span.name`.
+    if (route.urlTemplate) {
+      span.setAttribute("url.template", route.urlTemplate);
+    }
     let headers: Headers;
     try {
       headers = new Headers(request.headers);
@@ -150,6 +156,9 @@ export function createHttpBodyCaptureHooks(options: {
     const state = xhrStates.get(xhr);
     if (!state || !capture) return;
     xhrStates.delete(xhr);
+    if (state.route.urlTemplate) {
+      span.setAttribute("url.template", state.route.urlTemplate);
+    }
     if (state.discoveredSessionId) {
       applySessionIdToSpan(span, state.discoveredSessionId);
     }
@@ -230,6 +239,7 @@ async function finishBodySpan(
           "sp.observation.type": "http_body",
           "http.request.method": state.requestMethod,
           "url.full": state.requestUrl,
+          ...(state.route.urlTemplate ? { "url.template": state.route.urlTemplate } : {}),
           ...(statusCode === undefined ? {} : { "http.response.status_code": statusCode }),
         },
       },
@@ -296,6 +306,7 @@ function normalizeCaptureOptions(
     if (target.path.includes("*")) {
       patternRoutes.push({
         ...normalized,
+        urlTemplate: target.path,
         pathRegex: new RegExp(`^${routePathRegexSource(target.path)}$`),
       });
     } else {
@@ -522,6 +533,7 @@ function findRoute(
           origin: patternRoute.origin,
           method: patternRoute.method,
           path: url.pathname,
+          urlTemplate: patternRoute.urlTemplate,
           redactionPaths: patternRoute.redactionPaths,
         };
       }

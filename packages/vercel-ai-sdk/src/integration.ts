@@ -8,12 +8,14 @@ import {
   TraceFlags,
   type Attributes,
   type Context,
+  type Span,
   type Tracer,
 } from "@opentelemetry/api";
 import {
   SoftprobeClient,
   getPropagatedAttributes,
   withAttributes,
+  type SoftprobeClientOptions,
 } from "@softprobe/tracing";
 
 export type SoftprobePrompt = {
@@ -29,6 +31,8 @@ export type SoftprobeVercelAiSdkIntegrationOptions = {
   baseUrl?: string;
   serviceName?: string;
   environment?: string;
+  spanExporter?: SoftprobeClientOptions["spanExporter"];
+  useSimpleProcessor?: SoftprobeClientOptions["useSimpleProcessor"];
 };
 
 export type OpenTelemetrySpanType = string;
@@ -455,14 +459,95 @@ export function installIncomingHttpContextPropagation(options?: {
 
 function firstString(
   context: Record<string, unknown> | undefined,
-  keys: string[],
+  keys: readonly string[],
 ): string | undefined {
   if (!context) return undefined;
   for (const key of keys) {
     const value = context[key];
-    if (typeof value === "string" && value) return value;
+    if (typeof value === "string" && value.trim()) return value.trim();
   }
   return undefined;
+}
+
+const DIRECT_SESSION_ATTRIBUTE_KEYS = [
+  "session.id",
+  "sp.session.id",
+  "gen_ai.conversation.id",
+  ...SESSION_ID_KEYS,
+];
+
+const DIRECT_USER_ATTRIBUTE_KEYS = [
+  "user.id",
+  "sp.user.id",
+  ...USER_ID_KEYS,
+];
+
+const TELEMETRY_METADATA_PREFIX = "ai.telemetry.metadata.";
+const TELEMETRY_SESSION_KEYS = SESSION_ID_KEYS.map(
+  (key) => `${TELEMETRY_METADATA_PREFIX}${key}`,
+);
+const TELEMETRY_USER_KEYS = USER_ID_KEYS.map(
+  (key) => `${TELEMETRY_METADATA_PREFIX}${key}`,
+);
+
+function readBaggageString(
+  ctx: Context,
+  keys: readonly string[],
+): string | undefined {
+  const contexts =
+    ctx === otelContext.active() ? [ctx] : [ctx, otelContext.active()];
+  for (const candidateCtx of contexts) {
+    try {
+      const baggage = otelPropagation.getBaggage(candidateCtx);
+      if (!baggage) continue;
+      for (const key of keys) {
+        const value = baggage.getEntry(key)?.value?.trim();
+        if (value) return value;
+      }
+    } catch {}
+  }
+  return undefined;
+}
+
+function extractRecordIdentity(source: Record<string, unknown> | undefined): {
+  sessionId?: string;
+  userId?: string;
+} {
+  const nestedMetadata = isPlainObject(source?.metadata)
+    ? source.metadata
+    : undefined;
+  const sessionId =
+    firstString(source, DIRECT_SESSION_ATTRIBUTE_KEYS) ??
+    firstString(nestedMetadata, SESSION_ID_KEYS) ??
+    firstString(source, TELEMETRY_SESSION_KEYS);
+  const userId =
+    firstString(source, DIRECT_USER_ATTRIBUTE_KEYS) ??
+    firstString(nestedMetadata, USER_ID_KEYS) ??
+    firstString(source, TELEMETRY_USER_KEYS);
+  return { sessionId, userId };
+}
+
+// OTel GenAI Agent Spans semantic conventions define `gen_ai.conversation.id`
+// as a multi-trace session/conversation identifier; omit session attributes
+// when no explicit, metadata, propagated HTTP, or baggage session ID exists.
+function resolveSpanIdentity(
+  source: Record<string, unknown> | undefined,
+  ctx: Context = otelContext.active(),
+): { sessionId?: string; userId?: string } {
+  const fromRecord = extractRecordIdentity(source);
+  const propagated = readPropagatedIdentity();
+  const sessionId =
+    fromRecord.sessionId ??
+    propagated.sessionId?.trim() ??
+    readBaggageString(ctx, DIRECT_SESSION_ATTRIBUTE_KEYS);
+  const userId =
+    fromRecord.userId ??
+    propagated.userId?.trim() ??
+    readBaggageString(ctx, DIRECT_USER_ATTRIBUTE_KEYS);
+  return {
+    sessionId: sessionId || undefined,
+    userId: userId || undefined,
+  };
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -507,19 +592,13 @@ export function createSoftprobeObservationAttributes(params: {
     "sp.observation.type": observationType,
   };
 
-  const propagated = readPropagatedIdentity();
-  const sessionId =
-    firstString(runtimeContext, SESSION_ID_KEYS)?.trim() ||
-    propagated.sessionId?.trim();
+  const { sessionId, userId } = resolveSpanIdentity(runtimeContext);
   if (sessionId) {
     attributes["session.id"] = sessionId;
     attributes["sp.session.id"] = sessionId;
     attributes["gen_ai.conversation.id"] = sessionId;
   }
 
-  const userId =
-    firstString(runtimeContext, USER_ID_KEYS)?.trim() ||
-    propagated.userId?.trim();
   if (userId) {
     attributes["user.id"] = userId;
     attributes["sp.user.id"] = userId;
@@ -580,19 +659,202 @@ export function createSoftprobeObservationAttributes(params: {
   return attributes;
 }
 
-function resolveDefaultTracer(
+type OtelSpanProcessor = NonNullable<
+  SoftprobeClientOptions["spanProcessors"]
+>[number];
+
+type ReadableAiSpanLike = {
+  readonly name?: string;
+  readonly attributes?: Record<string, unknown>;
+  readonly instrumentationLibrary?: { readonly name?: string };
+  readonly instrumentationScope?: { readonly name?: string };
+};
+
+function isVercelAiSpan(span: ReadableAiSpanLike): boolean {
+  const scopeName =
+    span.instrumentationScope?.name ?? span.instrumentationLibrary?.name;
+  if (scopeName === "ai") return true;
+  const name = span.name ?? "";
+  if (
+    name.startsWith("ai.") ||
+    name.startsWith("invoke_agent") ||
+    name.startsWith("chat ") ||
+    name.startsWith("execute_tool")
+  ) {
+    return true;
+  }
+  const attrs = span.attributes;
+  if (!attrs) return false;
+  if (attrs["sp.observation.type"] !== undefined) return true;
+  return Object.keys(attrs).some(
+    (key) => key.startsWith("ai.") || key.startsWith("gen_ai."),
+  );
+}
+
+function inferVercelAiSpanType(
+  spanName: string,
+  attrs: Record<string, unknown>,
+): string {
+  const operationId =
+    typeof attrs["ai.operationId"] === "string"
+      ? attrs["ai.operationId"]
+      : typeof attrs["operation.name"] === "string"
+        ? attrs["operation.name"]
+        : spanName;
+  const genAiOp =
+    typeof attrs["gen_ai.operation.name"] === "string"
+      ? attrs["gen_ai.operation.name"]
+      : "";
+  if (
+    operationId === "ai.toolCall" ||
+    operationId.includes("tool") ||
+    genAiOp === "execute_tool"
+  ) {
+    return "tool.call";
+  }
+  if (operationId.includes("doGenerate")) return "doGenerate";
+  if (operationId.includes("doStream")) return "doStream";
+  if (operationId.includes("embed") || genAiOp === "embeddings") {
+    return "embedding";
+  }
+  if (operationId.includes("rerank")) return "reranking";
+  if (
+    genAiOp === "chat" ||
+    genAiOp === "text_completion" ||
+    genAiOp === "generate_content"
+  ) {
+    return "languageModel";
+  }
+  if (
+    operationId.startsWith("ai.") ||
+    genAiOp === "invoke_agent" ||
+    genAiOp === "create_agent"
+  ) {
+    return "operation";
+  }
+  return "span";
+}
+
+export class SoftprobeVercelAiSpanProcessor implements OtelSpanProcessor {
+  onStart(
+    span: Span & ReadableAiSpanLike,
+    parentContext: Context = otelContext.active(),
+  ): void {
+    if (!isVercelAiSpan(span)) return;
+    const attrs = isPlainObject(span.attributes) ? span.attributes : {};
+    const operationId =
+      typeof attrs["ai.operationId"] === "string"
+        ? attrs["ai.operationId"]
+        : undefined;
+    const inferredType = inferVercelAiSpanType(span.name ?? "", attrs);
+    const observationType =
+      typeof attrs["sp.observation.type"] === "string"
+        ? attrs["sp.observation.type"]
+        : observationTypeFor(inferredType, operationId);
+    if (attrs["sp.observation.type"] === undefined) {
+      span.setAttribute("sp.observation.type", observationType);
+    }
+
+    const { sessionId, userId } = resolveSpanIdentity(attrs, parentContext);
+    if (sessionId) {
+      span.setAttribute("session.id", sessionId);
+      span.setAttribute("sp.session.id", sessionId);
+      span.setAttribute("gen_ai.conversation.id", sessionId);
+    }
+    if (userId) {
+      span.setAttribute("user.id", userId);
+      span.setAttribute("sp.user.id", userId);
+    }
+
+    if (observationType === "tool") {
+      const toolName = firstString(attrs, [
+        "gen_ai.tool.name",
+        "ai.toolCall.name",
+      ]);
+      const toolCallId = firstString(attrs, [
+        "gen_ai.tool.call.id",
+        "ai.toolCall.id",
+      ]);
+      if (toolName && attrs["gen_ai.tool.name"] === undefined) {
+        span.setAttribute("gen_ai.tool.name", toolName);
+      }
+      if (toolCallId && attrs["gen_ai.tool.call.id"] === undefined) {
+        span.setAttribute("gen_ai.tool.call.id", toolCallId);
+      }
+      if (attrs["sp.tool.kind"] === undefined) {
+        span.setAttribute("sp.tool.kind", "function");
+      }
+    }
+
+    for (const [key, value] of Object.entries(attrs)) {
+      if (!key.startsWith(TELEMETRY_METADATA_PREFIX)) continue;
+      const metaKey = key.slice(TELEMETRY_METADATA_PREFIX.length);
+      if (
+        !metaKey ||
+        SESSION_ID_KEYS.includes(metaKey) ||
+        USER_ID_KEYS.includes(metaKey) ||
+        attrs[`sp.metadata.${metaKey}`] !== undefined
+      ) {
+        continue;
+      }
+      const serialized =
+        typeof value === "string" ? value : safeSerialize(value);
+      if (serialized != null) {
+        span.setAttribute(`sp.metadata.${metaKey}`, serialized);
+      }
+    }
+  }
+
+  onEnd(span: ReadableAiSpanLike): void {
+    if (!isVercelAiSpan(span) || !isPlainObject(span.attributes)) return;
+    const attrs = span.attributes;
+    if (attrs["gen_ai.conversation.id"] === undefined) {
+      const { sessionId, userId } = extractRecordIdentity(attrs);
+      if (sessionId) {
+        attrs["session.id"] = sessionId;
+        attrs["sp.session.id"] = sessionId;
+        attrs["gen_ai.conversation.id"] = sessionId;
+      }
+      if (userId && attrs["user.id"] === undefined) {
+        attrs["user.id"] = userId;
+        attrs["sp.user.id"] = userId;
+      }
+    }
+  }
+
+  forceFlush(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  shutdown(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+function resolveDefaultClient(
   options: SoftprobeVercelAiSdkIntegrationOptions,
-): Tracer | undefined {
-  if (options.tracer) return options.tracer;
+): SoftprobeClient | undefined {
+  if (options.tracer) return undefined;
   try {
-    const client = SoftprobeClient.fromEnv({
-      apiKey: options.apiKey,
-      publicKey: options.publicKey,
-      baseUrl: options.baseUrl,
-      serviceName: options.serviceName,
-      environment: options.environment,
+    const serviceName = options.serviceName?.trim();
+    return SoftprobeClient.fromEnv({
+      ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
+      ...(options.publicKey !== undefined
+        ? { publicKey: options.publicKey }
+        : {}),
+      ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
+      ...(serviceName ? { serviceName } : {}),
+      ...(options.environment !== undefined
+        ? { environment: options.environment }
+        : {}),
+      ...(options.spanExporter !== undefined
+        ? { spanExporter: options.spanExporter }
+        : {}),
+      ...(options.useSimpleProcessor !== undefined
+        ? { useSimpleProcessor: options.useSimpleProcessor }
+        : {}),
+      spanProcessors: [new SoftprobeVercelAiSpanProcessor()],
     });
-    return client?.tracer;
   } catch {
     return undefined;
   }
@@ -619,49 +881,91 @@ type AiSdkOtelDelegate = {
   onError: (...args: unknown[]) => void;
 };
 
+function hasExecute(
+  params: unknown,
+): params is { execute: () => PromiseLike<unknown> } {
+  return isPlainObject(params) && typeof params.execute === "function";
+}
+
+function createPassThroughDelegate(): AiSdkOtelDelegate {
+  const noop = (): void => undefined;
+  return {
+    executeTool: (params: unknown) =>
+      hasExecute(params) ? params.execute() : Promise.resolve(undefined),
+    executeLanguageModelCall: (params: unknown) =>
+      hasExecute(params) ? params.execute() : Promise.resolve(undefined),
+    onStart: noop,
+    onStepStart: noop,
+    onLanguageModelCallStart: noop,
+    onLanguageModelCallEnd: noop,
+    onToolExecutionStart: noop,
+    onToolExecutionEnd: noop,
+    onStepEnd: noop,
+    onObjectStepStart: noop,
+    onObjectStepEnd: noop,
+    onEmbedStart: noop,
+    onEmbedEnd: noop,
+    onRerankStart: noop,
+    onRerankEnd: noop,
+    onEnd: noop,
+    onAbort: noop,
+    onError: noop,
+  };
+}
+
 /**
- * Langfuse-style AI SDK Telemetry integration for AI SDK 7+.
- * Delegates lifecycle to `@ai-sdk/otel` and enriches Softprobe attributes.
+ * AI SDK Telemetry integration.
+ * Delegates lifecycle to `@ai-sdk/otel` when installed (AI SDK 7+) and attaches
+ * `SoftprobeVercelAiSpanProcessor` to the OTel provider for standard AI SDK spans.
  */
 export class SoftprobeVercelAiSdkIntegration {
   private readonly delegate: AiSdkOtelDelegate;
+  private readonly client?: SoftprobeClient;
+  readonly tracer?: Tracer;
 
   constructor(options: SoftprobeVercelAiSdkIntegrationOptions = {}) {
-    const require = createRequire(import.meta.url);
-    let OpenTelemetryCtor: new (opts: unknown) => AiSdkOtelDelegate;
-    try {
-      OpenTelemetryCtor = require("@ai-sdk/otel").OpenTelemetry;
-    } catch (error) {
-      throw new Error(
-        "@ai-sdk/otel is required for SoftprobeVercelAiSdkIntegration. " +
-          "Install ai and @ai-sdk/otel (AI SDK 7), or use createSoftprobeObservationAttributes " +
-          "with AI SDK v6 experimental_telemetry.",
-        { cause: error },
-      );
-    }
-
     installIncomingHttpContextPropagation({
       excludedBaseUrl: options.baseUrl,
     });
-    const tracer = resolveDefaultTracer(options);
+    this.client = resolveDefaultClient(options);
+    const tracer = options.tracer ?? this.client?.tracer;
+    this.tracer = tracer;
 
-    this.delegate = new OpenTelemetryCtor({
-      tracer,
-      enrichSpan: ({
-        spanType,
-        operationId,
-        runtimeContext,
-      }: {
-        spanType: OpenTelemetrySpanType;
-        operationId?: string;
-        runtimeContext?: Record<string, unknown>;
-      }) =>
-        createSoftprobeObservationAttributes({
-          spanType,
-          operationId,
-          runtimeContext,
-        }),
-    });
+    const require = createRequire(import.meta.url);
+    let OpenTelemetryCtor: (new (opts: unknown) => AiSdkOtelDelegate) | undefined;
+    try {
+      OpenTelemetryCtor = require("@ai-sdk/otel").OpenTelemetry;
+    } catch {
+      OpenTelemetryCtor = undefined;
+    }
+
+    this.delegate = OpenTelemetryCtor
+      ? new OpenTelemetryCtor({
+          tracer,
+          enrichSpan: ({
+            spanType,
+            operationId,
+            runtimeContext,
+          }: {
+            spanType: OpenTelemetrySpanType;
+            operationId?: string;
+            runtimeContext?: Record<string, unknown>;
+          }) =>
+            createSoftprobeObservationAttributes({
+              spanType,
+              operationId,
+              runtimeContext,
+            }),
+        })
+      : createPassThroughDelegate();
+  }
+
+  async forceFlush(): Promise<void> {
+    await this.client?.forceFlush();
+  }
+
+  async shutdown(): Promise<void> {
+    await this.client?.shutdown();
   }
 
   executeTool<T>(params: {
@@ -680,43 +984,7 @@ export class SoftprobeVercelAiSdkIntegration {
   }
 
   onStart(...args: unknown[]): void {
-    const parentSpanContext = otelTrace.getSpanContext(otelContext.active());
-    const hasRemoteParent = Boolean(parentSpanContext?.isRemote && parentSpanContext.traceId);
     this.delegate.onStart(...args);
-    if (hasRemoteParent) return;
-
-    const event = (args[0] ?? {}) as {
-      callId?: string;
-      runtimeContext?: Record<string, unknown>;
-    };
-    const propagated = readPropagatedIdentity();
-    const explicitSessionId =
-      firstString(event.runtimeContext, SESSION_ID_KEYS)?.trim() ||
-      propagated.sessionId?.trim();
-    if (explicitSessionId || !event.callId) return;
-
-    const callStates = (
-      this.delegate as unknown as {
-        callStates?: Map<
-          string,
-          {
-            rootSpan?: {
-              spanContext?: () => { traceId?: string };
-              setAttributes?: (attrs: Attributes) => void;
-            };
-          }
-        >;
-      }
-    ).callStates;
-    const rootSpan = callStates?.get(event.callId)?.rootSpan;
-    const traceId = rootSpan?.spanContext?.()?.traceId;
-    if (traceId && rootSpan?.setAttributes) {
-      rootSpan.setAttributes({
-        "session.id": traceId,
-        "sp.session.id": traceId,
-        "gen_ai.conversation.id": traceId,
-      });
-    }
   }
   onStepStart(...args: unknown[]): void {
     this.delegate.onStepStart(...args);

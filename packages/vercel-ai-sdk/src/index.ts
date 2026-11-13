@@ -1,5 +1,6 @@
 export {
   SoftprobeVercelAiSdkIntegration,
+  SoftprobeVercelAiSpanProcessor,
   createSoftprobeObservationAttributes,
   initVercelAiTelemetry,
   installIncomingHttpContextPropagation,
