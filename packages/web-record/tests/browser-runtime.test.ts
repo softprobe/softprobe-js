@@ -83,6 +83,8 @@ it("uses official Fetch instrumentation and emits one HTTP span plus a redacted 
   const httpSpans = spans.filter((span) => span.kind === 2);
   expect(httpSpans).toHaveLength(1);
   const parent = httpSpans[0]!;
+  expect(parent.name).toBe("POST");
+  expect(parent.attributes["url.template"]).toBeUndefined();
   const body = spans.find((span) => span.name === "softprobe.http.body.capture");
   expect(body).toBeDefined();
   expect(body?.parentSpanContext?.spanId).toBe(parent.spanContext().spanId);
@@ -146,7 +148,10 @@ it("uses official XHR instrumentation and reads the body without changing the re
   await browserRuntime.forceFlush();
 
   const spans = memoryExporter.getFinishedSpans();
-  expect(spans.filter((span) => span.kind === 2)).toHaveLength(1);
+  const httpSpans = spans.filter((span) => span.kind === 2);
+  expect(httpSpans).toHaveLength(1);
+  expect(httpSpans[0]?.name).toBe("POST");
+  expect(httpSpans[0]?.attributes["url.template"]).toBeUndefined();
   const body = spans.find((span) => span.name === "softprobe.http.body.capture");
   expect(body?.attributes).toMatchObject({
     "sp.body.capture.status": "captured",
@@ -454,6 +459,21 @@ it("supports wildcard route patterns in httpBodyCapture.routes and ignores unsel
   const bodySpans = spans.filter((span) => span.name === "softprobe.http.body.capture");
   expect(httpSpans).toHaveLength(3);
   expect(bodySpans).toHaveLength(3);
+  for (const httpSpan of httpSpans) {
+    expect(httpSpan.name).toBe("POST");
+  }
+  const createHttp = httpSpans.find((span) =>
+    String(span.attributes["url.full"]).endsWith("/agent/api/sessions"),
+  );
+  const messageHttp = httpSpans.find((span) =>
+    String(span.attributes["url.full"]).endsWith("/agent/api/sessions/ses_wild_77/messages"),
+  );
+  const payHttp = httpSpans.find((span) =>
+    String(span.attributes["url.full"]).endsWith("/agent/api/sessions/ses_wild_77/pay"),
+  );
+  expect(createHttp?.attributes["url.template"]).toBeUndefined();
+  expect(messageHttp?.attributes["url.template"]).toBe("/agent/api/sessions/*/messages");
+  expect(payHttp?.attributes["url.template"]).toBe("/agent/api/sessions/*/pay");
   for (const span of spans) {
     expect(span.attributes).toMatchObject({
       "session.id": "ses_wild_77",
@@ -465,6 +485,7 @@ it("supports wildcard route patterns in httpBodyCapture.routes and ignores unsel
   const payBody = bodySpans.find((span) =>
     String(span.attributes["url.full"]).endsWith("/agent/api/sessions/ses_wild_77/pay"),
   );
+  expect(payBody?.attributes["url.template"]).toBe("/agent/api/sessions/*/pay");
   expect(JSON.parse(String(payBody?.attributes["http.request.body.content"]))).toEqual({
     requestId: "req_1",
     paymentDetails: { cardNumber: "[REDACTED]", cvv: "[REDACTED]" },

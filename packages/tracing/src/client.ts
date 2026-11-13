@@ -60,6 +60,8 @@ export interface SoftprobeClientOptions extends Omit<SoftprobeConfig, "publicKey
   baseUrl?: string;
   /** Injected exporter for tests (skips OTLP setup). */
   spanExporter?: SpanExporter;
+  /** Additional span processors registered before the exporter processor. */
+  spanProcessors?: SpanProcessor[];
   /** Injected score transport for tests. */
   scoreTransport?: ScoreTransport;
   /** Use simple processor (tests) instead of batch. */
@@ -192,6 +194,9 @@ export class SoftprobeClient {
     this.provider = new NodeTracerProvider({
       resource: new Resource(resourceAttrs),
     });
+    for (const extraProcessor of options.spanProcessors ?? []) {
+      this.provider.addSpanProcessor(extraProcessor);
+    }
     this.provider.addSpanProcessor(processor);
     this.registeredProvider = options.registerProvider ?? true;
     this.disableGlobalTracerOnShutdown =
