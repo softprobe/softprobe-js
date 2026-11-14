@@ -8,15 +8,9 @@ export default defineConfig({
     deps: {
       optimizer: {
         web: {
-          include: ["rrweb", "@rrweb/types"],
+          include: ["rrweb", "@rrweb/packer", "@rrweb/types"],
         },
       },
-    },
-  },
-  resolve: {
-    alias: {
-      // rrweb's "main" is CJS with "type":"module" — use the ESM build in tests.
-      rrweb: "rrweb/es/rrweb/packages/rrweb/src/entries/all.js",
     },
   },
 });
