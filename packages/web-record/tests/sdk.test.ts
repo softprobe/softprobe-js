@@ -100,8 +100,11 @@ const { rrwebRecordMock } = vi.hoisted(() => ({
   rrwebRecordMock: vi.fn(() => () => undefined),
 }));
 
-vi.mock("rrweb", () => ({
+vi.mock("@rrweb/packer", () => ({
   pack: (data: unknown) => JSON.stringify(data),
+}));
+
+vi.mock("rrweb", () => ({
   record: rrwebRecordMock,
 }));
 

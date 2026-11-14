@@ -1,5 +1,6 @@
 import { EventType, type eventWithTime } from "@rrweb/types";
-import { pack, record as rrwebRecord } from "rrweb";
+import { pack } from "@rrweb/packer";
+import { record as rrwebRecord } from "rrweb";
 import { SpanStatusCode } from "@opentelemetry/api";
 import {
   asNonEmptyString,
