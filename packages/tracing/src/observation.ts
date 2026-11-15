@@ -300,8 +300,7 @@ export async function withObservationContext<T>(
   observation: Observation,
   fn: (observation: Observation) => Promise<T> | T,
 ): Promise<T> {
-  const span = observation.otelSpan;
-  const ctx = trace.setSpan(context.active(), span);
+  const ctx = trace.setSpan(context.active(), observation.otelSpan);
   try {
     const result = await context.with(ctx, () => fn(observation));
     observation.end();

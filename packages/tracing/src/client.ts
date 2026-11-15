@@ -29,7 +29,12 @@ import {
   withObservationContext,
   type ObservationRuntime,
 } from "./observation.js";
-import { withAttributes as withAttributesFn } from "./propagation.js";
+import {
+  BaggageSessionSpanProcessor,
+  createSoftprobePropagator,
+  ensureActiveContextManager,
+  withAttributes as withAttributesFn,
+} from "./propagation.js";
 import {
   deriveOtlpEndpoint,
   MissingSoftprobeCredentialsError,
@@ -194,6 +199,7 @@ export class SoftprobeClient {
     this.provider = new NodeTracerProvider({
       resource: new Resource(resourceAttrs),
     });
+    this.provider.addSpanProcessor(new BaggageSessionSpanProcessor());
     for (const extraProcessor of options.spanProcessors ?? []) {
       this.provider.addSpanProcessor(extraProcessor);
     }
@@ -202,7 +208,11 @@ export class SoftprobeClient {
     this.disableGlobalTracerOnShutdown =
       options.disableGlobalTracerOnShutdown ?? this.registeredProvider;
     if (this.registeredProvider) {
-      this.provider.register();
+      this.provider.register({
+        propagator: createSoftprobePropagator(),
+      });
+    } else {
+      ensureActiveContextManager();
     }
 
     this.runtime = {

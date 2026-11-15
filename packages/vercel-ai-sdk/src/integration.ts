@@ -13,7 +13,10 @@ import {
 } from "@opentelemetry/api";
 import {
   SoftprobeClient,
+  extractTraceContext,
+  getBaggageSessionId,
   getPropagatedAttributes,
+  mergeBaggageHeaderValues,
   withAttributes,
   type SoftprobeClientOptions,
 } from "@softprobe/tracing";
@@ -135,18 +138,27 @@ function shouldSkipOutgoingTracePropagation(rawUrl: string): boolean {
 }
 
 function activeOutgoingTraceHeaders():
-  | { traceparent: string; tracestate?: string }
+  | { traceparent: string; tracestate?: string; baggage?: string }
   | undefined {
-  const spanCtx = otelTrace.getSpanContext(otelContext.active());
+  const activeCtx = otelContext.active();
+  const spanCtx = otelTrace.getSpanContext(activeCtx);
   if (!spanCtx || !otelTrace.isSpanContextValid(spanCtx)) return undefined;
   const flags =
     (spanCtx.traceFlags & TraceFlags.SAMPLED) === TraceFlags.SAMPLED
       ? "01"
       : "00";
   const tracestate = spanCtx.traceState?.serialize();
+  const sessionId =
+    readPropagatedIdentity().sessionId?.trim() ??
+    getBaggageSessionId(activeCtx);
+  const baggage =
+    sessionId && /^[!-~]{1,128}$/.test(sessionId)
+      ? `sp.session.id=${encodeURIComponent(sessionId)}`
+      : undefined;
   return {
     traceparent: `00-${spanCtx.traceId}-${spanCtx.spanId}-${flags}`,
     ...(tracestate ? { tracestate } : {}),
+    ...(baggage ? { baggage } : {}),
   };
 }
 
@@ -193,6 +205,15 @@ function patchGlobalFetch(): void {
       if (traceHeaders.tracestate && !headers.has("tracestate")) {
         headers.set("tracestate", traceHeaders.tracestate);
       }
+      if (traceHeaders.baggage) {
+        const mergedBaggage = mergeBaggageHeaderValues(
+          headers.get("baggage") ?? undefined,
+          traceHeaders.baggage,
+        );
+        if (mergedBaggage) {
+          headers.set("baggage", mergedBaggage);
+        }
+      }
       return Reflect.apply(current, this, [
         input,
         { ...(init ?? {}), headers },
@@ -218,23 +239,40 @@ function hasHeaderIgnoreCase(
 
 function withInjectedNodeHeaders(
   existing: unknown,
-  traceHeaders: { traceparent: string; tracestate?: string },
+  traceHeaders: { traceparent: string; tracestate?: string; baggage?: string },
 ): unknown {
   if (Array.isArray(existing)) return existing;
   if (existing && typeof existing === "object") {
     const record = existing as Record<string, unknown>;
     if (hasHeaderIgnoreCase(record, "traceparent")) return existing;
-    return {
-      ...record,
-      traceparent: traceHeaders.traceparent,
-      ...(traceHeaders.tracestate && !hasHeaderIgnoreCase(record, "tracestate")
-        ? { tracestate: traceHeaders.tracestate }
-        : {}),
-    };
+    const next: Record<string, unknown> = {};
+    let priorBaggage: string | undefined;
+    for (const [key, val] of Object.entries(record)) {
+      if (key.toLowerCase() === "baggage") {
+        if (typeof val === "string") {
+          priorBaggage = priorBaggage ? `${priorBaggage},${val}` : val;
+        }
+        continue;
+      }
+      next[key] = val;
+    }
+    next.traceparent = traceHeaders.traceparent;
+    if (traceHeaders.tracestate && !hasHeaderIgnoreCase(next, "tracestate")) {
+      next.tracestate = traceHeaders.tracestate;
+    }
+    const mergedBaggage = mergeBaggageHeaderValues(
+      priorBaggage,
+      traceHeaders.baggage,
+    );
+    if (mergedBaggage) {
+      next.baggage = mergedBaggage;
+    }
+    return next;
   }
   return {
     traceparent: traceHeaders.traceparent,
     ...(traceHeaders.tracestate ? { tracestate: traceHeaders.tracestate } : {}),
+    ...(traceHeaders.baggage ? { baggage: traceHeaders.baggage } : {}),
   };
 }
 
@@ -347,7 +385,7 @@ function headerString(
 function extractIncomingTraceContext(
   headers: Record<string, unknown> | undefined,
 ): Context {
-  let ctx = otelContext.active();
+  let ctx = extractTraceContext(headers, otelContext.active());
   if (!headers) return ctx;
   try {
     ctx = otelPropagation.extract(ctx, headers);
