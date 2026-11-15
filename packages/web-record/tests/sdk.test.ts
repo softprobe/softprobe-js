@@ -430,6 +430,40 @@ describe("RecordSdk", () => {
     expect(statuses).toContain("incomplete");
   });
 
+  it("flushes pending HTTP trace spans on pagehide even when manual mode never started rrweb", async () => {
+    let release!: () => void;
+    testState.active = true;
+    testState.exportGate = new Promise<void>((resolve) => { release = resolve; });
+    const statuses: string[] = [];
+    const sdk = recordingSdk({ onUploadStatus: (status: string) => statuses.push(status) });
+
+    window.dispatchEvent(new Event("pagehide"));
+    expect(sdk.uploadStatus).toBe("incomplete");
+    expect(testState.runtime.waitForIdle).toHaveBeenCalledTimes(1);
+    release();
+    await vi.waitFor(() => expect(sdk.uploadStatus).toBe("uploaded"));
+    expect(testState.runtime.forceFlush).toHaveBeenCalledTimes(1);
+    expect(statuses).toContain("incomplete");
+  });
+
+  it("rejects non-ASCII or oversized sessionIds with a single warning and falls back to a valid id", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sdk = RecordSdk.init({
+      apiKey: "agent-key",
+      baseUrl: "https://collector.example.test",
+      sessionId: "invalid session id\n",
+      manual: true,
+    });
+    expect(sdk.sessionId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(warn).toHaveBeenCalledTimes(1);
+
+    await sdk.setSessionId("still invalid with spaces");
+    await sdk.setSessionId("x".repeat(129));
+    expect(sdk.sessionId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(testState.runtime.setSessionId).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
   it("auto-initializes from a script tag with data-api-key", async () => {
     const { autoInitFromScript } = await import("../src/browser.js");
     const script = document.createElement("script");

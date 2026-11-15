@@ -37,6 +37,9 @@ const SESSION_ID_STORAGE_PREFIX = "_sp_session_id:";
 const RECORDING_SPAN_NAME = "softprobe.web.recording";
 const RECORDING_EVENT_NAME = "sp.recording.batch";
 const RECORDING_EVENTS_ATTRIBUTE = "sp.recording.events";
+const VALID_SESSION_ID = /^[!-~]{1,128}$/;
+
+let activeWindowPageHide: (() => void) | null = null;
 
 type Compressible = eventWithTime & {
   data?: unknown;
@@ -80,6 +83,7 @@ export class RecordSdk implements WebRecordController {
   private exportDisabled = false;
   /** Serializes setSessionId drains so overlapping navigations cannot race. */
   private sessionSwitch: Promise<void> = Promise.resolve();
+  private invalidSessionIdWarned = false;
   private _uploadStatus: RecordingUploadStatus = "idle";
   private readonly onPageHide = (): void => {
     if (!this.enabled || (
@@ -97,7 +101,7 @@ export class RecordSdk implements WebRecordController {
     this.apiOrigins = [...(options.apiOrigins ?? [])];
     this.otlpEndpoint = options.otlpEndpoint;
     this.sessionIdStorageKey = `${SESSION_ID_STORAGE_PREFIX}${options.serviceName ?? "default"}`;
-    const explicitSessionId = asNonEmptyString(options.sessionId);
+    const explicitSessionId = this.normalizeExplicitSessionId(options.sessionId);
     this._sessionId = getOrCreateSessionId(explicitSessionId, this.sessionIdStorageKey);
     this.intervalMs = Math.max(options.interval ?? 5000, 5000);
     this.serviceName = options.serviceName;
@@ -133,6 +137,13 @@ export class RecordSdk implements WebRecordController {
       : null;
 
     if (this.enabled) {
+      if (typeof window !== "undefined") {
+        if (activeWindowPageHide) {
+          window.removeEventListener("pagehide", activeWindowPageHide);
+        }
+        activeWindowPageHide = this.onPageHide;
+        window.addEventListener("pagehide", this.onPageHide);
+      }
       if (!options.manual) {
         this.record();
       }
@@ -195,6 +206,10 @@ export class RecordSdk implements WebRecordController {
     if (opts?.tags) this.setTags(opts.tags);
 
     if (typeof window !== "undefined") {
+      if (activeWindowPageHide && activeWindowPageHide !== this.onPageHide) {
+        window.removeEventListener("pagehide", activeWindowPageHide);
+      }
+      activeWindowPageHide = this.onPageHide;
       window.addEventListener("pagehide", this.onPageHide);
     }
 
@@ -236,9 +251,6 @@ export class RecordSdk implements WebRecordController {
     this.stopHandle = {
       stop: () => {
         clearInterval(intervalId);
-        if (typeof window !== "undefined") {
-          window.removeEventListener("pagehide", this.onPageHide);
-        }
         stopFn?.();
         void this.flush();
         this.stopHandle = null;
@@ -256,13 +268,27 @@ export class RecordSdk implements WebRecordController {
   }
 
   setSessionId(sessionId: string): Promise<void> {
-    const next = asNonEmptyString(sessionId);
+    const next = this.normalizeExplicitSessionId(sessionId);
     if (!next || next === this._sessionId) return Promise.resolve();
     // Serialize switches so overlapping navigations cannot race the drain.
     this.sessionSwitch = this.sessionSwitch
       .catch(() => undefined)
       .then(() => this.switchSessionId(next));
     return this.sessionSwitch;
+  }
+
+  private normalizeExplicitSessionId(candidate: unknown): string | undefined {
+    if (candidate === undefined || candidate === null || candidate === "") return undefined;
+    if (typeof candidate === "string" && VALID_SESSION_ID.test(candidate)) {
+      return candidate;
+    }
+    if (!this.invalidSessionIdWarned) {
+      this.invalidSessionIdWarned = true;
+      console.warn(
+        "[@softprobe/web-record] Invalid sessionId ignored; expected 1-128 printable ASCII characters without spaces.",
+      );
+    }
+    return undefined;
   }
 
   private async switchSessionId(next: string): Promise<void> {
@@ -526,8 +552,8 @@ function uuid(): string {
   });
 }
 
-function getOrCreateSessionId(candidate: unknown, storageKey: string): string {
-  const provided = asNonEmptyString(candidate);
+function getOrCreateSessionId(candidate: string | undefined, storageKey: string): string {
+  const provided = candidate && VALID_SESSION_ID.test(candidate) ? candidate : undefined;
   try {
     if (typeof sessionStorage !== "undefined") {
       if (provided) {
@@ -540,7 +566,7 @@ function getOrCreateSessionId(candidate: unknown, storageKey: string): string {
         return discovered;
       }
       const stored = asNonEmptyString(sessionStorage.getItem(storageKey));
-      if (stored) return stored;
+      if (stored && VALID_SESSION_ID.test(stored)) return stored;
       const generated = uuid();
       sessionStorage.setItem(storageKey, generated);
       return generated;

@@ -82,6 +82,7 @@ export function createHttpBodyCaptureHooks(options: {
   httpBodyCapture?: boolean | HttpBodyCaptureOptions;
   collectorUrl: string;
   getTracer: () => Tracer;
+  getSessionId?: () => string | null;
   onSessionId?: (sessionId: string) => void;
 }): HttpBodyCaptureHooks {
   const explicitOrigins = normalizeOrigins(options.apiOrigins ?? []);
@@ -93,9 +94,14 @@ export function createHttpBodyCaptureHooks(options: {
   const fetchCalls: FetchCall[] = [];
   let disposeFetchObserver = (): void => undefined;
   let fetchObserverInstalled = false;
-  const disposeXhrObserver = capture
-    ? installXhrBodyObserver(xhrStates, capture, allowedOrigins, collectorUrl, options.onSessionId)
-    : () => undefined;
+  const disposeXhrObserver = installXhrBodyObserver(
+    xhrStates,
+    capture,
+    allowedOrigins,
+    collectorUrl,
+    options.getSessionId,
+    options.onSessionId,
+  );
 
   const requestHook: FetchRequestHookFunction = (span, request) => {
     if (!capture) return;
@@ -200,13 +206,14 @@ export function createHttpBodyCaptureHooks(options: {
       requestHook,
       applyCustomAttributesOnSpan,
       installObserver: () => {
-        if (fetchObserverInstalled || !capture || typeof globalThis.fetch !== "function") return;
+        if (fetchObserverInstalled || typeof globalThis.fetch !== "function") return;
         fetchObserverInstalled = true;
         disposeFetchObserver = installFetchBodyObserver(
           fetchCalls,
           capture,
           allowedOrigins,
           collectorUrl,
+          options.getSessionId,
           options.onSessionId,
         );
       },
@@ -450,36 +457,6 @@ export function resolveEffectiveOrigins(
   return [...derived];
 }
 
-export function resolveRouteAllowlistUrlSources(
-  apiOrigins: string[] | undefined,
-  httpBodyCapture?: boolean | HttpBodyCaptureOptions,
-): string[] | null {
-  if (
-    typeof httpBodyCapture !== "object" ||
-    httpBodyCapture === null ||
-    !Array.isArray(httpBodyCapture.routes)
-  ) {
-    return null;
-  }
-  const explicitOrigins = normalizeOrigins(apiOrigins ?? []);
-  const allowedOrigins = new Set(resolveEffectiveOrigins(apiOrigins, httpBodyCapture));
-  const capture = normalizeCaptureOptions(httpBodyCapture, explicitOrigins, allowedOrigins);
-  if (!capture) return null;
-
-  const sources = new Set<string>();
-  const originsWithRoutes = new Set<string>();
-  for (const route of [...capture.routes.values(), ...capture.patternRoutes]) {
-    originsWithRoutes.add(route.origin);
-    sources.add(`${escapeForRegex(route.origin)}${routePathRegexSource(route.path)}(?:[?#]|$)`);
-  }
-  for (const explicitOrigin of explicitOrigins) {
-    if (!originsWithRoutes.has(explicitOrigin)) {
-      sources.add(`${escapeForRegex(explicitOrigin)}(?:[/?#]|$)`);
-    }
-  }
-  return sources.size > 0 ? [...sources] : null;
-}
-
 function escapeForRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -616,11 +593,39 @@ function captureRequestBody(
   return Promise.resolve(undefined);
 }
 
-function installFetchBodyObserver(
-  fetchCalls: FetchCall[],
-  capture: BodyCaptureConfig,
+function isSameOriginBaggageTarget(
+  rawUrl: string,
   allowedOrigins: Set<string>,
   collectorUrl: URL,
+): boolean {
+  if (isCollectorUrl(rawUrl, collectorUrl)) return false;
+  const pageOrigin = currentPageOrigin();
+  if (!pageOrigin || !allowedOrigins.has(pageOrigin)) return false;
+  try {
+    const url = new URL(rawUrl, typeof location === "undefined" ? undefined : location.href);
+    return url.origin === pageOrigin;
+  } catch {
+    return false;
+  }
+}
+
+function mergeSessionBaggageHeader(existing: string | null, sessionId: string): string {
+  const member = `sp.session.id=${encodeURIComponent(sessionId)}`;
+  if (!existing || !existing.trim()) return member;
+  const kept = existing
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0 && !/^sp\.session\.id\s*=/.test(part));
+  kept.push(member);
+  return kept.join(", ");
+}
+
+function installFetchBodyObserver(
+  fetchCalls: FetchCall[],
+  capture: BodyCaptureConfig | null,
+  allowedOrigins: Set<string>,
+  collectorUrl: URL,
+  getSessionId?: () => string | null,
   onSessionId?: (sessionId: string) => void,
 ): () => void {
   const original = globalThis.fetch as typeof fetch & { __original?: typeof fetch };
@@ -628,6 +633,7 @@ function installFetchBodyObserver(
   let active = true;
   const observer = function (this: typeof globalThis, ...args: Parameters<typeof fetch>): ReturnType<typeof fetch> {
     let call: FetchCall | undefined;
+    let effectiveArgs: Parameters<typeof fetch> = args;
     if (active) {
       try {
         const [resource, init] = args;
@@ -637,7 +643,28 @@ function installFetchBodyObserver(
             ? resource.href
             : String(resource);
         const method = (init?.method ?? (resource instanceof Request ? resource.method : "GET")).toUpperCase();
-        const route = isCollectorUrl(url, collectorUrl)
+        const sessionId = getSessionId?.();
+        if (
+          sessionId &&
+          isValidSessionId(sessionId) &&
+          isSameOriginBaggageTarget(url, allowedOrigins, collectorUrl)
+        ) {
+          if (typeof Request !== "undefined" && resource instanceof Request && init?.headers === undefined) {
+            try {
+              resource.headers.set(
+                "baggage",
+                mergeSessionBaggageHeader(resource.headers.get("baggage"), sessionId),
+              );
+            } catch {}
+          } else {
+            const headers = new Headers(
+              init?.headers ?? (typeof Request !== "undefined" && resource instanceof Request ? resource.headers : undefined),
+            );
+            headers.set("baggage", mergeSessionBaggageHeader(headers.get("baggage"), sessionId));
+            effectiveArgs = [resource, { ...init, headers }];
+          }
+        }
+        const route = !capture || isCollectorUrl(url, collectorUrl)
           ? undefined
           : findRoute(capture, allowedOrigins, url, method);
         if (route) {
@@ -647,11 +674,12 @@ function installFetchBodyObserver(
         // Metadata observation cannot block the network request.
       }
     }
-    if (!call) return Reflect.apply(original, this, args);
+    if (!call || !capture) return Reflect.apply(original, this, effectiveArgs);
+    const activeCapture = capture;
     fetchCalls.push(call);
     let response: ReturnType<typeof fetch>;
     try {
-      response = Reflect.apply(original, this, args);
+      response = Reflect.apply(original, this, effectiveArgs);
     } catch (error) {
       fetchCalls.pop();
       throw error;
@@ -667,7 +695,7 @@ function installFetchBodyObserver(
           value.clone().body,
           value.headers.get("content-type"),
           state.route,
-          capture.maxBodyBytes,
+          activeCapture.maxBodyBytes,
           (discovered) => {
             if (!onSessionId) return;
             state.discoveredSessionId = discovered;
@@ -689,11 +717,17 @@ function installFetchBodyObserver(
   };
 }
 
+type XhrObserverMeta = {
+  sameOriginBaggage: boolean;
+  callerBaggage: string[];
+};
+
 function installXhrBodyObserver(
   states: WeakMap<XMLHttpRequest, XhrState>,
-  capture: BodyCaptureConfig,
+  capture: BodyCaptureConfig | null,
   allowedOrigins: Set<string>,
   collectorUrl: URL,
+  getSessionId?: () => string | null,
   onSessionId?: (sessionId: string) => void,
 ): () => void {
   if (typeof XMLHttpRequest === "undefined") return () => undefined;
@@ -701,6 +735,7 @@ function installXhrBodyObserver(
   const originalOpen = prototype.open;
   const originalSend = prototype.send;
   const originalSetRequestHeader = prototype.setRequestHeader;
+  const metas = new WeakMap<XMLHttpRequest, XhrObserverMeta>();
   let active = true;
 
   prototype.open = function (
@@ -715,10 +750,14 @@ function installXhrBodyObserver(
       states.delete(this);
       const normalizedMethod = method.toUpperCase();
       const rawUrl = url instanceof URL ? url.href : url;
-      const route = isCollectorUrl(rawUrl, collectorUrl)
+      metas.set(this, {
+        sameOriginBaggage: isSameOriginBaggageTarget(rawUrl, allowedOrigins, collectorUrl),
+        callerBaggage: [],
+      });
+      const route = !capture || isCollectorUrl(rawUrl, collectorUrl)
         ? undefined
         : findRoute(capture, allowedOrigins, rawUrl, normalizedMethod);
-      if (route) {
+      if (route && capture) {
         const discoveredSessionId = onSessionId ? extractSessionIdFromPath(route.path) : undefined;
         if (discoveredSessionId) {
           onSessionId?.(discoveredSessionId);
@@ -737,6 +776,11 @@ function installXhrBodyObserver(
   } as typeof prototype.open;
 
   prototype.setRequestHeader = function (this: XMLHttpRequest, name: string, value: string): void {
+    const meta = active ? metas.get(this) : undefined;
+    if (meta?.sameOriginBaggage && name.trim().toLowerCase() === "baggage") {
+      meta.callerBaggage.push(value);
+      return;
+    }
     Reflect.apply(originalSetRequestHeader, this, [name, value]);
     if (!active || name.toLowerCase() !== "content-type") return;
     const state = states.get(this);
@@ -744,6 +788,19 @@ function installXhrBodyObserver(
   };
 
   prototype.send = function (this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null): void {
+    const meta = active ? metas.get(this) : undefined;
+    if (meta?.sameOriginBaggage) {
+      const sessionId = getSessionId?.();
+      const existing = meta.callerBaggage.length > 0 ? meta.callerBaggage.join(", ") : null;
+      if (sessionId && isValidSessionId(sessionId)) {
+        Reflect.apply(originalSetRequestHeader, this, [
+          "baggage",
+          mergeSessionBaggageHeader(existing, sessionId),
+        ]);
+      } else if (existing !== null) {
+        Reflect.apply(originalSetRequestHeader, this, ["baggage", existing]);
+      }
+    }
     const state = active ? states.get(this) : undefined;
     if (state && isJsonContentType(state.contentType) && typeof body === "string") {
       state.requestBody = sanitizedJsonBody(body, state.route, state.maxBodyBytes, (discovered) => {
