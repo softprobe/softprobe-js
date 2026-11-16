@@ -46,10 +46,6 @@ export type JsonValue =
 
 export interface SoftprobeConfig {
   ingestionKey?: string;
-  /** @deprecated Use `ingestionKey`. */
-  publicKey?: string;
-  /** @deprecated Use `ingestionKey`. */
-  apiKey?: string;
   baseUrl?: string;
   /** Defaults to `{baseUrl}/v1/traces` when omitted. */
   otlpEndpoint?: string;

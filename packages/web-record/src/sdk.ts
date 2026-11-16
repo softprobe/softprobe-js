@@ -99,7 +99,7 @@ export class RecordSdk implements WebRecordController {
     },
   ) {
     this.enabled = options.enabled;
-    this.ingestionKey = options.ingestionKey ?? options.apiKey ?? options.publicKey ?? "";
+    this.ingestionKey = options.ingestionKey ?? "";
     this.otlpHeaders = options.otlpHeaders ?? {};
     this.resourceAttributes = options.resourceAttributes;
     this.apiOrigins = [...(options.apiOrigins ?? [])];
@@ -161,7 +161,7 @@ export class RecordSdk implements WebRecordController {
     const softDisable = options.softDisable !== false;
     try {
       const resolved = resolveSoftprobeConfigFromObject({
-        ingestionKey: options.ingestionKey ?? options.apiKey ?? options.publicKey,
+        ingestionKey: options.ingestionKey,
         baseUrl: resolveInitBaseUrl(options.baseUrl),
         otlp: options.otlp,
         otlpEndpoint: options.otlpEndpoint,

@@ -19,7 +19,7 @@ export function autoInitFromScript(
   const script =
     current ??
     doc.querySelector<HTMLScriptElement>(
-      "script[data-ingestion-key], script[data-api-key], script[data-softprobe-api-key], script[data-softprobe-options]",
+      "script[data-ingestion-key], script[data-softprobe-options]",
     );
   if (!script) return undefined;
 
@@ -33,9 +33,7 @@ export function autoInitFromScript(
     return session;
   }
 
-  const ingestionKey = (
-    script.dataset.ingestionKey ?? script.dataset.apiKey ?? script.dataset.softprobeApiKey
-  )?.trim();
+  const ingestionKey = script.dataset.ingestionKey?.trim();
   if (!ingestionKey) return undefined;
 
   const options: WebRecordInitOptions = {

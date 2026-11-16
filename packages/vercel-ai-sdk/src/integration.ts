@@ -27,8 +27,6 @@ export type SoftprobePrompt = {
 export type SoftprobeVercelAiSdkIntegrationOptions = {
   tracer?: Tracer;
   ingestionKey?: string;
-  apiKey?: string;
-  publicKey?: string;
   baseUrl?: string;
   otlp?: SoftprobeClientOptions["otlp"];
   resourceAttributes?: SoftprobeClientOptions["resourceAttributes"];
@@ -845,10 +843,6 @@ function resolveDefaultClient(
     return SoftprobeClient.fromEnv({
       ...(options.ingestionKey !== undefined
         ? { ingestionKey: options.ingestionKey }
-        : {}),
-      ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
-      ...(options.publicKey !== undefined
-        ? { publicKey: options.publicKey }
         : {}),
       ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
       ...(options.otlp !== undefined ? { otlp: options.otlp } : {}),

@@ -19,15 +19,20 @@ Python examples live in the public Python SDK repo:
 ## Credentials
 
 ```bash
-export SOFTPROBE_PUBLIC_KEY="spk_…"
-export SOFTPROBE_BASE_URL="https://explorer.softprobe.ai/api/thelake"
-# optional:
-export SOFTPROBE_ENVIRONMENT="Production"
+export INGESTION_KEY="<Ingestion Key>"
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="https://explorer-staging.softprobe.ai/api/thelake/v1/traces"
+export OTEL_EXPORTER_OTLP_TRACES_HEADERS="Authorization=Bearer ${INGESTION_KEY}"
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="http/protobuf"
+export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=staging"
 ```
 
+Without an OTLP endpoint, the SDK sends traces to the production trace URL.
+`SOFTPROBE_BASE_URL` configures the separate score-write API and only acts as a
+legacy trace-endpoint fallback when no OTLP endpoint is set.
+
 For local thelake started with `SOFTPROBE_LOCAL_ANONYMOUS=1`, set
-`SOFTPROBE_BASE_URL=http://127.0.0.1:8090` and any non-empty
-`SOFTPROBE_PUBLIC_KEY`; thelake ignores credentials in that explicit mode.
+`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:8090/v1/traces` and any
+non-empty `INGESTION_KEY`; thelake ignores credentials in that explicit mode.
 
 ## Run
 

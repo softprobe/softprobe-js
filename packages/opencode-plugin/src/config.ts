@@ -131,7 +131,6 @@ export async function loadSoftprobeCredentials(
         ...envDefaults,
         ...fileCreds,
         ingestionKey: fileCreds.ingestionKey,
-        publicKey: fileCreds.ingestionKey,
         baseUrl: fileCreds.baseUrl,
         otlpEndpoint: fileHasEndpoint
           ? fileCreds.otlpEndpoint

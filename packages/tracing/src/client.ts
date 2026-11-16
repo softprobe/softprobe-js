@@ -55,10 +55,6 @@ import type {
 export interface SoftprobeClientOptions extends SoftprobeConfig {
   /** Ingestion Key (`spk_...`). */
   ingestionKey?: string;
-  /** @deprecated Use `ingestionKey`. */
-  publicKey?: string;
-  /** @deprecated Use `ingestionKey`. */
-  apiKey?: string;
   /**
    * Score API base. Defaults to `https://explorer.softprobe.ai/api/thelake`;
    * also supplies the legacy trace endpoint fallback when no OTLP endpoint is set.
@@ -102,9 +98,7 @@ export class SoftprobeClient {
   static fromEnv(
     overrides: Partial<SoftprobeClientOptions> = {},
   ): SoftprobeClient {
-    const ingestionKey = (
-      overrides.ingestionKey ?? overrides.apiKey ?? overrides.publicKey
-    )?.trim();
+    const ingestionKey = overrides.ingestionKey?.trim();
     const baseUrl =
       overrides.baseUrl?.trim() ||
       process.env.SOFTPROBE_BASE_URL?.trim() ||
@@ -167,9 +161,7 @@ export class SoftprobeClient {
   }
 
   constructor(options: SoftprobeClientOptions) {
-    const ingestionKey = (
-      options.ingestionKey ?? options.apiKey ?? options.publicKey
-    )?.trim();
+    const ingestionKey = options.ingestionKey?.trim();
     if (!ingestionKey) {
       throw new Error("ingestionKey is required");
     }

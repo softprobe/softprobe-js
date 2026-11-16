@@ -27,7 +27,6 @@ const SOFTPROBE_SESSION_ID = "sp.session.id";
 
 export type BrowserRuntimeOptions = {
   ingestionKey?: string;
-  apiKey?: string;
   otlpEndpoint: string;
   otlpHeaders?: Record<string, string>;
   resourceAttributes?: ResourceAttributes;
@@ -70,7 +69,7 @@ export function createBrowserRuntime(
   const collectorUrl = new URL(options.otlpEndpoint);
   const exporter = exporterOverride ?? new BrowserOtlpProtoSpanExporter({
     url: collectorUrl.toString(),
-    ingestionKey: options.ingestionKey ?? options.apiKey ?? "",
+    ingestionKey: options.ingestionKey ?? "",
     headers: options.otlpHeaders,
   });
   const batchProcessor = new BatchSpanProcessor({

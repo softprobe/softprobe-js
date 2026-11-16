@@ -125,7 +125,7 @@ function internals(sdk: InstanceType<typeof RecordSdk>): SdkInternals {
 
 function recordingSdk(extra: Record<string, unknown> = {}) {
   return RecordSdk.init({
-    apiKey: "agent-key",
+    ingestionKey: "agent-key",
     baseUrl: "https://collector.example.test",
     sessionId: "session-recording",
     manual: true,
@@ -229,7 +229,7 @@ describe("RecordSdk", () => {
   it("uploads to production TheLake when baseUrl is omitted and stays off for a blank baseUrl", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     RecordSdk.init({
-      apiKey: "agent-key",
+      ingestionKey: "agent-key",
       serviceName: "travel-ota-web",
       manual: true,
     });
@@ -239,7 +239,7 @@ describe("RecordSdk", () => {
     });
 
     RecordSdk.init({
-      apiKey: "agent-key",
+      ingestionKey: "agent-key",
       httpBodyCapture: false,
       manual: true,
     });
@@ -248,7 +248,7 @@ describe("RecordSdk", () => {
     });
 
     const disabled = RecordSdk.init({
-      apiKey: "agent-key",
+      ingestionKey: "agent-key",
       baseUrl: "",
       manual: true,
     });
@@ -279,7 +279,7 @@ describe("RecordSdk", () => {
 
   it("keeps a generated session id in the tab and supports session switches", async () => {
     const options = {
-      apiKey: "agent-key",
+      ingestionKey: "agent-key",
       baseUrl: "https://collector.example.test",
       serviceName: "travel-ota-web",
       manual: true,
@@ -298,7 +298,7 @@ describe("RecordSdk", () => {
   it("discovers host session id from sessionStorage and adopts runtime-discovered session ids", () => {
     sessionStorage.setItem("demo-ota.travel.sessionId", "ses_host_initial");
     const sdk = RecordSdk.init({
-      apiKey: "agent-key",
+      ingestionKey: "agent-key",
       baseUrl: "https://collector.example.test",
       manual: true,
     });
@@ -312,8 +312,8 @@ describe("RecordSdk", () => {
   });
 
   it("keeps session storage independent for different service names", () => {
-    const first = RecordSdk.init({ apiKey: "agent-key", baseUrl: "https://collector.example.test", serviceName: "travel-ota-web", manual: true });
-    const second = RecordSdk.init({ apiKey: "agent-key", baseUrl: "https://collector.example.test", serviceName: "admin-web", manual: true });
+    const first = RecordSdk.init({ ingestionKey: "agent-key", baseUrl: "https://collector.example.test", serviceName: "travel-ota-web", manual: true });
+    const second = RecordSdk.init({ ingestionKey: "agent-key", baseUrl: "https://collector.example.test", serviceName: "admin-web", manual: true });
     expect(second.sessionId).not.toBe(first.sessionId);
     expect(sessionStorage.getItem("_sp_session_id:travel-ota-web")).toBe(first.sessionId);
     expect(sessionStorage.getItem("_sp_session_id:admin-web")).toBe(second.sessionId);
@@ -321,7 +321,7 @@ describe("RecordSdk", () => {
 
   it("applies rrweb privacy options and stops recording through the returned handle", () => {
     const sdk = RecordSdk.init({
-      apiKey: "agent-key",
+      ingestionKey: "agent-key",
       baseUrl: "https://collector.example.test",
       maskTextSelector: ".private-copy",
       blockSelector: "#payment-form",

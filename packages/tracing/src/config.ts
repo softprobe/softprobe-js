@@ -8,8 +8,6 @@ export const DEFAULT_THELAKE_BASE_URL = "https://explorer.softprobe.ai/api/thela
 /** Resolved Softprobe client credentials and OTLP transport settings. */
 export type ResolvedSoftprobeConfig = {
   ingestionKey: string;
-  /** @deprecated Use `ingestionKey`. */
-  publicKey: string;
   baseUrl: string;
   /** @deprecated Use `otlp.tracesEndpoint`. */
   otlpEndpoint: string;
@@ -167,8 +165,7 @@ export function resolveSoftprobeConfigFromEnv(
   );
   const ingestionKey =
     bearerToken(getHeader(headers, "authorization")) ??
-    asNonEmptyString(env.INGESTION_KEY) ??
-    asNonEmptyString(env.SOFTPROBE_PUBLIC_KEY);
+    asNonEmptyString(env.INGESTION_KEY);
   const baseUrl =
     asNonEmptyString(env.SOFTPROBE_BASE_URL) ?? DEFAULT_THELAKE_BASE_URL;
   if (!ingestionKey) return null;
@@ -187,7 +184,6 @@ export function resolveSoftprobeConfigFromEnv(
 
   return {
     ingestionKey,
-    publicKey: ingestionKey,
     baseUrl,
     otlpEndpoint: otlp.tracesEndpoint,
     otlp,
@@ -207,10 +203,7 @@ export function resolveSoftprobeConfigFromObject(
     throw new MissingSoftprobeCredentialsError("Invalid Softprobe config object");
   }
   const obj = raw as Record<string, unknown>;
-  const ingestionKey = asNonEmptyString(
-    obj.ingestionKey ?? obj.ingestion_key ?? obj.apiKey ?? obj.api_key ??
-      obj.publicKey ?? obj.public_key,
-  );
+  const ingestionKey = asNonEmptyString(obj.ingestionKey);
   const rawBaseUrl = obj.baseUrl ?? obj.base_url;
   const baseUrl = rawBaseUrl === undefined
     ? DEFAULT_THELAKE_BASE_URL
@@ -250,7 +243,6 @@ export function resolveSoftprobeConfigFromObject(
 
   return {
     ingestionKey,
-    publicKey: ingestionKey,
     baseUrl,
     otlpEndpoint,
     otlp: {

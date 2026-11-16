@@ -24,9 +24,9 @@ describe("deriveOtlpEndpoint", () => {
 });
 
 describe("resolveSoftprobeConfigFromEnv", () => {
-  it("returns null when required keys are missing", () => {
+  it("uses production defaults when an Ingestion Key is set", () => {
     expect(resolveSoftprobeConfigFromEnv({})).toBeNull();
-    expect(resolveSoftprobeConfigFromEnv({ SOFTPROBE_PUBLIC_KEY: "pk" }))
+    expect(resolveSoftprobeConfigFromEnv({ INGESTION_KEY: "pk" }))
       .toMatchObject({
         baseUrl: "https://explorer.softprobe.ai/api/thelake",
         otlpEndpoint: "https://explorer.softprobe.ai/api/thelake/v1/traces",
@@ -62,14 +62,13 @@ describe("resolveSoftprobeConfigFromEnv", () => {
   it("parses full env config", () => {
     expect(
       resolveSoftprobeConfigFromEnv({
-        SOFTPROBE_PUBLIC_KEY: " pk ",
+        INGESTION_KEY: " pk ",
         SOFTPROBE_BASE_URL: "http://127.0.0.1:8091",
         SOFTPROBE_ENVIRONMENT: "staging",
         SOFTPROBE_USER_ID: "dev",
       }),
     ).toMatchObject({
       ingestionKey: "pk",
-      publicKey: "pk",
       baseUrl: "http://127.0.0.1:8091",
       otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
       otlp: {
@@ -101,7 +100,6 @@ describe("resolveSoftprobeConfigFromEnv", () => {
 
     expect(cfg).toMatchObject({
       ingestionKey: "staging",
-      publicKey: "staging",
       baseUrl: "https://explorer-staging.softprobe.ai/api/thelake",
       otlpEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
       otlp: {
@@ -162,7 +160,6 @@ describe("resolveSoftprobeConfigFromObject", () => {
       }),
     ).toMatchObject({
       ingestionKey: "pk",
-      publicKey: "pk",
       baseUrl: "https://softprobe.example",
       otlpEndpoint: "https://softprobe.example/v1/traces",
     });

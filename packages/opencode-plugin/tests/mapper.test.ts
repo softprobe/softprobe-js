@@ -9,7 +9,7 @@ import { SoftprobeSessionTracer } from "../src/softprobe.js";
 async function createTracer() {
   const exporter = new InMemorySpanExporter();
   const client = new SoftprobeClient({
-    publicKey: "test-key",
+    ingestionKey: "test-key",
     baseUrl: "http://127.0.0.1:8091",
     otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
     serviceName: "opencode",

@@ -63,7 +63,7 @@ describe("loadSoftprobeCredentials", () => {
     delete process.env.OTEL_EXPORTER_OTLP_HEADERS;
     delete process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS;
     delete process.env.OTEL_RESOURCE_ATTRIBUTES;
-    process.env.SOFTPROBE_PUBLIC_KEY = "pk-test";
+    process.env.INGESTION_KEY = "pk-test";
     process.env.SOFTPROBE_BASE_URL = "http://127.0.0.1:8091";
     delete process.env.SOFTPROBE_OTLP_ENDPOINT;
     process.env.SOFTPROBE_ENVIRONMENT = "staging";
@@ -72,7 +72,6 @@ describe("loadSoftprobeCredentials", () => {
     const creds = await loadSoftprobeCredentials("/nonexistent/path.json");
     expect(creds).toMatchObject({
       ingestionKey: "pk-test",
-      publicKey: "pk-test",
       baseUrl: "http://127.0.0.1:8091",
       otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
       otlp: {
@@ -85,7 +84,7 @@ describe("loadSoftprobeCredentials", () => {
   });
 
   it("reads standard OTLP environment settings without a Softprobe base URL", async () => {
-    delete process.env.SOFTPROBE_PUBLIC_KEY;
+    delete process.env.INGESTION_KEY;
     delete process.env.SOFTPROBE_BASE_URL;
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT =
       "https://explorer-staging.softprobe.ai/api/thelake/v1/traces";
@@ -108,7 +107,7 @@ describe("loadSoftprobeCredentials", () => {
   });
 
   it("loads credentials from INGESTION_KEY directly", async () => {
-    delete process.env.SOFTPROBE_PUBLIC_KEY;
+    delete process.env.INGESTION_KEY;
     delete process.env.SOFTPROBE_BASE_URL;
     delete process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS;
     process.env.INGESTION_KEY = "staging-key";
@@ -123,7 +122,7 @@ describe("loadSoftprobeCredentials", () => {
   });
 
   it("loads from config file when env is incomplete", async () => {
-    delete process.env.SOFTPROBE_PUBLIC_KEY;
+    delete process.env.INGESTION_KEY;
     delete process.env.SOFTPROBE_BASE_URL;
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT =
       "https://collector.example/env/v1/traces";
@@ -133,21 +132,20 @@ describe("loadSoftprobeCredentials", () => {
     await writeFile(
       path,
       JSON.stringify({
-        publicKey: "file-key",
+        ingestionKey: "file-key",
         baseUrl: "https://softprobe.example",
         otlpEndpoint: "https://softprobe.example/custom/traces",
       }),
     );
 
     const creds = await loadSoftprobeCredentials(path);
-    expect(creds.publicKey).toBe("file-key");
+    expect(creds.ingestionKey).toBe("file-key");
     expect(creds.otlpEndpoint).toBe("https://softprobe.example/custom/traces");
     expect(creds.resourceAttributes?.["deployment.environment.name"]).toBe("staging");
   });
 
   it("loads an exact trace endpoint without a second API base", async () => {
     delete process.env.INGESTION_KEY;
-    delete process.env.SOFTPROBE_PUBLIC_KEY;
     delete process.env.SOFTPROBE_BASE_URL;
     delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
     delete process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS;
@@ -171,7 +169,6 @@ describe("loadSoftprobeCredentials", () => {
 
   it("merges OTLP environment settings with an Ingestion Key from the file", async () => {
     delete process.env.INGESTION_KEY;
-    delete process.env.SOFTPROBE_PUBLIC_KEY;
     delete process.env.SOFTPROBE_BASE_URL;
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT =
       "https://explorer-staging.softprobe.ai/api/thelake/v1/traces";
@@ -190,7 +187,7 @@ describe("loadSoftprobeCredentials", () => {
   });
 
   it("throws when credentials are missing", async () => {
-    delete process.env.SOFTPROBE_PUBLIC_KEY;
+    delete process.env.INGESTION_KEY;
     delete process.env.SOFTPROBE_BASE_URL;
     await expect(
       loadSoftprobeCredentials("/tmp/does-not-exist-softprobe.json"),

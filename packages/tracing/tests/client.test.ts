@@ -37,7 +37,7 @@ async function createClient(overrides: {
   const exporter = new InMemorySpanExporter();
   const scores = new MemoryScoreTransport();
   const client = new SoftprobeClient({
-    publicKey: "test-key",
+    ingestionKey: "test-key",
     baseUrl: "http://127.0.0.1:8091",
     otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
     serviceName: "softprobe-sdk-contract",
@@ -63,7 +63,7 @@ describe("SoftprobeClient configuration", () => {
     expect(
       () =>
         new SoftprobeClient({
-          publicKey: "",
+          ingestionKey: "",
           baseUrl: "http://localhost",
         }),
     ).toThrow(/ingestionKey/);
@@ -72,7 +72,7 @@ describe("SoftprobeClient configuration", () => {
   it("derives otlpEndpoint from baseUrl when omitted", async () => {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
-      publicKey: "test-key",
+      ingestionKey: "test-key",
       baseUrl: "http://127.0.0.1:8091",
       spanExporter: exporter,
       useSimpleProcessor: true,
@@ -83,10 +83,10 @@ describe("SoftprobeClient configuration", () => {
     await client.shutdown();
   });
 
-  it("defaults baseUrl to production TheLake and accepts apiKey alias", async () => {
+  it("defaults baseUrl to production TheLake when given an Ingestion Key", async () => {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
-      apiKey: "spk_test_alias",
+      ingestionKey: "spk_test_alias",
       spanExporter: exporter,
       useSimpleProcessor: true,
     });
@@ -189,7 +189,7 @@ describe("SoftprobeClient configuration", () => {
     if (!address || typeof address === "string") throw new Error("no test server port");
     const variables = [
       "INGESTION_KEY",
-      "SOFTPROBE_PUBLIC_KEY",
+      "INGESTION_KEY",
       "SOFTPROBE_BASE_URL",
       "OTEL_EXPORTER_OTLP_ENDPOINT",
       "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
@@ -577,7 +577,7 @@ describe("integer OTLP timestamps", () => {
   it("never ends spans with float/NaN hrTime components", async () => {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
-      publicKey: "pk",
+      ingestionKey: "pk",
       baseUrl: "http://127.0.0.1:8091",
       otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
       spanExporter: exporter,

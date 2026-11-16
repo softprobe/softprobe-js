@@ -15,7 +15,6 @@ const MAX_BACKOFF_MS = 4_000;
 export type BrowserOtlpExporterOptions = {
   url: string;
   ingestionKey?: string;
-  apiKey?: string;
   headers?: Record<string, string>;
   timeoutMillis?: number;
 };
@@ -30,7 +29,7 @@ export class BrowserOtlpProtoSpanExporter implements SpanExporter {
 
   constructor(options: BrowserOtlpExporterOptions) {
     this.url = new URL(options.url);
-    this.ingestionKey = options.ingestionKey ?? options.apiKey ?? "";
+    this.ingestionKey = options.ingestionKey ?? "";
     this.headers = options.headers ?? {};
     this.timeoutMillis = options.timeoutMillis ?? DEFAULT_TIMEOUT_MS;
   }

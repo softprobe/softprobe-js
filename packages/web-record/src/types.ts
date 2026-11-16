@@ -33,10 +33,6 @@ export type Tags = {
 export type WebRecordCredentials = {
   /** Agent-owned Ingestion Key. */
   ingestionKey?: string;
-  /** @deprecated Use ingestionKey. */
-  apiKey?: string;
-  /** @deprecated Use ingestionKey. */
-  publicKey?: string;
   baseUrl: string;
   /** @deprecated Use `otlp.tracesEndpoint` or `otlp.endpoint`. */
   otlpEndpoint?: string;

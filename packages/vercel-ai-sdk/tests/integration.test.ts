@@ -67,7 +67,7 @@ describe("createSoftprobeObservationAttributes", () => {
   });
 
   it("automatically propagates incoming HTTP traceparent and sessionId without runtimeContext", async () => {
-    const client = new SoftprobeClient({ apiKey: "spk_test_auto" });
+    const client = new SoftprobeClient({ ingestionKey: "spk_test_auto" });
     installIncomingHttpContextPropagation();
 
     let capturedAttrs: Record<string, unknown> = {};
@@ -276,7 +276,7 @@ describe("createSoftprobeObservationAttributes", () => {
       typeof collectorAddr === "object" && collectorAddr ? collectorAddr.port : 0;
 
     const client = new SoftprobeClient({
-      apiKey: "spk_test_e2e",
+      ingestionKey: "spk_test_e2e",
       baseUrl: `http://127.0.0.1:${collectorPort}/api/thelake`,
       useSimpleProcessor: true,
     });

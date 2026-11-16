@@ -209,7 +209,7 @@ it("binds a single API origin and redacts builtin secrets inside arrays", async 
   })));
   const memoryExporter = new InMemorySpanExporter();
   const browserRuntime = createBrowserRuntime({
-    apiKey: "agent-key",
+    ingestionKey: "agent-key",
     otlpEndpoint: "https://collector.example.test/v1/traces",
     serviceName: "travel-ota-web",
     apiOrigins: ["https://api.example.test"],
@@ -243,7 +243,7 @@ it("captures no body when several API origins leave the route origin unset", asy
   })));
   const memoryExporter = new InMemorySpanExporter();
   const browserRuntime = createBrowserRuntime({
-    apiKey: "agent-key",
+    ingestionKey: "agent-key",
     otlpEndpoint: "https://collector.example.test/v1/traces",
     serviceName: "travel-ota-web",
     apiOrigins: ["https://api.example.test", "https://pay.example.test"],
@@ -275,7 +275,7 @@ it("defaults to window.location.origin and route origins when apiOrigins is omit
   }));
   const memoryExporter = new InMemorySpanExporter();
   const browserRuntime = createBrowserRuntime({
-    apiKey: "agent-key",
+    ingestionKey: "agent-key",
     otlpEndpoint: "https://collector.example.test/v1/traces",
     serviceName: "travel-ota-web",
     httpBodyCapture: {
@@ -363,7 +363,7 @@ it("captures same-origin JSON bodies without a route allowlist and adopts sessio
   const sessionState = createWebSessionState("initial-tab-uuid");
   const discoveredIds: string[] = [];
   const browserRuntime = createBrowserRuntime({
-    apiKey: "agent-key",
+    ingestionKey: "agent-key",
     otlpEndpoint: "https://collector.example.test/v1/traces",
     serviceName: "travel-ota-web",
     httpBodyCapture: {},
@@ -445,7 +445,7 @@ it("supports wildcard route patterns in httpBodyCapture.routes and ignores unsel
   const memoryExporter = new InMemorySpanExporter();
   const sessionState = createWebSessionState("tab-pre-session");
   const browserRuntime = createBrowserRuntime({
-    apiKey: "agent-key",
+    ingestionKey: "agent-key",
     otlpEndpoint: "https://collector.example.test/v1/traces",
     serviceName: "travel-ota-web",
     httpBodyCapture: {
@@ -570,7 +570,7 @@ it("exports active-page OTLP protobuf batches with keepalive disabled and drains
   });
 
   const browserRuntime = createBrowserRuntime({
-    apiKey: "agent-key",
+    ingestionKey: "agent-key",
     otlpEndpoint: "https://collector.example.test/v1/traces",
     serviceName: "travel-ota-web",
     httpBodyCapture: {
@@ -624,7 +624,7 @@ it("falls back to non-keepalive fetch when hidden-page keepalive quota throws Ty
   });
 
   const browserRuntime = createBrowserRuntime({
-    apiKey: "agent-key",
+    ingestionKey: "agent-key",
     otlpEndpoint: "https://collector.example.test/v1/traces",
     serviceName: "travel-ota-web",
     httpBodyCapture: {
