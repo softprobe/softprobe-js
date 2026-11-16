@@ -1,8 +1,8 @@
 /**
  * Softprobe basic example — matches Agent QA env credentials.
  *
- *   export SOFTPROBE_PUBLIC_KEY=…
- *   export SOFTPROBE_BASE_URL=…
+ *   export INGESTION_KEY=…
+ *   export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=… # optional; defaults to production
  *   npm start
  */
 import { SoftprobeClient } from "@softprobe/tracing";

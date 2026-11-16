@@ -1,3 +1,8 @@
+import type {
+  OtlpExportOptions,
+  ResourceAttributes,
+} from "@softprobe/tracing";
+
 /** Browser session metadata tags collected from UA / viewport. */
 export type SystemInfo = {
   _sp_ua: string;
@@ -26,13 +31,12 @@ export type Tags = {
 };
 
 export type WebRecordCredentials = {
-  /** Existing Agent-owned ingest-only API key. */
-  apiKey?: string;
-  /** @deprecated Use apiKey for Agent-owned ingest keys. */
-  publicKey?: string;
-  baseUrl: string;
-  /** Defaults to `{baseUrl}/v1/traces`. */
+  /** Agent-owned Ingestion Key. */
+  ingestionKey?: string;
+  /** @deprecated Use `otlp.tracesEndpoint` or `otlp.endpoint`. */
   otlpEndpoint?: string;
+  otlp?: OtlpExportOptions;
+  resourceAttributes?: ResourceAttributes;
   environment?: string;
   userId?: string;
   serviceName?: string;
@@ -58,12 +62,7 @@ export type HttpBodyCaptureOptions = {
   routes?: HttpBodyCaptureRoute[];
 };
 
-export type WebRecordInitOptions = Omit<WebRecordCredentials, "baseUrl"> & {
-  /**
-   * Ingest API root. Omit for https://explorer.softprobe.ai/api/thelake.
-   * Local and staging callers pass their own root. A blank value still disables init.
-   */
-  baseUrl?: string;
+export type WebRecordInitOptions = WebRecordCredentials & {
   /** Correlate with LLM / OpenCode session (`sp.session.id`). */
   sessionId?: string;
   /** Flush interval in ms (minimum 5000). */

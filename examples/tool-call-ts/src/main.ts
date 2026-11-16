@@ -14,9 +14,7 @@ const outPath =
 
 const sessionId = process.env.TOOL_CALL_SESSION_ID ?? "sess-tool-call-ts";
 const baseUrl = process.env.SOFTPROBE_BASE_URL ?? "http://127.0.0.1:8090";
-const publicKey = process.env.SOFTPROBE_PUBLIC_KEY ?? "e2e-token";
-const otlpEndpoint =
-  process.env.SOFTPROBE_OTLP_ENDPOINT ?? `${baseUrl}/v1/traces`;
+const ingestionKey = process.env.INGESTION_KEY ?? "e2e-token";
 
 const tools = [
   {
@@ -41,10 +39,9 @@ const toolCalls = [
 ];
 
 async function main(): Promise<void> {
-  const client = new SoftprobeClient({
-    publicKey,
+  const client = SoftprobeClient.fromEnv({
+    ingestionKey,
     baseUrl,
-    otlpEndpoint,
     serviceName: "tool-call-example-ts",
     serviceVersion: "0.1.0",
     environment: "e2e",

@@ -22,7 +22,7 @@ describe("createSoftprobeSessionTracer", () => {
   it("does not register a global TracerProvider by default", async () => {
     const exporter = new InMemorySpanExporter();
     const tracer = createSoftprobeSessionTracer({
-      publicKey: "pk",
+      ingestionKey: "pk",
       baseUrl: "http://127.0.0.1:8091",
       otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
       spanExporter: exporter,
@@ -39,7 +39,7 @@ describe("createSoftprobeSessionTracer", () => {
   it("records full message and tool payloads", async () => {
     const exporter = new InMemorySpanExporter();
     const tracer = createSoftprobeSessionTracer({
-      publicKey: "pk",
+      ingestionKey: "pk",
       baseUrl: "http://127.0.0.1:8091",
       otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
       spanExporter: exporter,
@@ -63,7 +63,7 @@ describe("createHooksFromTracer", () => {
   it("maps chat/tool/event hooks to agent→generation→tool", async () => {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
-      publicKey: "pk",
+      ingestionKey: "pk",
       baseUrl: "http://127.0.0.1:8091",
       otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
       serviceName: "opencode",
@@ -185,7 +185,7 @@ describe("createHooksFromTracer", () => {
   it("defers MCP tool end to message.part.updated for sp.output", async () => {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
-      publicKey: "pk",
+      ingestionKey: "pk",
       baseUrl: "http://127.0.0.1:8091",
       otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
       serviceName: "opencode",
@@ -288,8 +288,7 @@ describe("createHooksFromTracer", () => {
 
 describe("SoftprobePlugin", () => {
   it("returns empty hooks when credentials are missing", async () => {
-    delete process.env.SOFTPROBE_PUBLIC_KEY;
-    delete process.env.SOFTPROBE_API_KEY;
+    delete process.env.INGESTION_KEY;
     delete process.env.SOFTPROBE_BASE_URL;
     process.env.OPENCODE_CONFIG_DIR = "/tmp/does-not-exist-softprobe-dir";
     try {
@@ -301,15 +300,27 @@ describe("SoftprobePlugin", () => {
   });
 
   it("wires credentials from env into working hooks", async () => {
-    process.env.SOFTPROBE_PUBLIC_KEY = "e2e-token";
+    const previousTracesEndpoint = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+    process.env.INGESTION_KEY = "e2e-token";
     process.env.SOFTPROBE_BASE_URL = "http://127.0.0.1:8091";
-    process.env.SOFTPROBE_OTLP_ENDPOINT = "http://127.0.0.1:8091/v1/traces";
+    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "http://127.0.0.1:8091/v1/traces";
+    const previousConfigDir = process.env.OPENCODE_CONFIG_DIR;
+    process.env.OPENCODE_CONFIG_DIR = "/tmp/does-not-exist-softprobe-dir";
 
-    // SoftprobePlugin creates a real OTLP exporter; we only assert hooks exist.
-    const hooks = await SoftprobePlugin({} as never);
-    expect(typeof hooks["chat.message"]).toBe("function");
-    expect(typeof hooks["tool.execute.before"]).toBe("function");
-    expect(typeof hooks.event).toBe("function");
-    await hooks.dispose?.();
+    try {
+      const hooks = await SoftprobePlugin({} as never);
+      expect(typeof hooks["chat.message"]).toBe("function");
+      expect(typeof hooks["tool.execute.before"]).toBe("function");
+      expect(typeof hooks.event).toBe("function");
+      await hooks.dispose?.();
+    } finally {
+      if (previousConfigDir === undefined) delete process.env.OPENCODE_CONFIG_DIR;
+      else process.env.OPENCODE_CONFIG_DIR = previousConfigDir;
+      if (previousTracesEndpoint === undefined) {
+        delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+      } else {
+        process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = previousTracesEndpoint;
+      }
+    }
   });
 });

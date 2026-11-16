@@ -26,9 +26,10 @@ export type SoftprobePrompt = {
 
 export type SoftprobeVercelAiSdkIntegrationOptions = {
   tracer?: Tracer;
-  apiKey?: string;
-  publicKey?: string;
+  ingestionKey?: string;
   baseUrl?: string;
+  otlp?: SoftprobeClientOptions["otlp"];
+  resourceAttributes?: SoftprobeClientOptions["resourceAttributes"];
   serviceName?: string;
   environment?: string;
   spanExporter?: SoftprobeClientOptions["spanExporter"];
@@ -434,7 +435,8 @@ export function installIncomingHttpContextPropagation(options?: {
 }): void {
   registerExcludedBaseUrl(options?.excludedBaseUrl);
   registerExcludedBaseUrl(process.env.SOFTPROBE_BASE_URL);
-  registerExcludedBaseUrl(process.env.SOFTPROBE_OTLP_ENDPOINT);
+  registerExcludedBaseUrl(process.env.OTEL_EXPORTER_OTLP_ENDPOINT);
+  registerExcludedBaseUrl(process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT);
   try {
     patchServerPrototype(http.Server.prototype);
     patchServerPrototype(https.Server.prototype);
@@ -838,11 +840,14 @@ function resolveDefaultClient(
   try {
     const serviceName = options.serviceName?.trim();
     return SoftprobeClient.fromEnv({
-      ...(options.apiKey !== undefined ? { apiKey: options.apiKey } : {}),
-      ...(options.publicKey !== undefined
-        ? { publicKey: options.publicKey }
+      ...(options.ingestionKey !== undefined
+        ? { ingestionKey: options.ingestionKey }
         : {}),
       ...(options.baseUrl !== undefined ? { baseUrl: options.baseUrl } : {}),
+      ...(options.otlp !== undefined ? { otlp: options.otlp } : {}),
+      ...(options.resourceAttributes !== undefined
+        ? { resourceAttributes: options.resourceAttributes }
+        : {}),
       ...(serviceName ? { serviceName } : {}),
       ...(options.environment !== undefined
         ? { environment: options.environment }
@@ -925,7 +930,8 @@ export class SoftprobeVercelAiSdkIntegration {
 
   constructor(options: SoftprobeVercelAiSdkIntegrationOptions = {}) {
     installIncomingHttpContextPropagation({
-      excludedBaseUrl: options.baseUrl,
+      excludedBaseUrl:
+        options.otlp?.tracesEndpoint ?? options.otlp?.endpoint ?? options.baseUrl,
     });
     this.client = resolveDefaultClient(options);
     const tracer = options.tracer ?? this.client?.tracer;
@@ -1035,8 +1041,8 @@ export class SoftprobeVercelAiSdkIntegration {
 
 /**
  * Initialize Softprobe telemetry and register it with the Vercel AI SDK in one call.
- * Reads `SOFTPROBE_PUBLIC_KEY` (or `SOFTPROBE_API_KEY`) and defaults `SOFTPROBE_BASE_URL`
- * to `https://explorer.softprobe.ai/api/thelake`.
+ * Reads the Ingestion Key from `OTEL_EXPORTER_OTLP_TRACES_HEADERS` and uses
+ * standard OTLP endpoint, protocol, header, and resource variables.
  */
 export function initVercelAiTelemetry(
   options: SoftprobeVercelAiSdkIntegrationOptions = {},

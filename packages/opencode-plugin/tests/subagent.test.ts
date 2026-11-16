@@ -11,7 +11,7 @@ import type { SessionLookup } from "../src/types.js";
 async function createTracer(options: { sessionLookup?: SessionLookup } = {}) {
   const exporter = new InMemorySpanExporter();
   const client = new SoftprobeClient({
-    publicKey: "test-key",
+    ingestionKey: "test-key",
     baseUrl: "http://127.0.0.1:8091",
     otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
     serviceName: "opencode",
@@ -459,7 +459,7 @@ describe("sub-agent nesting via OpenCode hooks", () => {
   it("wires session events, chat hooks, and scoped idle end-to-end", async () => {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
-      publicKey: "pk",
+      ingestionKey: "pk",
       baseUrl: "http://127.0.0.1:8091",
       otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
       serviceName: "opencode",
@@ -784,7 +784,7 @@ describe("session lifecycle via OpenCode hooks", () => {
   async function createHookedTracer() {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
-      publicKey: "pk",
+      ingestionKey: "pk",
       baseUrl: "http://127.0.0.1:8091",
       otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
       serviceName: "opencode",

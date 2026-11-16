@@ -8,15 +8,12 @@ const sessionId = process.env.PHASE3_SESSION_ID!;
 const model = process.env.PHASE3_MODEL ?? "gpt-4o-mini";
 const apiKey = process.env.OPENAI_API_KEY!;
 const baseUrl = process.env.SOFTPROBE_BASE_URL ?? "http://127.0.0.1:8090";
-const publicKey = process.env.SOFTPROBE_PUBLIC_KEY ?? "e2e-token";
-const otlpEndpoint =
-  process.env.SOFTPROBE_OTLP_ENDPOINT ?? `${baseUrl}/v1/traces`;
+const ingestionKey = process.env.INGESTION_KEY ?? "e2e-token";
 
 async function main(): Promise<void> {
-  const softprobe = new SoftprobeClient({
-    publicKey,
+  const softprobe = SoftprobeClient.fromEnv({
+    ingestionKey,
     baseUrl,
-    otlpEndpoint,
     serviceName: "phase3-live-ts-openai",
     serviceVersion: "0.1.0",
     environment: "e2e",
