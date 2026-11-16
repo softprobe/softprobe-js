@@ -69,8 +69,8 @@ export type HttpBodyCaptureOptions = {
 
 export type WebRecordInitOptions = Omit<WebRecordCredentials, "baseUrl"> & {
   /**
-   * Ingest API root. Omit for https://explorer.softprobe.ai/api/thelake.
-   * Local and staging callers pass their own root. A blank value still disables init.
+   * Legacy fallback base for OTLP traces. Omit for the production default;
+   * `otlp.tracesEndpoint` selects the exact trace destination. A blank value disables init.
    */
   baseUrl?: string;
   /** Correlate with LLM / OpenCode session (`sp.session.id`). */

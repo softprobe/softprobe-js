@@ -31,6 +31,7 @@ import {
 } from "./observation.js";
 import { withAttributes as withAttributesFn } from "./propagation.js";
 import {
+  DEFAULT_THELAKE_BASE_URL,
   deriveOtlpEndpoint,
   mergeOtlpHeaders,
   MissingSoftprobeCredentialsError,
@@ -51,8 +52,6 @@ import type {
   StartToolOptions,
 } from "./types.js";
 
-const DEFAULT_THELAKE_BASE_URL = "https://explorer.softprobe.ai/api/thelake";
-
 export interface SoftprobeClientOptions extends SoftprobeConfig {
   /** Ingestion Key (`spk_...`). */
   ingestionKey?: string;
@@ -60,7 +59,10 @@ export interface SoftprobeClientOptions extends SoftprobeConfig {
   publicKey?: string;
   /** @deprecated Use `ingestionKey`. */
   apiKey?: string;
-  /** Ingest API root. Defaults to `https://explorer.softprobe.ai/api/thelake`. */
+  /**
+   * Score API base. Defaults to `https://explorer.softprobe.ai/api/thelake`;
+   * also supplies the legacy trace endpoint fallback when no OTLP endpoint is set.
+   */
   baseUrl?: string;
   /** Injected exporter for tests (skips OTLP setup). */
   spanExporter?: SpanExporter;

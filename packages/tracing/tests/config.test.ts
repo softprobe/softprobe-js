@@ -26,9 +26,26 @@ describe("deriveOtlpEndpoint", () => {
 describe("resolveSoftprobeConfigFromEnv", () => {
   it("returns null when required keys are missing", () => {
     expect(resolveSoftprobeConfigFromEnv({})).toBeNull();
-    expect(
-      resolveSoftprobeConfigFromEnv({ SOFTPROBE_PUBLIC_KEY: "pk" }),
-    ).toBeNull();
+    expect(resolveSoftprobeConfigFromEnv({ SOFTPROBE_PUBLIC_KEY: "pk" }))
+      .toMatchObject({
+        baseUrl: "https://explorer.softprobe.ai/api/thelake",
+        otlpEndpoint: "https://explorer.softprobe.ai/api/thelake/v1/traces",
+      });
+  });
+
+  it("uses standard OTLP settings without a Softprobe API base", () => {
+    expect(resolveSoftprobeConfigFromEnv({
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:
+        "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+      OTEL_EXPORTER_OTLP_TRACES_HEADERS: "Authorization=Bearer staging-key",
+      OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: "http/protobuf",
+      OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=staging",
+    })).toMatchObject({
+      ingestionKey: "staging-key",
+      baseUrl: "https://explorer.softprobe.ai/api/thelake",
+      otlpEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+      resourceAttributes: { "deployment.environment.name": "staging" },
+    });
   });
 
   it("parses full env config", () => {
@@ -123,9 +140,7 @@ describe("resolveSoftprobeConfigFromObject", () => {
     expect(() => resolveSoftprobeConfigFromObject(null)).toThrow(
       MissingSoftprobeCredentialsError,
     );
-    expect(() => resolveSoftprobeConfigFromObject({ publicKey: "pk" })).toThrow(
-      /ingestionKey and baseUrl/,
-    );
+    expect(() => resolveSoftprobeConfigFromObject({})).toThrow(/ingestionKey/);
   });
 
   it("derives otlp endpoint from baseUrl", () => {
@@ -142,11 +157,18 @@ describe("resolveSoftprobeConfigFromObject", () => {
     });
   });
 
+  it("defaults direct configuration to the production traces endpoint", () => {
+    expect(resolveSoftprobeConfigFromObject({ ingestionKey: "pk" })).toMatchObject({
+      baseUrl: "https://explorer.softprobe.ai/api/thelake",
+      otlpEndpoint: "https://explorer.softprobe.ai/api/thelake/v1/traces",
+    });
+  });
+
   it("accepts equivalent direct OTLP and resource options", () => {
     expect(
       resolveSoftprobeConfigFromObject({
         ingestionKey: "pk",
-        baseUrl: "https://explorer-staging.softprobe.ai/api/thelake",
+        baseUrl: "https://scores.example.test/api",
         otlp: {
           endpoint: "https://collector.example/base",
           tracesEndpoint:
@@ -158,6 +180,7 @@ describe("resolveSoftprobeConfigFromObject", () => {
       }),
     ).toMatchObject({
       ingestionKey: "pk",
+      baseUrl: "https://scores.example.test/api",
       otlpEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
       otlp: {
         endpoint: "https://collector.example/base",
@@ -168,6 +191,27 @@ describe("resolveSoftprobeConfigFromObject", () => {
       },
       resourceAttributes: { "deployment.environment.name": "staging" },
     });
+  });
+
+  it("accepts a trace endpoint without a separate API base", () => {
+    expect(resolveSoftprobeConfigFromObject({
+      ingestionKey: "staging-key",
+      otlp: {
+        tracesEndpoint:
+          "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+        protocol: "http/protobuf",
+      },
+    })).toMatchObject({
+      baseUrl: "https://explorer.softprobe.ai/api/thelake",
+      otlpEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+    });
+  });
+
+  it("rejects an explicitly blank API base", () => {
+    expect(() => resolveSoftprobeConfigFromObject({
+      ingestionKey: "pk",
+      baseUrl: "",
+    })).toThrow(/baseUrl must be non-empty/);
   });
 
   it("rejects protocols the Softprobe exporter cannot use", () => {

@@ -223,7 +223,7 @@ describe("RecordSdk", () => {
     expect(warn).toHaveBeenCalled();
     expect(testState.createBrowserRuntime).not.toHaveBeenCalled();
 
-    expect(() => RecordSdk.init({ softDisable: false } as never)).toThrow(/ingestionKey and baseUrl/);
+    expect(() => RecordSdk.init({ softDisable: false } as never)).toThrow(/ingestionKey/);
   });
 
   it("uploads to production TheLake when baseUrl is omitted and stays off for a blank baseUrl", () => {
@@ -259,7 +259,6 @@ describe("RecordSdk", () => {
   it("passes direct Ingestion Key, OTLP, and resource settings to the browser runtime", () => {
     RecordSdk.init({
       ingestionKey: "staging-key",
-      baseUrl: "https://explorer-staging.softprobe.ai/api/thelake",
       otlp: {
         tracesEndpoint:
           "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",

@@ -3,6 +3,8 @@ import type {
   ResourceAttributes,
 } from "./types.js";
 
+export const DEFAULT_THELAKE_BASE_URL = "https://explorer.softprobe.ai/api/thelake";
+
 /** Resolved Softprobe client credentials and OTLP transport settings. */
 export type ResolvedSoftprobeConfig = {
   ingestionKey: string;
@@ -154,7 +156,7 @@ function resolveEnvOtlp(env: SoftprobeEnvSource, baseUrl: string): OtlpExportOpt
 
 /**
  * Read Softprobe config from environment variables.
- * Returns null when required credentials or the Softprobe API base are missing.
+ * Returns null when the Ingestion Key is missing.
  */
 export function resolveSoftprobeConfigFromEnv(
   env: SoftprobeEnvSource = process.env,
@@ -166,8 +168,9 @@ export function resolveSoftprobeConfigFromEnv(
   const ingestionKey =
     bearerToken(getHeader(headers, "authorization")) ??
     asNonEmptyString(env.SOFTPROBE_PUBLIC_KEY);
-  const baseUrl = asNonEmptyString(env.SOFTPROBE_BASE_URL);
-  if (!ingestionKey || !baseUrl) return null;
+  const baseUrl =
+    asNonEmptyString(env.SOFTPROBE_BASE_URL) ?? DEFAULT_THELAKE_BASE_URL;
+  if (!ingestionKey) return null;
 
   const resourceAttributes = parseResourceAttributes(env.OTEL_RESOURCE_ATTRIBUTES);
   const serviceName =
@@ -207,10 +210,18 @@ export function resolveSoftprobeConfigFromObject(
     obj.ingestionKey ?? obj.ingestion_key ?? obj.apiKey ?? obj.api_key ??
       obj.publicKey ?? obj.public_key,
   );
-  const baseUrl = asNonEmptyString(obj.baseUrl ?? obj.base_url);
-  if (!ingestionKey || !baseUrl) {
+  const rawBaseUrl = obj.baseUrl ?? obj.base_url;
+  const baseUrl = rawBaseUrl === undefined
+    ? DEFAULT_THELAKE_BASE_URL
+    : asNonEmptyString(rawBaseUrl);
+  if (!ingestionKey) {
     throw new MissingSoftprobeCredentialsError(
-      "ingestionKey and baseUrl are required",
+      "ingestionKey is required",
+    );
+  }
+  if (!baseUrl) {
+    throw new MissingSoftprobeCredentialsError(
+      "baseUrl must be non-empty when provided",
     );
   }
 

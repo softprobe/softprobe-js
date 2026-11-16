@@ -35,21 +35,26 @@ For staging, standard OTLP environment variables configure the trace exporter:
 
 ```sh
 export INGESTION_KEY="<Ingestion Key>"
-export SOFTPROBE_BASE_URL="https://explorer-staging.softprobe.ai/api/thelake"
 export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="https://explorer-staging.softprobe.ai/api/thelake/v1/traces"
 export OTEL_EXPORTER_OTLP_TRACES_HEADERS="Authorization=Bearer ${INGESTION_KEY}"
 export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="http/protobuf"
 export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=staging"
 ```
 
-`SOFTPROBE_BASE_URL` selects the API base for score writes. A full trace-specific endpoint is used as written; a generic `OTEL_EXPORTER_OTLP_ENDPOINT` is a base URL and gets `/v1/traces` appended.
+Without a custom endpoint, the SDK exports traces to
+`https://explorer.softprobe.ai/api/thelake/v1/traces`.
+
+`SOFTPROBE_BASE_URL` routes score requests and remains a fallback for older
+trace configurations that do not set an OTLP endpoint. With an explicit trace
+endpoint, it only affects score requests. If neither is configured, the SDK
+uses the production endpoint above. A generic `OTEL_EXPORTER_OTLP_ENDPOINT` is
+a base URL and gets `/v1/traces` appended.
 
 The same values can be passed directly to the SDK:
 
 ```ts
 const client = new SoftprobeClient({
   ingestionKey: "<Ingestion Key>",
-  baseUrl: "https://explorer-staging.softprobe.ai/api/thelake",
   otlp: {
     tracesEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
     protocol: "http/protobuf",
@@ -57,5 +62,8 @@ const client = new SoftprobeClient({
   resourceAttributes: { "deployment.environment.name": "staging" },
 });
 ```
+
+`baseUrl` is optional here. Set it separately if score writes should use the
+staging API; otherwise it defaults to the production score API.
 
 See `docs/sdk-contract.md` for the shared contract with the Python SDK.

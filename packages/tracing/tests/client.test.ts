@@ -100,7 +100,6 @@ describe("SoftprobeClient configuration", () => {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
       ingestionKey: "staging-key",
-      baseUrl: "https://explorer-staging.softprobe.ai/api/thelake",
       otlp: {
         tracesEndpoint:
           "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
@@ -144,7 +143,6 @@ describe("SoftprobeClient configuration", () => {
     if (!address || typeof address === "string") throw new Error("no test server port");
     const client = new SoftprobeClient({
       ingestionKey: "staging-key",
-      baseUrl: `http://127.0.0.1:${address.port}`,
       otlp: {
         tracesEndpoint: `http://127.0.0.1:${address.port}/custom/v1/traces`,
         protocol: "http/protobuf",

@@ -9,8 +9,6 @@ import {
   type ResolvedSoftprobeConfig,
 } from "@softprobe/tracing";
 
-const DEFAULT_THELAKE_BASE_URL = "https://explorer.softprobe.ai/api/thelake";
-
 export type SoftprobePluginCredentials = ResolvedSoftprobeConfig;
 
 export { MissingSoftprobeCredentialsError };
@@ -65,8 +63,6 @@ export async function loadSoftprobeCredentials(
   configPath?: string,
 ): Promise<SoftprobePluginCredentials> {
   const env = { ...process.env };
-  env.SOFTPROBE_BASE_URL =
-    env.SOFTPROBE_BASE_URL?.trim() || DEFAULT_THELAKE_BASE_URL;
   const envCreds = resolveSoftprobeConfigFromEnv(env);
 
   const paths = configPath ? [configPath] : candidateConfigPaths();

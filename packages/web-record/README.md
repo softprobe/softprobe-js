@@ -19,7 +19,6 @@ import { RecordSdk } from "@softprobe/web-record";
 
 RecordSdk.init({
   ingestionKey: "<Ingestion Key>",
-  baseUrl: "https://explorer-staging.softprobe.ai/api/thelake",
   otlp: {
     tracesEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
     protocol: "http/protobuf",
@@ -41,7 +40,7 @@ Or add a single `<script>` tag to `<head>` in plain HTML pages:
 
 With only `ingestionKey`, `RecordSdk.init()` enables these defaults:
 
-- Exports OTLP traces and rrweb DOM recordings to `https://explorer.softprobe.ai/api/thelake/v1/traces` (`baseUrl` overrides this for local or staging deployments).
+- Exports OTLP traces and rrweb DOM recordings to `https://explorer.softprobe.ai/api/thelake/v1/traces` by default. Set `otlp.tracesEndpoint` to select a local or staging destination. `baseUrl` remains a fallback for older setups when no OTLP endpoint is set.
 - Traces same-origin `fetch` and `XMLHttpRequest` calls (`window.location.origin`) and injects W3C `traceparent` and `tracestate` headers.
 - Captures same-origin JSON request and response bodies up to 64 KiB and replaces `cardNumber`, `cvv`, `cvc`, `password`, and `secret` with `[REDACTED]`.
 - Masks all browser input elements (`maskAllInputs: true`).

@@ -35,7 +35,6 @@ Create `opencode-softprobe.json` in the OpenCode / spcode global config director
 ```json
 {
   "ingestionKey": "<Ingestion Key>",
-  "baseUrl": "https://explorer-staging.softprobe.ai/api/thelake",
   "otlp": {
     "tracesEndpoint": "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
     "protocol": "http/protobuf"
@@ -46,8 +45,12 @@ Create `opencode-softprobe.json` in the OpenCode / spcode global config director
 }
 ```
 
-`ingestionKey` and `baseUrl` are required. `otlp.tracesEndpoint` is used as
-written; `otlp.endpoint` is a generic base URL and gets `/v1/traces` appended.
+`ingestionKey` is required. `otlp.tracesEndpoint` is the exact trace destination;
+`otlp.endpoint` is a generic base URL and gets `/v1/traces` appended. `baseUrl`
+routes score API calls and remains a fallback for older configurations with no
+OTLP endpoint. When an exact traces endpoint is set, `baseUrl` only affects
+score calls. If neither endpoint nor custom `baseUrl` is set, traces default to
+`https://explorer.softprobe.ai/api/thelake/v1/traces`.
 Credential parsing and validation use shared helpers from
 `@softprobe/tracing` (`resolveSoftprobeConfigFromEnv`, etc.); this package only
 adds the OpenCode config file path and soft-disable behavior when credentials are
@@ -58,7 +61,6 @@ export; `SOFTPROBE_BASE_URL` also selects where score writes go:
 
 ```bash
 export INGESTION_KEY="..."
-export SOFTPROBE_BASE_URL="https://explorer-staging.softprobe.ai/api/thelake"
 export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="https://explorer-staging.softprobe.ai/api/thelake/v1/traces"
 export OTEL_EXPORTER_OTLP_TRACES_HEADERS="Authorization=Bearer ${INGESTION_KEY}"
 export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="http/protobuf"
@@ -67,7 +69,10 @@ export SOFTPROBE_USER_ID="your-user-id"
 ```
 
 Explicit fields in the credential file override environment values. Environment
-values fill fields omitted from the file.
+values fill fields omitted from the file. The exact trace endpoint selects the
+trace destination; with that endpoint set, `SOFTPROBE_BASE_URL` only routes
+score API calls. Without either an OTLP endpoint or a custom base URL, the SDK
+uses the production trace URL shown above.
 
 Softprobe **spcode** product builds auto-inject this plugin and default thelake
 credentials when `SPCODE_MODE` is on (see softprobe-code

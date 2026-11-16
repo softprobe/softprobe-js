@@ -3,6 +3,7 @@ import { pack } from "@rrweb/packer";
 import { record as rrwebRecord } from "rrweb";
 import { SpanStatusCode } from "@opentelemetry/api";
 import {
+  DEFAULT_THELAKE_BASE_URL,
   asNonEmptyString,
   deriveOtlpEndpoint,
   resolveSoftprobeConfigFromObject,
@@ -19,10 +20,8 @@ import type {
   WebRecordInitOptions,
 } from "./types.js";
 
-const PRODUCTION_THELAKE_BASE_URL = "https://explorer.softprobe.ai/api/thelake";
-
 function resolveInitBaseUrl(baseUrl: string | undefined): string {
-  if (baseUrl === undefined) return PRODUCTION_THELAKE_BASE_URL;
+  if (baseUrl === undefined) return DEFAULT_THELAKE_BASE_URL;
   return baseUrl;
 }
 
