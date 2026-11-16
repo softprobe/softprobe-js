@@ -14,14 +14,11 @@ const childSessionId =
   process.env.OPENCODE_PLUGIN_CHILD_SESSION_ID ?? `${parentSessionId}-child`;
 const baseUrl = process.env.SOFTPROBE_BASE_URL ?? "http://127.0.0.1:8090";
 const ingestionKey = process.env.INGESTION_KEY ?? "e2e-token";
-const otlpEndpoint =
-  process.env.SOFTPROBE_OTLP_ENDPOINT ?? `${baseUrl}/v1/traces`;
 
 async function main(): Promise<void> {
-  const client = new SoftprobeClient({
+  const client = SoftprobeClient.fromEnv({
     ingestionKey,
     baseUrl,
-    otlpEndpoint,
     serviceName: "opencode",
     serviceVersion: "0.1.0",
     environment: "e2e",

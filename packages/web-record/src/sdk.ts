@@ -3,7 +3,6 @@ import { pack } from "@rrweb/packer";
 import { record as rrwebRecord } from "rrweb";
 import { SpanStatusCode } from "@opentelemetry/api";
 import {
-  DEFAULT_THELAKE_BASE_URL,
   asNonEmptyString,
   deriveOtlpEndpoint,
   resolveSoftprobeConfigFromObject,
@@ -19,11 +18,6 @@ import type {
   WebRecordController,
   WebRecordInitOptions,
 } from "./types.js";
-
-function resolveInitBaseUrl(baseUrl: string | undefined): string {
-  if (baseUrl === undefined) return DEFAULT_THELAKE_BASE_URL;
-  return baseUrl;
-}
 
 const MAX_EVENTS = 500;
 /** 连续导出失败多少次后彻底放弃采集(见 {@link RecordSdk.noteExportFailure})。 */
@@ -162,7 +156,6 @@ export class RecordSdk implements WebRecordController {
     try {
       const resolved = resolveSoftprobeConfigFromObject({
         ingestionKey: options.ingestionKey,
-        baseUrl: resolveInitBaseUrl(options.baseUrl),
         otlp: options.otlp,
         otlpEndpoint: options.otlpEndpoint,
         resourceAttributes: options.resourceAttributes,
@@ -173,7 +166,6 @@ export class RecordSdk implements WebRecordController {
       return new RecordSdk({
         ...options,
         ingestionKey: resolved.ingestionKey,
-        baseUrl: resolved.baseUrl,
         otlpEndpoint: resolved.otlpEndpoint,
         otlpHeaders: resolved.otlp.headers,
         resourceAttributes: resolved.resourceAttributes,
@@ -189,7 +181,6 @@ export class RecordSdk implements WebRecordController {
         );
         return new RecordSdk({
           ingestionKey: "",
-          baseUrl: "",
           otlpEndpoint: deriveOtlpEndpoint("http://127.0.0.1"),
           enabled: false,
           manual: true,
@@ -463,7 +454,7 @@ export class RecordSdk implements WebRecordController {
         `[@softprobe/web-record] Giving up after ${this.consecutiveFailures} ` +
           `consecutive export failures; session recording disabled. ` +
           `Endpoint: ${this.otlpEndpoint}. On a closed network, point ` +
-          `SOFTPROBE_BASE_URL at a reachable collector or disable web recording.`,
+          `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT at a reachable collector or disable web recording.`,
       );
       return;
     }

@@ -7,7 +7,7 @@ import {
 } from "../src/config.js";
 
 describe("deriveOtlpEndpoint", () => {
-  it("defaults to baseUrl/v1/traces", () => {
+  it("appends the traces path to a generic endpoint", () => {
     expect(deriveOtlpEndpoint("http://127.0.0.1:8091")).toBe(
       "http://127.0.0.1:8091/v1/traces",
     );
@@ -48,6 +48,16 @@ describe("resolveSoftprobeConfigFromEnv", () => {
     });
   });
 
+  it("keeps a custom score API base separate from the production trace default", () => {
+    expect(resolveSoftprobeConfigFromEnv({
+      INGESTION_KEY: "pk",
+      SOFTPROBE_BASE_URL: "https://scores.example.test/api",
+    })).toMatchObject({
+      baseUrl: "https://scores.example.test/api",
+      otlpEndpoint: "https://explorer.softprobe.ai/api/thelake/v1/traces",
+    });
+  });
+
   it("resolves INGESTION_KEY directly when no OTLP authorization header is set", () => {
     expect(resolveSoftprobeConfigFromEnv({
       INGESTION_KEY: "staging-key",
@@ -59,7 +69,7 @@ describe("resolveSoftprobeConfigFromEnv", () => {
     });
   });
 
-  it("parses full env config", () => {
+  it("parses score config and keeps traces on the production default", () => {
     expect(
       resolveSoftprobeConfigFromEnv({
         INGESTION_KEY: " pk ",
@@ -70,9 +80,9 @@ describe("resolveSoftprobeConfigFromEnv", () => {
     ).toMatchObject({
       ingestionKey: "pk",
       baseUrl: "http://127.0.0.1:8091",
-      otlpEndpoint: "http://127.0.0.1:8091/v1/traces",
+      otlpEndpoint: "https://explorer.softprobe.ai/api/thelake/v1/traces",
       otlp: {
-        tracesEndpoint: "http://127.0.0.1:8091/v1/traces",
+        tracesEndpoint: "https://explorer.softprobe.ai/api/thelake/v1/traces",
         protocol: "http/protobuf",
       },
       environment: "staging",
@@ -152,7 +162,7 @@ describe("resolveSoftprobeConfigFromObject", () => {
     expect(() => resolveSoftprobeConfigFromObject({})).toThrow(/ingestionKey/);
   });
 
-  it("derives otlp endpoint from baseUrl", () => {
+  it("keeps a custom score API base separate from the production trace default", () => {
     expect(
       resolveSoftprobeConfigFromObject({
         ingestionKey: "pk",
@@ -161,7 +171,7 @@ describe("resolveSoftprobeConfigFromObject", () => {
     ).toMatchObject({
       ingestionKey: "pk",
       baseUrl: "https://softprobe.example",
-      otlpEndpoint: "https://softprobe.example/v1/traces",
+      otlpEndpoint: "https://explorer.softprobe.ai/api/thelake/v1/traces",
     });
   });
 

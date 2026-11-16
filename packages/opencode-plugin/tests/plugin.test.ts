@@ -300,9 +300,10 @@ describe("SoftprobePlugin", () => {
   });
 
   it("wires credentials from env into working hooks", async () => {
+    const previousTracesEndpoint = process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
     process.env.INGESTION_KEY = "e2e-token";
     process.env.SOFTPROBE_BASE_URL = "http://127.0.0.1:8091";
-    process.env.SOFTPROBE_OTLP_ENDPOINT = "http://127.0.0.1:8091/v1/traces";
+    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "http://127.0.0.1:8091/v1/traces";
     const previousConfigDir = process.env.OPENCODE_CONFIG_DIR;
     process.env.OPENCODE_CONFIG_DIR = "/tmp/does-not-exist-softprobe-dir";
 
@@ -315,6 +316,11 @@ describe("SoftprobePlugin", () => {
     } finally {
       if (previousConfigDir === undefined) delete process.env.OPENCODE_CONFIG_DIR;
       else process.env.OPENCODE_CONFIG_DIR = previousConfigDir;
+      if (previousTracesEndpoint === undefined) {
+        delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
+      } else {
+        process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = previousTracesEndpoint;
+      }
     }
   });
 });

@@ -35,11 +35,11 @@ export function asNonEmptyString(value: unknown): string | undefined {
 
 /** Default OTLP traces path when an exact `tracesEndpoint` is omitted. */
 export function deriveOtlpEndpoint(
-  baseUrl: string,
+  endpoint: string,
   explicit?: string,
 ): string {
   if (explicit?.trim()) return explicit.trim();
-  return `${baseUrl.replace(/\/$/, "")}/v1/traces`;
+  return `${endpoint.replace(/\/$/, "")}/v1/traces`;
 }
 
 export type SoftprobeEnvSource = Record<string, string | undefined>;
@@ -125,14 +125,13 @@ export function validateOtlpProtocol(value: unknown): "http/protobuf" {
   );
 }
 
-function resolveEnvOtlp(env: SoftprobeEnvSource, baseUrl: string): OtlpExportOptions & {
+function resolveEnvOtlp(env: SoftprobeEnvSource): OtlpExportOptions & {
   tracesEndpoint: string;
 } {
   const tracesEndpoint = asNonEmptyString(
     env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
   );
   const endpoint = asNonEmptyString(env.OTEL_EXPORTER_OTLP_ENDPOINT);
-  const legacyEndpoint = asNonEmptyString(env.SOFTPROBE_OTLP_ENDPOINT);
   const protocol = validateOtlpProtocol(
     asNonEmptyString(env.OTEL_EXPORTER_OTLP_TRACES_PROTOCOL) ??
       asNonEmptyString(env.OTEL_EXPORTER_OTLP_PROTOCOL),
@@ -145,8 +144,7 @@ function resolveEnvOtlp(env: SoftprobeEnvSource, baseUrl: string): OtlpExportOpt
     ...(endpoint ? { endpoint } : {}),
     tracesEndpoint: tracesEndpoint ??
       (endpoint ? deriveOtlpEndpoint(endpoint) : undefined) ??
-      legacyEndpoint ??
-      deriveOtlpEndpoint(baseUrl),
+      deriveOtlpEndpoint(DEFAULT_THELAKE_BASE_URL),
     protocol,
     ...(Object.keys(headers).length ? { headers } : {}),
   };
@@ -180,7 +178,7 @@ export function resolveSoftprobeConfigFromEnv(
   const environment =
     asNonEmptyString(resourceAttributes["deployment.environment.name"]) ??
     asNonEmptyString(env.SOFTPROBE_ENVIRONMENT);
-  const otlp = resolveEnvOtlp(env, baseUrl);
+  const otlp = resolveEnvOtlp(env);
 
   return {
     ingestionKey,
@@ -228,7 +226,7 @@ export function resolveSoftprobeConfigFromObject(
   );
   const legacyEndpoint = asNonEmptyString(obj.otlpEndpoint ?? obj.otlp_endpoint);
   const otlpEndpoint = tracesEndpoint ?? legacyEndpoint ??
-    deriveOtlpEndpoint(endpoint ?? baseUrl);
+    deriveOtlpEndpoint(endpoint ?? DEFAULT_THELAKE_BASE_URL);
   const protocol = validateOtlpProtocol(rawOtlp.protocol);
   const otlpHeaders = headersFromObject(rawOtlp.headers);
   const resourceAttributes = resourceAttributesFromObject(

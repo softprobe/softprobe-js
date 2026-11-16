@@ -27,8 +27,8 @@ export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=staging"
 ```
 
 Without an OTLP endpoint, the SDK sends traces to the production trace URL.
-`SOFTPROBE_BASE_URL` configures the separate score-write API and only acts as a
-legacy trace-endpoint fallback when no OTLP endpoint is set.
+`SOFTPROBE_BASE_URL` configures the separate score-write API. It does not
+change the trace destination.
 
 For local thelake started with `SOFTPROBE_LOCAL_ANONYMOUS=1`, set
 `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:8090/v1/traces` and any

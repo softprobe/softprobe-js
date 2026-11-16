@@ -278,6 +278,9 @@ describe("createSoftprobeObservationAttributes", () => {
     const client = new SoftprobeClient({
       ingestionKey: "spk_test_e2e",
       baseUrl: `http://127.0.0.1:${collectorPort}/api/thelake`,
+      otlp: {
+        tracesEndpoint: `http://127.0.0.1:${collectorPort}/api/thelake/v1/traces`,
+      },
       useSimpleProcessor: true,
     });
     installIncomingHttpContextPropagation();

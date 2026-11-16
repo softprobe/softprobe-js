@@ -56,8 +56,8 @@ export interface SoftprobeClientOptions extends SoftprobeConfig {
   /** Ingestion Key (`spk_...`). */
   ingestionKey?: string;
   /**
-   * Score API base. Defaults to `https://explorer.softprobe.ai/api/thelake`;
-   * also supplies the legacy trace endpoint fallback when no OTLP endpoint is set.
+   * Score API base. Defaults to `https://explorer.softprobe.ai/api/thelake`.
+   * It does not change the OTLP trace destination.
    */
   baseUrl?: string;
   /** Injected exporter for tests (skips OTLP setup). */
@@ -174,7 +174,7 @@ export class SoftprobeClient {
     validateOtlpProtocol(options.otlp?.protocol);
     const otlpEndpoint = options.otlp?.tracesEndpoint?.trim() ||
       options.otlpEndpoint?.trim() ||
-      deriveOtlpEndpoint(options.otlp?.endpoint ?? baseUrl);
+      deriveOtlpEndpoint(options.otlp?.endpoint ?? DEFAULT_THELAKE_BASE_URL);
     if (!options.spanExporter && !otlpEndpoint) {
       throw new Error("otlpEndpoint is required");
     }

@@ -69,7 +69,7 @@ describe("SoftprobeClient configuration", () => {
     ).toThrow(/ingestionKey/);
   });
 
-  it("derives otlpEndpoint from baseUrl when omitted", async () => {
+  it("accepts a score API base without requiring an OTLP endpoint", async () => {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
       ingestionKey: "test-key",

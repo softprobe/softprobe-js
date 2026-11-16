@@ -33,7 +33,6 @@ export type Tags = {
 export type WebRecordCredentials = {
   /** Agent-owned Ingestion Key. */
   ingestionKey?: string;
-  baseUrl: string;
   /** @deprecated Use `otlp.tracesEndpoint` or `otlp.endpoint`. */
   otlpEndpoint?: string;
   otlp?: OtlpExportOptions;
@@ -63,12 +62,7 @@ export type HttpBodyCaptureOptions = {
   routes?: HttpBodyCaptureRoute[];
 };
 
-export type WebRecordInitOptions = Omit<WebRecordCredentials, "baseUrl"> & {
-  /**
-   * Legacy fallback base for OTLP traces. Omit for the production default;
-   * `otlp.tracesEndpoint` selects the exact trace destination. A blank value disables init.
-   */
-  baseUrl?: string;
+export type WebRecordInitOptions = WebRecordCredentials & {
   /** Correlate with LLM / OpenCode session (`sp.session.id`). */
   sessionId?: string;
   /** Flush interval in ms (minimum 5000). */

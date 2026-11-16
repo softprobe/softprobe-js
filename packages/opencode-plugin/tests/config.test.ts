@@ -65,7 +65,7 @@ describe("loadSoftprobeCredentials", () => {
     delete process.env.OTEL_RESOURCE_ATTRIBUTES;
     process.env.INGESTION_KEY = "pk-test";
     process.env.SOFTPROBE_BASE_URL = "http://127.0.0.1:8091";
-    delete process.env.SOFTPROBE_OTLP_ENDPOINT;
+    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "http://127.0.0.1:8091/v1/traces";
     process.env.SOFTPROBE_ENVIRONMENT = "staging";
     process.env.SOFTPROBE_USER_ID = "dev";
 

@@ -47,7 +47,7 @@ export type JsonValue =
 export interface SoftprobeConfig {
   ingestionKey?: string;
   baseUrl?: string;
-  /** Defaults to `{baseUrl}/v1/traces` when omitted. */
+  /** Defaults to the production traces endpoint when omitted. */
   otlpEndpoint?: string;
   otlp?: OtlpExportOptions;
   resourceAttributes?: ResourceAttributes;

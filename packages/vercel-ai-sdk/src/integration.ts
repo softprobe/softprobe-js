@@ -435,7 +435,6 @@ export function installIncomingHttpContextPropagation(options?: {
 }): void {
   registerExcludedBaseUrl(options?.excludedBaseUrl);
   registerExcludedBaseUrl(process.env.SOFTPROBE_BASE_URL);
-  registerExcludedBaseUrl(process.env.SOFTPROBE_OTLP_ENDPOINT);
   registerExcludedBaseUrl(process.env.OTEL_EXPORTER_OTLP_ENDPOINT);
   registerExcludedBaseUrl(process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT);
   try {

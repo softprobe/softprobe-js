@@ -44,11 +44,10 @@ export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=staging"
 Without a custom endpoint, the SDK exports traces to
 `https://explorer.softprobe.ai/api/thelake/v1/traces`.
 
-`SOFTPROBE_BASE_URL` routes score requests and remains a fallback for older
-trace configurations that do not set an OTLP endpoint. With an explicit trace
-endpoint, it only affects score requests. If neither is configured, the SDK
-uses the production endpoint above. A generic `OTEL_EXPORTER_OTLP_ENDPOINT` is
-a base URL and gets `/v1/traces` appended.
+`SOFTPROBE_BASE_URL` routes score requests only. It never changes the trace
+destination. If no OTLP endpoint is configured, the SDK uses the production
+endpoint above. A generic `OTEL_EXPORTER_OTLP_ENDPOINT` is a base URL and gets
+`/v1/traces` appended.
 
 The same values can be passed directly to the SDK:
 

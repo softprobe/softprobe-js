@@ -2,7 +2,7 @@
  * Softprobe LangChain example — docs best path (zero invoke callbacks edits).
  *
  *   export INGESTION_KEY=…
- *   export SOFTPROBE_BASE_URL=…
+ *   export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=… # optional; defaults to production
  *   export GEMINI_KEY=…   # or OPENAI_API_KEY
  *   npm start
  *

@@ -38,7 +38,7 @@ recorder.stop();
 | `serviceName` | Resource `service.name` |
 | `environment` | Resource `deployment.environment.name` |
 | `httpBodyCapture.routes` / `apiOrigins` | Official Fetch/XHR `ignoreUrls` and `propagateTraceHeaderCorsUrls` (defaults to `window.location.origin` plus route origins) |
-| `ingestionKey`, `baseUrl` / `otlpEndpoint` | `BrowserOtlpProtoSpanExporter` endpoint and authorization header |
+| `ingestionKey`, `otlp.tracesEndpoint` / `otlp.endpoint` | `BrowserOtlpProtoSpanExporter` endpoint and authorization header |
 | generated or supplied session ID | Official session span processor; Softprobe adds `sp.session.id` for compatibility |
 | `httpBodyCapture` | Softprobe extension, attached through official instrumentation hooks |
 

@@ -38,7 +38,6 @@ export function autoInitFromScript(
 
   const options: WebRecordInitOptions = {
     ingestionKey,
-    ...(script.dataset.baseUrl?.trim() ? { baseUrl: script.dataset.baseUrl.trim() } : {}),
     ...(script.dataset.serviceName?.trim() ? { serviceName: script.dataset.serviceName.trim() } : {}),
     ...(script.dataset.environment?.trim() ? { environment: script.dataset.environment.trim() } : {}),
   };

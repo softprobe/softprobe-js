@@ -126,7 +126,7 @@ function internals(sdk: InstanceType<typeof RecordSdk>): SdkInternals {
 function recordingSdk(extra: Record<string, unknown> = {}) {
   return RecordSdk.init({
     ingestionKey: "agent-key",
-    baseUrl: "https://collector.example.test",
+    otlp: { tracesEndpoint: "https://collector.example.test/v1/traces" },
     sessionId: "session-recording",
     manual: true,
     ...extra,
@@ -226,7 +226,7 @@ describe("RecordSdk", () => {
     expect(() => RecordSdk.init({ softDisable: false } as never)).toThrow(/ingestionKey/);
   });
 
-  it("uploads to production TheLake when baseUrl is omitted and stays off for a blank baseUrl", () => {
+  it("uploads to production by default and does not use a score base as a trace destination", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     RecordSdk.init({
       ingestionKey: "agent-key",
@@ -247,13 +247,17 @@ describe("RecordSdk", () => {
       httpBodyCapture: undefined,
     });
 
-    const disabled = RecordSdk.init({
+    warn.mockClear();
+    const customScoreBase = RecordSdk.init({
       ingestionKey: "agent-key",
-      baseUrl: "",
+      baseUrl: "https://scores.example.test",
       manual: true,
+    } as never);
+    expect(customScoreBase.enabled).toBe(true);
+    expect(testState.runtimeOptions).toMatchObject({
+      otlpEndpoint: "https://explorer.softprobe.ai/api/thelake/v1/traces",
     });
-    expect(disabled.enabled).toBe(false);
-    expect(warn).toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("passes direct Ingestion Key, OTLP, and resource settings to the browser runtime", () => {
@@ -280,7 +284,7 @@ describe("RecordSdk", () => {
   it("keeps a generated session id in the tab and supports session switches", async () => {
     const options = {
       ingestionKey: "agent-key",
-      baseUrl: "https://collector.example.test",
+      otlp: { tracesEndpoint: "https://collector.example.test/v1/traces" },
       serviceName: "travel-ota-web",
       manual: true,
     };
@@ -299,7 +303,7 @@ describe("RecordSdk", () => {
     sessionStorage.setItem("demo-ota.travel.sessionId", "ses_host_initial");
     const sdk = RecordSdk.init({
       ingestionKey: "agent-key",
-      baseUrl: "https://collector.example.test",
+      otlp: { tracesEndpoint: "https://collector.example.test/v1/traces" },
       manual: true,
     });
     expect(sdk.sessionId).toBe("ses_host_initial");
@@ -312,8 +316,8 @@ describe("RecordSdk", () => {
   });
 
   it("keeps session storage independent for different service names", () => {
-    const first = RecordSdk.init({ ingestionKey: "agent-key", baseUrl: "https://collector.example.test", serviceName: "travel-ota-web", manual: true });
-    const second = RecordSdk.init({ ingestionKey: "agent-key", baseUrl: "https://collector.example.test", serviceName: "admin-web", manual: true });
+    const first = RecordSdk.init({ ingestionKey: "agent-key", serviceName: "travel-ota-web", manual: true });
+    const second = RecordSdk.init({ ingestionKey: "agent-key", serviceName: "admin-web", manual: true });
     expect(second.sessionId).not.toBe(first.sessionId);
     expect(sessionStorage.getItem("_sp_session_id:travel-ota-web")).toBe(first.sessionId);
     expect(sessionStorage.getItem("_sp_session_id:admin-web")).toBe(second.sessionId);
@@ -322,7 +326,7 @@ describe("RecordSdk", () => {
   it("applies rrweb privacy options and stops recording through the returned handle", () => {
     const sdk = RecordSdk.init({
       ingestionKey: "agent-key",
-      baseUrl: "https://collector.example.test",
+      otlp: { tracesEndpoint: "https://collector.example.test/v1/traces" },
       maskTextSelector: ".private-copy",
       blockSelector: "#payment-form",
     });
@@ -455,14 +459,13 @@ describe("RecordSdk", () => {
     const { autoInitFromScript } = await import("../src/browser.js");
     const script = document.createElement("script");
     script.dataset.ingestionKey = "spk_script_tag";
-    script.dataset.baseUrl = "https://explorer-staging.softprobe.ai/api/thelake";
     document.head.appendChild(script);
     try {
       const session = autoInitFromScript(document);
       expect(session?.sessionId).toMatch(/^[0-9a-f-]{36}$/);
       expect(testState.runtimeOptions).toMatchObject({
         ingestionKey: "spk_script_tag",
-        otlpEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+        otlpEndpoint: "https://explorer.softprobe.ai/api/thelake/v1/traces",
         httpBodyCapture: {},
       });
     } finally {
