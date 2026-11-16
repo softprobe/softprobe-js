@@ -48,6 +48,17 @@ describe("resolveSoftprobeConfigFromEnv", () => {
     });
   });
 
+  it("resolves INGESTION_KEY directly when no OTLP authorization header is set", () => {
+    expect(resolveSoftprobeConfigFromEnv({
+      INGESTION_KEY: "staging-key",
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:
+        "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+    })).toMatchObject({
+      ingestionKey: "staging-key",
+      otlpEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+    });
+  });
+
   it("parses full env config", () => {
     expect(
       resolveSoftprobeConfigFromEnv({

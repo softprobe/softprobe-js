@@ -112,7 +112,7 @@ export class SoftprobeClient {
     const cfg = resolveSoftprobeConfigFromEnv({
       ...process.env,
       SOFTPROBE_BASE_URL: baseUrl,
-      ...(ingestionKey ? { SOFTPROBE_PUBLIC_KEY: ingestionKey } : {}),
+      ...(ingestionKey ? { INGESTION_KEY: ingestionKey } : {}),
     });
     if (!cfg) {
       throw new MissingSoftprobeCredentialsError(

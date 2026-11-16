@@ -167,6 +167,7 @@ export function resolveSoftprobeConfigFromEnv(
   );
   const ingestionKey =
     bearerToken(getHeader(headers, "authorization")) ??
+    asNonEmptyString(env.INGESTION_KEY) ??
     asNonEmptyString(env.SOFTPROBE_PUBLIC_KEY);
   const baseUrl =
     asNonEmptyString(env.SOFTPROBE_BASE_URL) ?? DEFAULT_THELAKE_BASE_URL;

@@ -86,7 +86,7 @@ export async function loadSoftprobeCredentials(
       const envForFile = {
         ...process.env,
         SOFTPROBE_BASE_URL: fileCreds.baseUrl,
-        SOFTPROBE_PUBLIC_KEY: fileCreds.ingestionKey,
+        INGESTION_KEY: fileCreds.ingestionKey,
       };
       const envDefaults = resolveSoftprobeConfigFromEnv(envForFile);
       if (!envDefaults) return fileCreds;

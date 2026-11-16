@@ -188,6 +188,7 @@ describe("SoftprobeClient configuration", () => {
     const address = server.address();
     if (!address || typeof address === "string") throw new Error("no test server port");
     const variables = [
+      "INGESTION_KEY",
       "SOFTPROBE_PUBLIC_KEY",
       "SOFTPROBE_BASE_URL",
       "OTEL_EXPORTER_OTLP_ENDPOINT",

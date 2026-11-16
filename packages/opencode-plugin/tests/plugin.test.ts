@@ -288,8 +288,8 @@ describe("createHooksFromTracer", () => {
 
 describe("SoftprobePlugin", () => {
   it("returns empty hooks when credentials are missing", async () => {
+    delete process.env.INGESTION_KEY;
     delete process.env.SOFTPROBE_PUBLIC_KEY;
-    delete process.env.SOFTPROBE_API_KEY;
     delete process.env.SOFTPROBE_BASE_URL;
     process.env.OPENCODE_CONFIG_DIR = "/tmp/does-not-exist-softprobe-dir";
     try {
@@ -301,7 +301,7 @@ describe("SoftprobePlugin", () => {
   });
 
   it("wires credentials from env into working hooks", async () => {
-    process.env.SOFTPROBE_PUBLIC_KEY = "e2e-token";
+    process.env.INGESTION_KEY = "e2e-token";
     process.env.SOFTPROBE_BASE_URL = "http://127.0.0.1:8091";
     process.env.SOFTPROBE_OTLP_ENDPOINT = "http://127.0.0.1:8091/v1/traces";
 

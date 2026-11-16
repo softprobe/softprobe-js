@@ -107,6 +107,21 @@ describe("loadSoftprobeCredentials", () => {
     });
   });
 
+  it("loads credentials from INGESTION_KEY directly", async () => {
+    delete process.env.SOFTPROBE_PUBLIC_KEY;
+    delete process.env.SOFTPROBE_BASE_URL;
+    delete process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS;
+    process.env.INGESTION_KEY = "staging-key";
+    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT =
+      "https://explorer-staging.softprobe.ai/api/thelake/v1/traces";
+
+    const creds = await loadSoftprobeCredentials("/nonexistent/path.json");
+    expect(creds.ingestionKey).toBe("staging-key");
+    expect(creds.otlp.tracesEndpoint).toBe(
+      "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+    );
+  });
+
   it("loads from config file when env is incomplete", async () => {
     delete process.env.SOFTPROBE_PUBLIC_KEY;
     delete process.env.SOFTPROBE_BASE_URL;
@@ -131,6 +146,7 @@ describe("loadSoftprobeCredentials", () => {
   });
 
   it("loads an exact trace endpoint without a second API base", async () => {
+    delete process.env.INGESTION_KEY;
     delete process.env.SOFTPROBE_PUBLIC_KEY;
     delete process.env.SOFTPROBE_BASE_URL;
     delete process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
@@ -151,6 +167,26 @@ describe("loadSoftprobeCredentials", () => {
     expect(creds.otlp.tracesEndpoint).toBe(
       "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
     );
+  });
+
+  it("merges OTLP environment settings with an Ingestion Key from the file", async () => {
+    delete process.env.INGESTION_KEY;
+    delete process.env.SOFTPROBE_PUBLIC_KEY;
+    delete process.env.SOFTPROBE_BASE_URL;
+    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT =
+      "https://explorer-staging.softprobe.ai/api/thelake/v1/traces";
+    process.env.OTEL_RESOURCE_ATTRIBUTES =
+      "deployment.environment.name=staging";
+    const dir = await mkdtemp(join(tmpdir(), "sp-oc-"));
+    const path = join(dir, "opencode-softprobe.json");
+    await writeFile(path, JSON.stringify({ ingestionKey: "file-key" }));
+
+    const creds = await loadSoftprobeCredentials(path);
+    expect(creds.ingestionKey).toBe("file-key");
+    expect(creds.otlp.tracesEndpoint).toBe(
+      "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+    );
+    expect(creds.resourceAttributes?.["deployment.environment.name"]).toBe("staging");
   });
 
   it("throws when credentials are missing", async () => {
