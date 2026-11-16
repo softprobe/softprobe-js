@@ -32,8 +32,10 @@ import {
 import { withAttributes as withAttributesFn } from "./propagation.js";
 import {
   deriveOtlpEndpoint,
+  mergeOtlpHeaders,
   MissingSoftprobeCredentialsError,
   resolveSoftprobeConfigFromEnv,
+  validateOtlpProtocol,
 } from "./config.js";
 import { defaultRedactKeys } from "./redaction.js";
 import { buildScoreRequest, HttpScoreTransport } from "./scores.js";
@@ -51,10 +53,12 @@ import type {
 
 const DEFAULT_THELAKE_BASE_URL = "https://explorer.softprobe.ai/api/thelake";
 
-export interface SoftprobeClientOptions extends Omit<SoftprobeConfig, "publicKey" | "baseUrl"> {
-  /** Agent or project ingest key (`spk_...`). */
+export interface SoftprobeClientOptions extends SoftprobeConfig {
+  /** Ingestion Key (`spk_...`). */
+  ingestionKey?: string;
+  /** @deprecated Use `ingestionKey`. */
   publicKey?: string;
-  /** Alias for `publicKey`. */
+  /** @deprecated Use `ingestionKey`. */
   apiKey?: string;
   /** Ingest API root. Defaults to `https://explorer.softprobe.ai/api/thelake`. */
   baseUrl?: string;
@@ -92,30 +96,80 @@ export class SoftprobeClient {
   private readonly disableGlobalTracerOnShutdown: boolean;
   private shutDown = false;
 
-  /** Build from `SOFTPROBE_*` env. Defaults `baseUrl` to production TheLake when omitted. */
+  /** Build from standard OTLP variables and Softprobe environment settings. */
   static fromEnv(
     overrides: Partial<SoftprobeClientOptions> = {},
   ): SoftprobeClient {
+    const ingestionKey = (
+      overrides.ingestionKey ?? overrides.apiKey ?? overrides.publicKey
+    )?.trim();
+    const baseUrl =
+      overrides.baseUrl?.trim() ||
+      process.env.SOFTPROBE_BASE_URL?.trim() ||
+      DEFAULT_THELAKE_BASE_URL;
     const cfg = resolveSoftprobeConfigFromEnv({
       ...process.env,
-      SOFTPROBE_BASE_URL:
-        process.env.SOFTPROBE_BASE_URL ||
-        overrides.baseUrl ||
-        DEFAULT_THELAKE_BASE_URL,
+      SOFTPROBE_BASE_URL: baseUrl,
+      ...(ingestionKey ? { SOFTPROBE_PUBLIC_KEY: ingestionKey } : {}),
     });
-    const overrideKey = (overrides.publicKey ?? overrides.apiKey)?.trim();
-    if (!cfg && !overrideKey) {
+    if (!cfg) {
       throw new MissingSoftprobeCredentialsError(
-        "Set SOFTPROBE_PUBLIC_KEY (or SOFTPROBE_API_KEY)",
+        "Set OTEL_EXPORTER_OTLP_HEADERS or OTEL_EXPORTER_OTLP_TRACES_HEADERS with the Ingestion Key, or pass ingestionKey",
       );
     }
-    return new SoftprobeClient({ ...(cfg ?? {}), ...overrides });
+
+    const explicitOtlp = overrides.otlp ?? {};
+    const tracesEndpoint = explicitOtlp.tracesEndpoint ??
+      overrides.otlpEndpoint ??
+      (explicitOtlp.endpoint
+        ? deriveOtlpEndpoint(explicitOtlp.endpoint)
+        : cfg.otlp.tracesEndpoint);
+    const otlp = {
+      ...cfg.otlp,
+      ...explicitOtlp,
+      tracesEndpoint,
+      protocol: explicitOtlp.protocol ?? cfg.otlp.protocol,
+      headers: mergeOtlpHeaders(
+        cfg.otlp.headers,
+        explicitOtlp.headers,
+        overrides.headers,
+      ),
+    };
+    const resourceAttributes = {
+      ...(cfg.resourceAttributes ?? {}),
+      ...(overrides.resourceAttributes ?? {}),
+    };
+    if (
+      overrides.serviceName &&
+      overrides.resourceAttributes?.[ATTR_SERVICE_NAME] === undefined
+    ) {
+      resourceAttributes[ATTR_SERVICE_NAME] = overrides.serviceName;
+    }
+    if (
+      overrides.environment &&
+      overrides.resourceAttributes?.["deployment.environment.name"] === undefined
+    ) {
+      resourceAttributes["deployment.environment.name"] = overrides.environment;
+    }
+
+    return new SoftprobeClient({
+      ...cfg,
+      ...overrides,
+      ingestionKey: ingestionKey ?? cfg.ingestionKey,
+      baseUrl,
+      otlp,
+      otlpEndpoint: tracesEndpoint,
+      resourceAttributes:
+        Object.keys(resourceAttributes).length ? resourceAttributes : undefined,
+    });
   }
 
   constructor(options: SoftprobeClientOptions) {
-    const resolvedPublicKey = (options.publicKey ?? options.apiKey)?.trim();
-    if (!resolvedPublicKey) {
-      throw new Error("publicKey is required");
+    const ingestionKey = (
+      options.ingestionKey ?? options.apiKey ?? options.publicKey
+    )?.trim();
+    if (!ingestionKey) {
+      throw new Error("ingestionKey is required");
     }
     const rawBaseUrl =
       options.baseUrl === undefined ? DEFAULT_THELAKE_BASE_URL : options.baseUrl;
@@ -123,8 +177,10 @@ export class SoftprobeClient {
       throw new Error("baseUrl is required");
     }
     const baseUrl = rawBaseUrl.trim();
-    const otlpEndpoint =
-      options.otlpEndpoint?.trim() || deriveOtlpEndpoint(baseUrl);
+    validateOtlpProtocol(options.otlp?.protocol);
+    const otlpEndpoint = options.otlp?.tracesEndpoint?.trim() ||
+      options.otlpEndpoint?.trim() ||
+      deriveOtlpEndpoint(options.otlp?.endpoint ?? baseUrl);
     if (!options.spanExporter && !otlpEndpoint) {
       throw new Error("otlpEndpoint is required");
     }
@@ -134,25 +190,27 @@ export class SoftprobeClient {
     }
 
     const serviceName = options.serviceName ?? "softprobe-app";
-    const resourceAttrs: Record<string, string> = {
-      [ATTR_SERVICE_NAME]: serviceName,
+    const resourceAttrs = {
       "telemetry.sdk.name": "softprobe",
+      [ATTR_SERVICE_NAME]: serviceName,
+      ...(options.serviceVersion
+        ? { [ATTR_SERVICE_VERSION]: options.serviceVersion }
+        : {}),
+      ...(options.environment
+        ? { "deployment.environment.name": options.environment }
+        : {}),
+      ...(options.resourceAttributes ?? {}),
     };
-    if (options.serviceVersion) {
-      resourceAttrs[ATTR_SERVICE_VERSION] = options.serviceVersion;
-    }
-    if (options.environment) {
-      resourceAttrs["deployment.environment.name"] = options.environment;
-    }
 
     const baseExporter =
       options.spanExporter ??
       new OTLPTraceExporter({
         url: otlpEndpoint,
-        headers: {
-          Authorization: `Bearer ${resolvedPublicKey}`,
-          ...(options.headers ?? {}),
-        },
+        headers: mergeOtlpHeaders(
+          options.otlp?.headers,
+          options.headers,
+          { Authorization: `Bearer ${ingestionKey}` },
+        ),
         timeoutMillis: options.timeoutMs ?? 10_000,
       });
     const rawExporter: SpanExporter = {
@@ -218,7 +276,7 @@ export class SoftprobeClient {
       options.scoreTransport ??
       new HttpScoreTransport(
         baseUrl,
-        resolvedPublicKey,
+        ingestionKey,
         options.headers ?? {},
         options.timeoutMs ?? 10_000,
       );

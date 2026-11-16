@@ -223,7 +223,7 @@ describe("RecordSdk", () => {
     expect(warn).toHaveBeenCalled();
     expect(testState.createBrowserRuntime).not.toHaveBeenCalled();
 
-    expect(() => RecordSdk.init({ softDisable: false } as never)).toThrow(/publicKey and baseUrl/);
+    expect(() => RecordSdk.init({ softDisable: false } as never)).toThrow(/ingestionKey and baseUrl/);
   });
 
   it("uploads to production TheLake when baseUrl is omitted and stays off for a blank baseUrl", () => {
@@ -254,6 +254,28 @@ describe("RecordSdk", () => {
     });
     expect(disabled.enabled).toBe(false);
     expect(warn).toHaveBeenCalled();
+  });
+
+  it("passes direct Ingestion Key, OTLP, and resource settings to the browser runtime", () => {
+    RecordSdk.init({
+      ingestionKey: "staging-key",
+      baseUrl: "https://explorer-staging.softprobe.ai/api/thelake",
+      otlp: {
+        tracesEndpoint:
+          "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+        protocol: "http/protobuf",
+        headers: { "x-browser-otlp": "yes" },
+      },
+      resourceAttributes: { "deployment.environment.name": "staging" },
+      manual: true,
+    });
+
+    expect(testState.runtimeOptions).toMatchObject({
+      ingestionKey: "staging-key",
+      otlpEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+      otlpHeaders: { "x-browser-otlp": "yes" },
+      resourceAttributes: { "deployment.environment.name": "staging" },
+    });
   });
 
   it("keeps a generated session id in the tab and supports session switches", async () => {
@@ -430,17 +452,18 @@ describe("RecordSdk", () => {
     expect(statuses).toContain("incomplete");
   });
 
-  it("auto-initializes from a script tag with data-api-key", async () => {
+  it("auto-initializes from a script tag with data-ingestion-key", async () => {
     const { autoInitFromScript } = await import("../src/browser.js");
     const script = document.createElement("script");
-    script.dataset.apiKey = "spk_script_tag";
+    script.dataset.ingestionKey = "spk_script_tag";
+    script.dataset.baseUrl = "https://explorer-staging.softprobe.ai/api/thelake";
     document.head.appendChild(script);
     try {
       const session = autoInitFromScript(document);
       expect(session?.sessionId).toMatch(/^[0-9a-f-]{36}$/);
       expect(testState.runtimeOptions).toMatchObject({
-        apiKey: "spk_script_tag",
-        otlpEndpoint: "https://explorer.softprobe.ai/api/thelake/v1/traces",
+        ingestionKey: "spk_script_tag",
+        otlpEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
         httpBodyCapture: {},
       });
     } finally {

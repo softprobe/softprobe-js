@@ -19,7 +19,7 @@ export function autoInitFromScript(
   const script =
     current ??
     doc.querySelector<HTMLScriptElement>(
-      "script[data-api-key], script[data-softprobe-api-key], script[data-softprobe-options]",
+      "script[data-ingestion-key], script[data-api-key], script[data-softprobe-api-key], script[data-softprobe-options]",
     );
   if (!script) return undefined;
 
@@ -33,11 +33,13 @@ export function autoInitFromScript(
     return session;
   }
 
-  const apiKey = (script.dataset.apiKey ?? script.dataset.softprobeApiKey)?.trim();
-  if (!apiKey) return undefined;
+  const ingestionKey = (
+    script.dataset.ingestionKey ?? script.dataset.apiKey ?? script.dataset.softprobeApiKey
+  )?.trim();
+  if (!ingestionKey) return undefined;
 
   const options: WebRecordInitOptions = {
-    apiKey,
+    ingestionKey,
     ...(script.dataset.baseUrl?.trim() ? { baseUrl: script.dataset.baseUrl.trim() } : {}),
     ...(script.dataset.serviceName?.trim() ? { serviceName: script.dataset.serviceName.trim() } : {}),
     ...(script.dataset.environment?.trim() ? { environment: script.dataset.environment.trim() } : {}),

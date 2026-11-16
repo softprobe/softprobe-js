@@ -14,20 +14,24 @@ const MAX_BACKOFF_MS = 4_000;
 
 export type BrowserOtlpExporterOptions = {
   url: string;
-  apiKey: string;
+  ingestionKey?: string;
+  apiKey?: string;
+  headers?: Record<string, string>;
   timeoutMillis?: number;
 };
 
 export class BrowserOtlpProtoSpanExporter implements SpanExporter {
   private readonly url: URL;
-  private readonly apiKey: string;
+  private readonly ingestionKey: string;
+  private readonly headers: Record<string, string>;
   private readonly timeoutMillis: number;
   private readonly inflight = new Set<Promise<void>>();
   private stopped = false;
 
   constructor(options: BrowserOtlpExporterOptions) {
     this.url = new URL(options.url);
-    this.apiKey = options.apiKey;
+    this.ingestionKey = options.ingestionKey ?? options.apiKey ?? "";
+    this.headers = options.headers ?? {};
     this.timeoutMillis = options.timeoutMillis ?? DEFAULT_TIMEOUT_MS;
   }
 
@@ -189,16 +193,23 @@ export class BrowserOtlpProtoSpanExporter implements SpanExporter {
         : "cors";
     return fetchApi(this.url.href, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-protobuf",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
+      headers: createRequestHeaders(this.ingestionKey, this.headers),
       body,
       signal,
       keepalive,
       mode,
     });
   }
+}
+
+function createRequestHeaders(
+  ingestionKey: string,
+  additionalHeaders: Record<string, string>,
+): Headers {
+  const headers = new Headers(additionalHeaders);
+  headers.set("Content-Type", "application/x-protobuf");
+  headers.set("Authorization", `Bearer ${ingestionKey}`);
+  return headers;
 }
 
 function resolveUnwrappedFetch(): typeof fetch {

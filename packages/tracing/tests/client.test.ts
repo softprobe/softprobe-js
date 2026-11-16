@@ -10,6 +10,7 @@ import { redactValue } from "../src/redaction.js";
 import { buildScoreRequest } from "../src/scores.js";
 import type { ScoreRequest, ScoreTransport } from "../src/types.js";
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -58,14 +59,14 @@ afterEach(async () => {
 });
 
 describe("SoftprobeClient configuration", () => {
-  it("rejects missing publicKey", () => {
+  it("rejects missing Ingestion Key", () => {
     expect(
       () =>
         new SoftprobeClient({
           publicKey: "",
           baseUrl: "http://localhost",
         }),
-    ).toThrow(/publicKey/);
+    ).toThrow(/ingestionKey/);
   });
 
   it("derives otlpEndpoint from baseUrl when omitted", async () => {
@@ -93,6 +94,149 @@ describe("SoftprobeClient configuration", () => {
     await client.forceFlush();
     expect(exporter.getFinishedSpans()).toHaveLength(1);
     await client.shutdown();
+  });
+
+  it("accepts Ingestion Key and direct resource attributes", async () => {
+    const exporter = new InMemorySpanExporter();
+    const client = new SoftprobeClient({
+      ingestionKey: "staging-key",
+      baseUrl: "https://explorer-staging.softprobe.ai/api/thelake",
+      otlp: {
+        tracesEndpoint:
+          "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+        protocol: "http/protobuf",
+        headers: { "x-direct": "yes" },
+      },
+      resourceAttributes: {
+        "deployment.environment.name": "staging",
+        "custom.region": "us-west",
+      },
+      spanExporter: exporter,
+      useSimpleProcessor: true,
+    });
+
+    client.startObservation({ name: "direct-config", asType: "span" }).end();
+    await client.forceFlush();
+    expect(exporter.getFinishedSpans()[0]?.resource.attributes).toMatchObject({
+      "deployment.environment.name": "staging",
+      "custom.region": "us-west",
+    });
+    await client.shutdown();
+  });
+
+  it("exports to the exact direct traces endpoint with OTLP-only headers", async () => {
+    const requests: Array<{
+      path: string | undefined;
+      authorization: string | undefined;
+      customHeader: string | undefined;
+    }> = [];
+    const server = createServer((request, response) => {
+      requests.push({
+        path: request.url,
+        authorization: request.headers.authorization,
+        customHeader: request.headers["x-otlp-only"] as string | undefined,
+      });
+      request.resume();
+      response.writeHead(200).end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("no test server port");
+    const client = new SoftprobeClient({
+      ingestionKey: "staging-key",
+      baseUrl: `http://127.0.0.1:${address.port}`,
+      otlp: {
+        tracesEndpoint: `http://127.0.0.1:${address.port}/custom/v1/traces`,
+        protocol: "http/protobuf",
+        headers: { "x-otlp-only": "trace-export" },
+      },
+      useSimpleProcessor: true,
+    });
+
+    try {
+      client.startObservation({ name: "endpoint-config", asType: "span" }).end();
+      await client.forceFlush();
+      expect(requests).toEqual([
+        {
+          path: "/custom/v1/traces",
+          authorization: "Bearer staging-key",
+          customHeader: "trace-export",
+        },
+      ]);
+    } finally {
+      await client.shutdown();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("reads standard OTLP environment settings and sends them on export", async () => {
+    const requests: Array<{
+      path: string | undefined;
+      authorization: string | undefined;
+      customHeader: string | undefined;
+    }> = [];
+    const server = createServer((request, response) => {
+      requests.push({
+        path: request.url,
+        authorization: request.headers.authorization,
+        customHeader: request.headers["x-otel-common"] as string | undefined,
+      });
+      request.resume();
+      response.writeHead(200).end();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("no test server port");
+    const variables = [
+      "SOFTPROBE_PUBLIC_KEY",
+      "SOFTPROBE_BASE_URL",
+      "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+      "OTEL_EXPORTER_OTLP_HEADERS",
+      "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+      "OTEL_EXPORTER_OTLP_PROTOCOL",
+      "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL",
+      "OTEL_RESOURCE_ATTRIBUTES",
+      "OTEL_SERVICE_NAME",
+    ];
+    const previous = Object.fromEntries(
+      variables.map((name) => [name, process.env[name]]),
+    );
+    for (const name of variables) delete process.env[name];
+    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT =
+      `http://127.0.0.1:${address.port}/otel/v1/traces`;
+    process.env.OTEL_EXPORTER_OTLP_TRACES_HEADERS =
+      "Authorization=Bearer env-ingestion-key,x-otel-common=trace-export";
+    process.env.OTEL_EXPORTER_OTLP_TRACES_PROTOCOL = "http/protobuf";
+    process.env.OTEL_RESOURCE_ATTRIBUTES = "deployment.environment.name=staging";
+    let client: SoftprobeClient | undefined;
+
+    try {
+      client = SoftprobeClient.fromEnv({
+        scoreTransport: new MemoryScoreTransport(),
+        useSimpleProcessor: true,
+        retryExport: false,
+      });
+      client.startObservation({ name: "otel-env-config", asType: "span" }).end();
+      await client.forceFlush();
+      expect(requests).toEqual([{
+        path: "/otel/v1/traces",
+        authorization: "Bearer env-ingestion-key",
+        customHeader: "trace-export",
+      }]);
+    } finally {
+      await client?.shutdown();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+      for (const name of variables) {
+        const value = previous[name];
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
   });
 });
 

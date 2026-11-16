@@ -18,13 +18,17 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-function startRuntime(maxBodyBytes = 1024): { runtime: BrowserRuntime; exporter: InMemorySpanExporter } {
+function startRuntime(
+  maxBodyBytes = 1024,
+  resourceAttributes?: Record<string, string>,
+): { runtime: BrowserRuntime; exporter: InMemorySpanExporter } {
   const memoryExporter = new InMemorySpanExporter();
   const browserRuntime = createBrowserRuntime({
-    apiKey: "agent-key",
+    ingestionKey: "agent-key",
     otlpEndpoint: "https://collector.example.test/v1/traces",
     serviceName: "travel-ota-web",
     environment: "test",
+    resourceAttributes,
     apiOrigins: ["https://api.example.test"],
     httpBodyCapture: {
       maxBodyBytes,
@@ -40,6 +44,45 @@ function startRuntime(maxBodyBytes = 1024): { runtime: BrowserRuntime; exporter:
   exporter = memoryExporter;
   return { runtime: browserRuntime, exporter: memoryExporter };
 }
+
+it("adds explicit resource attributes to browser spans", async () => {
+  const { runtime: browserRuntime, exporter: memoryExporter } = startRuntime(
+    1024,
+    { "deployment.environment.name": "staging", "custom.region": "west" },
+  );
+  browserRuntime.tracer.startSpan("resource-config").end();
+  await browserRuntime.forceFlush();
+
+  expect(memoryExporter.getFinishedSpans()[0]?.resource.attributes).toMatchObject({
+    "deployment.environment.name": "staging",
+    "custom.region": "west",
+  });
+});
+
+it("sends browser spans to the direct OTLP endpoint with configured headers", async () => {
+  const requests: Array<{ url: string; headers: Headers }> = [];
+  const originalFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push({ url: String(input), headers: new Headers(init?.headers) });
+    return new Response(null, { status: 200 });
+  });
+  vi.stubGlobal("fetch", originalFetch);
+  runtime = createBrowserRuntime({
+    ingestionKey: "staging-key",
+    otlpEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+    otlpHeaders: { "x-browser-otlp": "yes" },
+    serviceName: "browser-test",
+  }, createWebSessionState("browser-session"));
+  runtime.tracer.startSpan("otlp-config").end();
+
+  await runtime.forceFlush();
+
+  expect(requests).toHaveLength(1);
+  expect(requests[0]?.url).toBe(
+    "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+  );
+  expect(requests[0]?.headers.get("authorization")).toBe("Bearer staging-key");
+  expect(requests[0]?.headers.get("x-browser-otlp")).toBe("yes");
+});
 
 it("uses official Fetch instrumentation and emits one HTTP span plus a redacted body child", async () => {
   let responseStreamClosed = false;

@@ -17,6 +17,25 @@ export type AttributeValue = string | number | boolean | string[] | null;
 
 export type Attributes = Record<string, AttributeValue>;
 
+export type ResourceAttributeValue =
+  | string
+  | number
+  | boolean
+  | Array<string | number | boolean>;
+
+export type ResourceAttributes = Record<string, ResourceAttributeValue>;
+
+export type OtlpExportOptions = {
+  /** Generic OTLP base URL. HTTP/protobuf appends `/v1/traces`. */
+  endpoint?: string;
+  /** Exact traces URL, used as written. */
+  tracesEndpoint?: string;
+  /** Softprobe exporters support OTLP HTTP with protobuf encoding. */
+  protocol?: "http/protobuf";
+  /** Additional OTLP request headers; not sent to the score API. */
+  headers?: Record<string, string>;
+};
+
 export type JsonValue =
   | string
   | number
@@ -26,10 +45,16 @@ export type JsonValue =
   | { [key: string]: JsonValue };
 
 export interface SoftprobeConfig {
-  publicKey: string;
-  baseUrl: string;
+  ingestionKey?: string;
+  /** @deprecated Use `ingestionKey`. */
+  publicKey?: string;
+  /** @deprecated Use `ingestionKey`. */
+  apiKey?: string;
+  baseUrl?: string;
   /** Defaults to `{baseUrl}/v1/traces` when omitted. */
   otlpEndpoint?: string;
+  otlp?: OtlpExportOptions;
+  resourceAttributes?: ResourceAttributes;
   serviceName?: string;
   serviceVersion?: string;
   environment?: string;

@@ -153,8 +153,13 @@ describe("createSoftprobeObservationAttributes", () => {
 
     const exporter = new InMemorySpanExporter();
     const telemetry = initVercelAiTelemetry({
-      apiKey: "spk_test_semconv",
+      ingestionKey: "spk_test_semconv",
       serviceName: "travel-concierge-agent",
+      otlp: {
+        tracesEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+        protocol: "http/protobuf",
+      },
+      resourceAttributes: { "deployment.environment.name": "staging" },
       spanExporter: exporter,
       useSimpleProcessor: true,
     });
@@ -197,6 +202,9 @@ describe("createSoftprobeObservationAttributes", () => {
       for (const span of spans) {
         expect(span.resource.attributes["service.name"]).toBe(
           "travel-concierge-agent",
+        );
+        expect(span.resource.attributes["deployment.environment.name"]).toBe(
+          "staging",
         );
         expect(span.attributes["sp.observation.type"]).toBe("agent");
       }

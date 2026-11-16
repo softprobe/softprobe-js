@@ -420,15 +420,16 @@ export const SoftprobePlugin: Plugin = async (input) => {
   try {
     const credentials = await loadSoftprobeCredentials();
     tracer = createSoftprobeSessionTracer({
-      publicKey: credentials.publicKey,
+      ingestionKey: credentials.ingestionKey,
       baseUrl: credentials.baseUrl,
-      otlpEndpoint: credentials.otlpEndpoint,
+      otlp: credentials.otlp,
+      resourceAttributes: credentials.resourceAttributes,
       environment: credentials.environment,
       userId: credentials.userId,
       serviceName: credentials.serviceName ?? "opencode",
       sessionLookup: createSessionLookup(input?.client),
     });
-    log("info", `OTLP tracing initialized → ${credentials.otlpEndpoint}`);
+    log("info", `OTLP tracing initialized at ${credentials.otlp.tracesEndpoint}`);
   } catch (error) {
     if (error instanceof MissingSoftprobeCredentialsError) {
       log("warn", `[Tracing disabled] ${error.message}`);

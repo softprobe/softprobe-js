@@ -43,9 +43,7 @@ describe("instrument()", () => {
 
   it("autoInstrumentFromEnv no-ops without credentials", () => {
     uninstrument();
-    expect(
-      autoInstrumentFromEnv({}, { SOFTPROBE_PUBLIC_KEY: "only" }),
-    ).toBeNull();
+    expect(autoInstrumentFromEnv({}, {})).toBeNull();
   });
 
   it("autoInstrumentFromEnv respects SOFTPROBE_LANGCHAIN=0", () => {
@@ -60,5 +58,23 @@ describe("instrument()", () => {
         },
       ),
     ).toBeNull();
+  });
+
+  it("auto-instruments from standard OTLP environment settings", async () => {
+    const { client } = makeClient();
+    const handler = autoInstrumentFromEnv(
+      { softprobeClient: client },
+      {
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:
+          "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+        OTEL_EXPORTER_OTLP_TRACES_HEADERS: "Authorization=Bearer staging-key",
+        OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: "http/protobuf",
+        OTEL_RESOURCE_ATTRIBUTES: "deployment.environment.name=staging",
+      },
+    );
+
+    expect(handler?.name).toBe("SoftprobeCallbackHandler");
+    expect(isInstrumented()).toBe(true);
+    await client.shutdown();
   });
 });

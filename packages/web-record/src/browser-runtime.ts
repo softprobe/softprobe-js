@@ -11,6 +11,7 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace";
 import type { HttpBodyCaptureOptions } from "./types.js";
+import type { ResourceAttributes } from "@softprobe/tracing";
 import {
   createHttpBodyCaptureHooks,
   resolveEffectiveOrigins,
@@ -25,8 +26,11 @@ const SCOPE_VERSION = "0.1.0";
 const SOFTPROBE_SESSION_ID = "sp.session.id";
 
 export type BrowserRuntimeOptions = {
-  apiKey: string;
+  ingestionKey?: string;
+  apiKey?: string;
   otlpEndpoint: string;
+  otlpHeaders?: Record<string, string>;
+  resourceAttributes?: ResourceAttributes;
   serviceName?: string;
   environment?: string;
   apiOrigins?: string[];
@@ -66,7 +70,8 @@ export function createBrowserRuntime(
   const collectorUrl = new URL(options.otlpEndpoint);
   const exporter = exporterOverride ?? new BrowserOtlpProtoSpanExporter({
     url: collectorUrl.toString(),
-    apiKey: options.apiKey,
+    ingestionKey: options.ingestionKey ?? options.apiKey ?? "",
+    headers: options.otlpHeaders,
   });
   const batchProcessor = new BatchSpanProcessor({
     exporter,
@@ -92,6 +97,7 @@ export function createBrowserRuntime(
       ...(options.environment
         ? { "deployment.environment.name": options.environment }
         : {}),
+      ...(options.resourceAttributes ?? {}),
     },
     processors,
     instrumentations: [

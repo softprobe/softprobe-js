@@ -34,29 +34,40 @@ Create `opencode-softprobe.json` in the OpenCode / spcode global config director
 
 ```json
 {
-  "publicKey": "<softprobe-bearer-token>",
-  "baseUrl": "https://thelake.softprobe.ai",
-  "otlpEndpoint": "https://thelake.softprobe.ai/v1/traces",
-  "environment": "production",
+  "ingestionKey": "<Ingestion Key>",
+  "baseUrl": "https://explorer-staging.softprobe.ai/api/thelake",
+  "otlp": {
+    "tracesEndpoint": "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+    "protocol": "http/protobuf"
+  },
+  "resourceAttributes": { "deployment.environment.name": "staging" },
+  "environment": "staging",
   "userId": "your-user-id"
 }
 ```
 
-`publicKey` and `baseUrl` are required. `otlpEndpoint` defaults to
-`{baseUrl}/v1/traces`. Credential parsing and validation use shared helpers from
+`ingestionKey` and `baseUrl` are required. `otlp.tracesEndpoint` is used as
+written; `otlp.endpoint` is a generic base URL and gets `/v1/traces` appended.
+Credential parsing and validation use shared helpers from
 `@softprobe/tracing` (`resolveSoftprobeConfigFromEnv`, etc.); this package only
 adds the OpenCode config file path and soft-disable behavior when credentials are
 missing. When both `spcode` and `opencode` credential files exist, **spcode wins**.
 
-Or set environment variables (env wins when both key and base URL are set):
+Or set standard OTLP environment variables. These settings configure server-side
+export; `SOFTPROBE_BASE_URL` also selects where score writes go:
 
 ```bash
-export SOFTPROBE_PUBLIC_KEY="..."
-export SOFTPROBE_BASE_URL="https://thelake.softprobe.ai"
-export SOFTPROBE_OTLP_ENDPOINT="https://thelake.softprobe.ai/v1/traces"
-export SOFTPROBE_ENVIRONMENT="production"
+export INGESTION_KEY="..."
+export SOFTPROBE_BASE_URL="https://explorer-staging.softprobe.ai/api/thelake"
+export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT="https://explorer-staging.softprobe.ai/api/thelake/v1/traces"
+export OTEL_EXPORTER_OTLP_TRACES_HEADERS="Authorization=Bearer ${INGESTION_KEY}"
+export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL="http/protobuf"
+export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=staging"
 export SOFTPROBE_USER_ID="your-user-id"
 ```
+
+Explicit fields in the credential file override environment values. Environment
+values fill fields omitted from the file.
 
 Softprobe **spcode** product builds auto-inject this plugin and default thelake
 credentials when `SPCODE_MODE` is on (see softprobe-code

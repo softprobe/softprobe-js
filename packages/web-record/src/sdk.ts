@@ -48,7 +48,9 @@ export class RecordSdk implements WebRecordController {
   readonly enabled: boolean;
   private _sessionId: string;
   private readonly otlpEndpoint: string;
-  private readonly apiKey: string;
+  private readonly ingestionKey: string;
+  private readonly otlpHeaders: Record<string, string>;
+  private readonly resourceAttributes?: WebRecordInitOptions["resourceAttributes"];
   private readonly apiOrigins: string[];
   private readonly sessionIdStorageKey: string;
   private readonly intervalMs: number;
@@ -90,10 +92,17 @@ export class RecordSdk implements WebRecordController {
   };
 
   private constructor(
-    options: WebRecordInitOptions & { enabled: boolean; otlpEndpoint: string },
+    options: WebRecordInitOptions & {
+      enabled: boolean;
+      otlpEndpoint: string;
+      ingestionKey?: string;
+      otlpHeaders?: Record<string, string>;
+    },
   ) {
     this.enabled = options.enabled;
-    this.apiKey = options.apiKey ?? options.publicKey ?? "";
+    this.ingestionKey = options.ingestionKey ?? options.apiKey ?? options.publicKey ?? "";
+    this.otlpHeaders = options.otlpHeaders ?? {};
+    this.resourceAttributes = options.resourceAttributes;
     this.apiOrigins = [...(options.apiOrigins ?? [])];
     this.otlpEndpoint = options.otlpEndpoint;
     this.sessionIdStorageKey = `${SESSION_ID_STORAGE_PREFIX}${options.serviceName ?? "default"}`;
@@ -120,10 +129,12 @@ export class RecordSdk implements WebRecordController {
         : options.httpBodyCapture);
     this.browserRuntime = this.enabled && sessionState
       ? createBrowserRuntime({
-          apiKey: this.apiKey,
+          ingestionKey: this.ingestionKey,
           otlpEndpoint: this.otlpEndpoint,
+          otlpHeaders: this.otlpHeaders,
           serviceName: this.serviceName,
           environment: this.environment,
+          resourceAttributes: this.resourceAttributes,
           apiOrigins: this.apiOrigins,
           httpBodyCapture: resolvedBodyCapture,
           onSessionId: explicitSessionId
@@ -151,18 +162,22 @@ export class RecordSdk implements WebRecordController {
     const softDisable = options.softDisable !== false;
     try {
       const resolved = resolveSoftprobeConfigFromObject({
-        publicKey: options.apiKey ?? options.publicKey,
+        ingestionKey: options.ingestionKey ?? options.apiKey ?? options.publicKey,
         baseUrl: resolveInitBaseUrl(options.baseUrl),
+        otlp: options.otlp,
         otlpEndpoint: options.otlpEndpoint,
+        resourceAttributes: options.resourceAttributes,
         environment: options.environment,
         userId: options.userId,
         serviceName: options.serviceName ?? "softprobe-web",
       });
       return new RecordSdk({
         ...options,
-        publicKey: resolved.publicKey,
+        ingestionKey: resolved.ingestionKey,
         baseUrl: resolved.baseUrl,
         otlpEndpoint: resolved.otlpEndpoint,
+        otlpHeaders: resolved.otlp.headers,
+        resourceAttributes: resolved.resourceAttributes,
         environment: resolved.environment,
         userId: resolved.userId,
         serviceName: resolved.serviceName,
@@ -174,7 +189,7 @@ export class RecordSdk implements WebRecordController {
           "[@softprobe/web-record] Softprobe credentials missing; recording disabled.",
         );
         return new RecordSdk({
-          publicKey: "",
+          ingestionKey: "",
           baseUrl: "",
           otlpEndpoint: deriveOtlpEndpoint("http://127.0.0.1"),
           enabled: false,

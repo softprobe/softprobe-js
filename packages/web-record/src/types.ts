@@ -1,3 +1,8 @@
+import type {
+  OtlpExportOptions,
+  ResourceAttributes,
+} from "@softprobe/tracing";
+
 /** Browser session metadata tags collected from UA / viewport. */
 export type SystemInfo = {
   _sp_ua: string;
@@ -26,13 +31,17 @@ export type Tags = {
 };
 
 export type WebRecordCredentials = {
-  /** Existing Agent-owned ingest-only API key. */
+  /** Agent-owned Ingestion Key. */
+  ingestionKey?: string;
+  /** @deprecated Use ingestionKey. */
   apiKey?: string;
-  /** @deprecated Use apiKey for Agent-owned ingest keys. */
+  /** @deprecated Use ingestionKey. */
   publicKey?: string;
   baseUrl: string;
-  /** Defaults to `{baseUrl}/v1/traces`. */
+  /** @deprecated Use `otlp.tracesEndpoint` or `otlp.endpoint`. */
   otlpEndpoint?: string;
+  otlp?: OtlpExportOptions;
+  resourceAttributes?: ResourceAttributes;
   environment?: string;
   userId?: string;
   serviceName?: string;
