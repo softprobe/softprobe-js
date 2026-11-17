@@ -1,0 +1,60 @@
+{
+  "name": "@softprobe/opencode-blackbox",
+  "version": "0.1.0",
+  "description": "OpenCode plugin that registers the Softprobe Blackbox remote MCP server and prompt guidance",
+  "license": "Apache-2.0",
+  "author": "SoftProbe, Inc. <support@softprobe.ai>",
+  "homepage": "https://explorer.softprobe.ai",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "@opencode-ai/plugin": ">=1.15.0"
+  },
+  "peerDependenciesMeta": {
+    "@opencode-ai/plugin": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.15.13",
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "softprobe",
+    "blackbox",
+    "opencode",
+    "plugin",
+    "mcp"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/softprobe/softprobe-js.git",
+    "directory": "packages/opencode-blackbox"
+  }
+}
