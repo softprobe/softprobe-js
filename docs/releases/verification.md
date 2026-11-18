@@ -15,7 +15,7 @@ TAG="v$VERSION"
 - [ ] The release commit is on `main`; its required checks passed.
 - [ ] The requested version is absent from GitHub tags/releases and from every
       package in the release set.
-- [ ] `.github/workflows/release.yml` still lists the five packages in the
+- [ ] `.github/workflows/release.yml` still lists the six packages in the
       feature map and has no extra publish target.
 - [ ] The intended merged `main` commit has been recorded as the tag target.
 
@@ -26,7 +26,7 @@ publishing:
 git ls-remote --tags origin "refs/tags/$TAG"
 git fetch origin main
 git log -1 --oneline origin/main
-for package in @softprobe/tracing @softprobe/langchain @softprobe/vercel-ai-sdk @softprobe/opencode-plugin @softprobe/web-record; do npm view "$package" versions --json; done
+for package in @softprobe/tracing @softprobe/langchain @softprobe/vercel-ai-sdk @softprobe/opencode-plugin @softprobe/opencode-blackbox @softprobe/web-record; do npm view "$package" versions --json; done
 ```
 
 The first command must print no tag ref. Review each package's version list
@@ -52,7 +52,7 @@ gh release view "$TAG" --json tagName,isDraft,isPrerelease,targetCommitish
 git fetch origin --tags
 git rev-parse "$TAG^{commit}"
 gh run list --workflow release.yml --branch "$TAG" --limit 5
-for package in @softprobe/tracing @softprobe/langchain @softprobe/vercel-ai-sdk @softprobe/opencode-plugin @softprobe/web-record; do npm view "$package@$VERSION" version; done
+for package in @softprobe/tracing @softprobe/langchain @softprobe/vercel-ai-sdk @softprobe/opencode-plugin @softprobe/opencode-blackbox @softprobe/web-record; do npm view "$package@$VERSION" version; done
 npm view "@softprobe/web-record@$VERSION" dist.tarball dist.integrity dependencies --json
 ```
 
