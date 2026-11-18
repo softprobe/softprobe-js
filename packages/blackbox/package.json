@@ -1,0 +1,54 @@
+{
+  "name": "@softprobe/blackbox",
+  "version": "0.1.0",
+  "description": "CLI for initializing Softprobe Blackbox telemetry in terminal-first projects",
+  "license": "MIT",
+  "author": "SoftProbe, Inc. <support@softprobe.ai>",
+  "homepage": "https://explorer.softprobe.ai",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "blackbox": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "keywords": [
+    "softprobe",
+    "blackbox",
+    "cli",
+    "opentelemetry",
+    "observability"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/softprobe/softprobe-js.git",
+    "directory": "packages/blackbox"
+  }
+}
