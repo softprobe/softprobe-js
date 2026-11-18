@@ -56,6 +56,7 @@ jobs:
         run: |
           npm pkg set "version=$VERSION" --prefix packages/tracing
           npm pkg set "version=$VERSION" --prefix packages/opencode-blackbox
+          npm pkg set "version=$VERSION" --prefix packages/blackbox
           for dir in \
             packages/langchain \
             packages/vercel-ai-sdk \
@@ -82,6 +83,7 @@ jobs:
             packages/vercel-ai-sdk \
             packages/opencode-plugin \
             packages/opencode-blackbox \
+            packages/blackbox \
             packages/web-record
           do
             echo "Publishing ${dir}..."
@@ -101,6 +103,7 @@ jobs:
             packages/vercel-ai-sdk/package.json \
             packages/opencode-plugin/package.json \
             packages/opencode-blackbox/package.json \
+            packages/blackbox/package.json \
             packages/web-record/package.json
 
           git fetch origin main
@@ -112,6 +115,7 @@ jobs:
             packages/vercel-ai-sdk \
             packages/opencode-plugin \
             packages/opencode-blackbox \
+            packages/blackbox \
             packages/web-record
           do
             npm pkg set "version=$VERSION" --prefix "$dir"
@@ -130,6 +134,7 @@ jobs:
             packages/vercel-ai-sdk/package.json \
             packages/opencode-plugin/package.json \
             packages/opencode-blackbox/package.json \
+            packages/blackbox/package.json \
             packages/web-record/package.json
           then
             echo "main already at version $VERSION"
@@ -142,6 +147,7 @@ jobs:
             packages/vercel-ai-sdk/package.json \
             packages/opencode-plugin/package.json \
             packages/opencode-blackbox/package.json \
+            packages/blackbox/package.json \
             packages/web-record/package.json
           git commit -m "chore: sync package versions to ${VERSION}"
           git push origin main
