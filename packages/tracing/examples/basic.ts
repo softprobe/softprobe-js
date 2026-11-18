@@ -11,7 +11,7 @@ import { SoftprobeClient, resolveSoftprobeConfigFromEnv } from "../src/index.js"
 async function main(): Promise<void> {
   const envConfig = resolveSoftprobeConfigFromEnv();
   const client = new SoftprobeClient({
-    publicKey: envConfig?.publicKey ?? "e2e-token",
+    ingestionKey: envConfig?.ingestionKey ?? "e2e-token",
     baseUrl: envConfig?.baseUrl ?? "http://127.0.0.1:8091",
     otlpEndpoint: envConfig?.otlpEndpoint,
     serviceName: "softprobe-tracing-example",

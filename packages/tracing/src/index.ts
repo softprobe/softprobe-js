@@ -4,6 +4,7 @@ export type { RetryingSpanExporterOptions } from "./retrying-exporter.js";
 export {
   asNonEmptyString,
   deriveOtlpEndpoint,
+  mergeOtlpHeaders,
   MissingSoftprobeCredentialsError,
   resolveSoftprobeConfigFromEnv,
   resolveSoftprobeConfigFromObject,
@@ -83,4 +84,7 @@ export type {
   StartToolOptions,
   UpdateGenerationOptions,
   UpdateObservationOptions,
+  OtlpExportOptions,
+  ResourceAttributes,
+  ResourceAttributeValue,
 } from "./types.js";

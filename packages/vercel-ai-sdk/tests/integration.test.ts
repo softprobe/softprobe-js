@@ -67,7 +67,7 @@ describe("createSoftprobeObservationAttributes", () => {
   });
 
   it("automatically propagates incoming HTTP traceparent and sessionId without runtimeContext", async () => {
-    const client = new SoftprobeClient({ apiKey: "spk_test_auto" });
+    const client = new SoftprobeClient({ ingestionKey: "spk_test_auto" });
     installIncomingHttpContextPropagation();
 
     let capturedAttrs: Record<string, unknown> = {};
@@ -153,8 +153,13 @@ describe("createSoftprobeObservationAttributes", () => {
 
     const exporter = new InMemorySpanExporter();
     const telemetry = initVercelAiTelemetry({
-      apiKey: "spk_test_semconv",
+      ingestionKey: "spk_test_semconv",
       serviceName: "travel-concierge-agent",
+      otlp: {
+        tracesEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+        protocol: "http/protobuf",
+      },
+      resourceAttributes: { "deployment.environment.name": "staging" },
       spanExporter: exporter,
       useSimpleProcessor: true,
     });
@@ -197,6 +202,9 @@ describe("createSoftprobeObservationAttributes", () => {
       for (const span of spans) {
         expect(span.resource.attributes["service.name"]).toBe(
           "travel-concierge-agent",
+        );
+        expect(span.resource.attributes["deployment.environment.name"]).toBe(
+          "staging",
         );
         expect(span.attributes["sp.observation.type"]).toBe("agent");
       }
@@ -268,8 +276,11 @@ describe("createSoftprobeObservationAttributes", () => {
       typeof collectorAddr === "object" && collectorAddr ? collectorAddr.port : 0;
 
     const client = new SoftprobeClient({
-      apiKey: "spk_test_e2e",
+      ingestionKey: "spk_test_e2e",
       baseUrl: `http://127.0.0.1:${collectorPort}/api/thelake`,
+      otlp: {
+        tracesEndpoint: `http://127.0.0.1:${collectorPort}/api/thelake/v1/traces`,
+      },
       useSimpleProcessor: true,
     });
     installIncomingHttpContextPropagation();

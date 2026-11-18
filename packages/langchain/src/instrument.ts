@@ -1,9 +1,9 @@
 /**
  * Zero-setup LangChain instrumentation (env auto + `instrument()`).
  *
- * When SOFTPROBE_PUBLIC_KEY and SOFTPROBE_BASE_URL are set, Softprobe
- * registers into LangChain configure hooks so every run is traced without
- * editing `callbacks`.
+ * When standard OTLP headers contain the Ingestion Key, Softprobe registers
+ * into LangChain configure hooks so every run is traced without editing
+ * `callbacks`.
  *
  * Opt out: SOFTPROBE_LANGCHAIN=0
  */
@@ -12,6 +12,7 @@ import {
   setContextVariable,
 } from "@langchain/core/context";
 import {
+  SoftprobeClient,
   resolveSoftprobeConfigFromEnv,
   type SoftprobeEnvSource,
 } from "@softprobe/tracing";
@@ -69,6 +70,21 @@ export function autoInstrumentFromEnv(
   env: SoftprobeEnvSource = process.env,
 ): CallbackHandler | null {
   if (envFlagDisabled(env)) return null;
-  if (!resolveSoftprobeConfigFromEnv(env)) return null;
-  return instrument(params);
+  const config = resolveSoftprobeConfigFromEnv({
+    ...env,
+    SOFTPROBE_BASE_URL:
+      env.SOFTPROBE_BASE_URL?.trim() || "https://explorer.softprobe.ai/api/thelake",
+  });
+  if (!config) return null;
+  const softprobeClient = params.softprobeClient ?? new SoftprobeClient({
+    ingestionKey: config.ingestionKey,
+    baseUrl: config.baseUrl,
+    otlp: config.otlp,
+    resourceAttributes: config.resourceAttributes,
+    environment: config.environment,
+    sessionId: config.sessionId,
+    userId: config.userId,
+    serviceName: config.serviceName,
+  });
+  return instrument({ ...params, softprobeClient });
 }

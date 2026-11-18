@@ -69,7 +69,7 @@ export function buildScoreRequest(options: CreateScoreOptions): ScoreRequest {
 export class HttpScoreTransport {
   constructor(
     private readonly baseUrl: string,
-    private readonly publicKey: string,
+    private readonly ingestionKey: string,
     private readonly headers: Record<string, string>,
     private readonly timeoutMs: number,
   ) {}
@@ -82,7 +82,7 @@ export class HttpScoreTransport {
       const response = await fetch(url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${this.publicKey}`,
+          Authorization: `Bearer ${this.ingestionKey}`,
           "Content-Type": "application/json",
           ...this.headers,
         },

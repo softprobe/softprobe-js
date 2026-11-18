@@ -12,8 +12,8 @@ describe("W3C baggage session propagation", () => {
   it("stamps sp.session.id from incoming W3C baggage onto Softprobe and raw OTel child spans", async () => {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
-      publicKey: "spk_test",
-      baseUrl: "http://127.0.0.1:8091",
+      ingestionKey: "spk_test",
+      otlp: { tracesEndpoint: "http://127.0.0.1:8091/v1/traces" },
       spanExporter: exporter,
       useSimpleProcessor: true,
       registerProvider: false,
@@ -51,8 +51,8 @@ describe("W3C baggage session propagation", () => {
   it("preserves explicit sessionId over incoming W3C baggage", async () => {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
-      publicKey: "spk_test",
-      baseUrl: "http://127.0.0.1:8091",
+      ingestionKey: "spk_test",
+      otlp: { tracesEndpoint: "http://127.0.0.1:8091/v1/traces" },
       spanExporter: exporter,
       useSimpleProcessor: true,
       registerProvider: false,
@@ -90,8 +90,8 @@ describe("W3C baggage session propagation", () => {
   it("ignores malformed or oversized baggage session ids and never invents a session id", async () => {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
-      publicKey: "spk_test",
-      baseUrl: "http://127.0.0.1:8091",
+      ingestionKey: "spk_test",
+      otlp: { tracesEndpoint: "http://127.0.0.1:8091/v1/traces" },
       spanExporter: exporter,
       useSimpleProcessor: true,
       registerProvider: false,
@@ -126,8 +126,8 @@ describe("W3C baggage session propagation", () => {
   it("injects W3C traceparent and sp.session.id baggage on outbound headers", async () => {
     const exporter = new InMemorySpanExporter();
     const client = new SoftprobeClient({
-      publicKey: "spk_test",
-      baseUrl: "http://127.0.0.1:8091",
+      ingestionKey: "spk_test",
+      otlp: { tracesEndpoint: "http://127.0.0.1:8091/v1/traces" },
       spanExporter: exporter,
       useSimpleProcessor: true,
       registerProvider: false,
