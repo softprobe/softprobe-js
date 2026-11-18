@@ -9,7 +9,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "blackbox": "./dist/cli.js"
+    "blackbox": "dist/cli.js"
   },
   "exports": {
     ".": {
