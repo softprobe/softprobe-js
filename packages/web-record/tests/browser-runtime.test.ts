@@ -412,7 +412,7 @@ it("captures same-origin JSON bodies without a route allowlist and adopts sessio
   });
 });
 
-it("supports wildcard route patterns in httpBodyCapture.routes and ignores unselected polling and status routes", async () => {
+it("supports wildcard route patterns in httpBodyCapture.routes while keeping traceparent and HTTP spans on unlisted routes", async () => {
   const requests: Array<{ url: string; method: string; headers: Headers }> = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -483,10 +483,12 @@ it("supports wildcard route patterns in httpBodyCapture.routes and ignores unsel
   await browserRuntime.waitForIdle();
   await browserRuntime.forceFlush();
 
-  expect(requests.find((r) => r.url.endsWith("/agent/api/status"))?.headers.has("traceparent")).toBe(false);
+  expect(requests.find((r) => r.url.endsWith("/agent/api/status"))?.headers.get("traceparent")).toMatch(
+    /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/,
+  );
   expect(
-    requests.find((r) => r.method === "GET" && r.url.endsWith("/agent/api/sessions/ses_wild_77"))?.headers.has("traceparent"),
-  ).toBe(false);
+    requests.find((r) => r.method === "GET" && r.url.endsWith("/agent/api/sessions/ses_wild_77"))?.headers.get("traceparent"),
+  ).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
   expect(requests.find((r) => r.url.endsWith("/agent/api/sessions"))?.headers.get("traceparent")).toMatch(
     /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/,
   );
@@ -500,11 +502,8 @@ it("supports wildcard route patterns in httpBodyCapture.routes and ignores unsel
   const spans = memoryExporter.getFinishedSpans();
   const httpSpans = spans.filter((span) => span.kind === 2);
   const bodySpans = spans.filter((span) => span.name === "softprobe.http.body.capture");
-  expect(httpSpans).toHaveLength(3);
+  expect(httpSpans).toHaveLength(5);
   expect(bodySpans).toHaveLength(3);
-  for (const httpSpan of httpSpans) {
-    expect(httpSpan.name).toBe("POST");
-  }
   const createHttp = httpSpans.find((span) =>
     String(span.attributes["url.full"]).endsWith("/agent/api/sessions"),
   );
@@ -517,13 +516,15 @@ it("supports wildcard route patterns in httpBodyCapture.routes and ignores unsel
   expect(createHttp?.attributes["url.template"]).toBeUndefined();
   expect(messageHttp?.attributes["url.template"]).toBe("/agent/api/sessions/*/messages");
   expect(payHttp?.attributes["url.template"]).toBe("/agent/api/sessions/*/pay");
-  for (const span of spans) {
-    expect(span.attributes).toMatchObject({
+  for (const bodySpan of bodySpans) {
+    expect(bodySpan.attributes).toMatchObject({
       "session.id": "ses_wild_77",
       "sp.session.id": "ses_wild_77",
     });
+    expect(String(bodySpan.attributes["url.full"] ?? "")).not.toContain("/agent/api/status");
+  }
+  for (const span of spans) {
     expect(String(span.attributes["url.full"] ?? "")).not.toContain("*");
-    expect(String(span.attributes["url.full"] ?? "")).not.toContain("/agent/api/status");
   }
   const payBody = bodySpans.find((span) =>
     String(span.attributes["url.full"]).endsWith("/agent/api/sessions/ses_wild_77/pay"),
@@ -533,6 +534,125 @@ it("supports wildcard route patterns in httpBodyCapture.routes and ignores unsel
     requestId: "req_1",
     paymentDetails: { cardNumber: "[REDACTED]", cvv: "[REDACTED]" },
   });
+});
+
+it("injects W3C baggage sp.session.id on same-origin fetch and XHR without touching cross-origin or collector calls", async () => {
+  const fetchRequests: Array<{ url: string; headers: Headers; bodyText: string }> = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : String(input);
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    const bodyText = input instanceof Request
+      ? await input.clone().text()
+      : typeof init?.body === "string"
+        ? init.body
+        : "";
+    fetchRequests.push({ url, headers, bodyText });
+    return new Response('{"ok":true}', {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }));
+
+  class MockXHR extends EventTarget {
+    status = 200;
+    responseType: XMLHttpRequestResponseType = "";
+    responseText = '{"ok":true}';
+    readonly headers = new Headers();
+    method = "GET";
+    url = "";
+
+    open(method: string, url: string | URL): void {
+      this.method = method;
+      this.url = String(url);
+    }
+
+    setRequestHeader(name: string, value: string): void {
+      this.headers.append(name, value);
+    }
+
+    getResponseHeader(name: string): string | null {
+      return name.toLowerCase() === "content-type" ? "application/json" : null;
+    }
+
+    send(): void {
+      this.dispatchEvent(new Event("load"));
+    }
+  }
+  vi.stubGlobal("XMLHttpRequest", MockXHR);
+
+  const sessionState = createWebSessionState("ses_bag=1");
+  const browserRuntime = createBrowserRuntime({
+    apiKey: "agent-key",
+    otlpEndpoint: `${window.location.origin}/api/thelake/v1/traces`,
+    serviceName: "travel-ota-web",
+    httpBodyCapture: false,
+    apiOrigins: [window.location.origin, "https://api.example.test"],
+  }, sessionState, new InMemorySpanExporter());
+  runtime = browserRuntime;
+
+  await fetch(`${window.location.origin}/api/flights`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", baggage: "tenant=acme" },
+    body: '{"origin":"SFO"}',
+  });
+
+  const reqObj = new Request(`${window.location.origin}/api/bookings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: '{"seat":"12A"}',
+  });
+  await fetch(reqObj);
+
+  sessionState.setSessionId("ses_switched");
+  const sameOriginXhr = new XMLHttpRequest() as unknown as MockXHR;
+  sameOriginXhr.open("GET", `${window.location.origin}/api/profile`);
+  sameOriginXhr.setRequestHeader("baggage", "env=staging");
+  sameOriginXhr.send();
+
+  await fetch("https://api.example.test/api/external", { method: "GET" });
+  const crossOriginXhr = new XMLHttpRequest() as unknown as MockXHR;
+  crossOriginXhr.open("GET", "https://api.example.test/api/external-xhr");
+  crossOriginXhr.send();
+
+  await fetch(`${window.location.origin}/api/thelake/v1/traces`, { method: "POST" });
+
+  expect(fetchRequests[0]?.headers.get("baggage")).toBe("tenant=acme, sp.session.id=ses_bag%3D1");
+  expect(fetchRequests[0]?.bodyText).toBe('{"origin":"SFO"}');
+  expect(fetchRequests[1]?.headers.get("baggage")).toBe("sp.session.id=ses_bag%3D1");
+  expect(fetchRequests[1]?.bodyText).toBe('{"seat":"12A"}');
+  expect(sameOriginXhr.headers.get("baggage")).toBe("env=staging, sp.session.id=ses_switched");
+
+  expect(fetchRequests[2]?.headers.get("traceparent")).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+  expect(fetchRequests[2]?.headers.has("baggage")).toBe(false);
+  expect(crossOriginXhr.headers.get("traceparent")).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/);
+  expect(crossOriginXhr.headers.has("baggage")).toBe(false);
+  expect(fetchRequests[3]?.headers.has("baggage")).toBe(false);
+});
+
+it("flushes batched spans within 1000ms without requiring forceFlush", async () => {
+  vi.useFakeTimers();
+  try {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response('{"ok":true}', {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })));
+    const memoryExporter = new InMemorySpanExporter();
+    const browserRuntime = createBrowserRuntime({
+      apiKey: "agent-key",
+      otlpEndpoint: "https://collector.example.test/v1/traces",
+      serviceName: "travel-ota-web",
+      httpBodyCapture: false,
+    }, createWebSessionState("journey-1s"), memoryExporter);
+    runtime = browserRuntime;
+
+    await fetch(`${window.location.origin}/api/ping`);
+    expect(memoryExporter.getFinishedSpans()).toHaveLength(0);
+
+    await vi.advanceTimersByTimeAsync(1050);
+    expect(memoryExporter.getFinishedSpans()).toHaveLength(1);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("exports active-page OTLP protobuf batches with keepalive disabled and drains response bodies", async () => {
@@ -643,4 +763,65 @@ it("falls back to non-keepalive fetch when hidden-page keepalive quota throws Ty
   await expect(browserRuntime.forceFlush()).resolves.toBeUndefined();
 
   expect(keepaliveAttempts).toEqual([true, false]);
+});
+
+it("backfills discovered sessionId onto an already-ended OTel HTTP span and updates subsequent spans on setSessionId", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/api/sessions")) {
+      return new Response('{"sessionId":"ses_discovered_after_end"}', {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return new Response('{"ok":true}', {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }));
+
+  const sessionState = createWebSessionState("initial-auto-sid");
+  const memoryExporter = new InMemorySpanExporter();
+  const browserRuntime = createBrowserRuntime(
+    {
+      apiKey: "agent-key",
+      otlpEndpoint: "https://collector.example.test/v1/traces",
+      serviceName: "travel-ota-web",
+      httpBodyCapture: {},
+      onSessionId: (id) => sessionState.setSessionId(id),
+    },
+    sessionState,
+    memoryExporter,
+  );
+  runtime = browserRuntime;
+  exporter = memoryExporter;
+
+  const createRes = await fetch(`${window.location.origin}/api/sessions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: '{"channel":"web"}',
+  });
+  await createRes.json();
+  await browserRuntime.waitForIdle();
+
+  browserRuntime.setSessionId("explicit-switched-sid");
+  const nextRes = await fetch(`${window.location.origin}/api/checkout`, { method: "POST" });
+  await nextRes.json();
+  await browserRuntime.waitForIdle();
+  await browserRuntime.forceFlush();
+
+  const spans = memoryExporter.getFinishedSpans();
+  const createHttpSpan = spans.find(
+    (s) => s.kind === 2 && String(s.attributes["url.full"]).endsWith("/api/sessions"),
+  );
+  expect(createHttpSpan).toBeDefined();
+  expect(createHttpSpan?.ended).toBe(true);
+  expect(createHttpSpan?.attributes["session.id"]).toBe("ses_discovered_after_end");
+  expect(createHttpSpan?.attributes["sp.session.id"]).toBe("ses_discovered_after_end");
+
+  const nextHttpSpan = spans.find(
+    (s) => s.kind === 2 && String(s.attributes["url.full"]).endsWith("/api/checkout"),
+  );
+  expect(nextHttpSpan?.attributes["session.id"]).toBe("explicit-switched-sid");
+  expect(nextHttpSpan?.attributes["sp.session.id"]).toBe("explicit-switched-sid");
 });

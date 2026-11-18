@@ -15,7 +15,6 @@ import type { ResourceAttributes } from "@softprobe/tracing";
 import {
   createHttpBodyCaptureHooks,
   resolveEffectiveOrigins,
-  resolveRouteAllowlistUrlSources,
 } from "./http-body-capture.js";
 import { BrowserOtlpProtoSpanExporter } from "./otlp-exporter.js";
 import type { WebSessionState } from "./session-state.js";
@@ -64,6 +63,7 @@ export function createBrowserRuntime(
     httpBodyCapture: options.httpBodyCapture,
     collectorUrl: options.otlpEndpoint,
     getTracer: () => trace.getTracer(SCOPE_NAME, SCOPE_VERSION),
+    getSessionId: () => sessionState.getSessionId(),
     onSessionId: options.onSessionId,
   });
   const collectorUrl = new URL(options.otlpEndpoint);
@@ -74,7 +74,7 @@ export function createBrowserRuntime(
   });
   const batchProcessor = new BatchSpanProcessor({
     exporter,
-    scheduledDelayMillis: 5000,
+    scheduledDelayMillis: 1000,
     exportTimeoutMillis: 30000,
     maxQueueSize: 2048,
     maxExportBatchSize: 512,
@@ -88,7 +88,6 @@ export function createBrowserRuntime(
   const filter = createUrlFilter(
     resolveEffectiveOrigins(options.apiOrigins, options.httpBodyCapture),
     collectorUrl,
-    resolveRouteAllowlistUrlSources(options.apiOrigins, options.httpBodyCapture),
   );
   const sdk = startTracesSdk({
     serviceName: options.serviceName,
@@ -163,17 +162,14 @@ class SoftprobeSessionAttributeProcessor implements SpanProcessor {
 function createUrlFilter(
   origins: string[],
   collectorUrl: URL,
-  routeAllowlistUrlSources: string[] | null = null,
 ): {
   ignoreUrls: RegExp[];
   propagateUrls: RegExp[];
 } {
   const allowlistPattern = origins.map(escapeRegExp).join("|");
-  const ignoreUnselected = routeAllowlistUrlSources && routeAllowlistUrlSources.length > 0
-    ? new RegExp(`^(?!(?:${routeAllowlistUrlSources.join("|")}))`)
-    : origins.length
-      ? new RegExp(`^(?!(?:${allowlistPattern})(?:[/?#]|$))`)
-      : /^/;
+  const ignoreUnselected = origins.length
+    ? new RegExp(`^(?!(?:${allowlistPattern})(?:[/?#]|$))`)
+    : /^/;
   const collectorPath = collectorUrl.pathname.replace(/\/+$/, "") || "/";
   const ignoreCollector = new RegExp(
     `^${escapeRegExp(collectorUrl.origin + collectorPath)}(?:[?#]|$)`,

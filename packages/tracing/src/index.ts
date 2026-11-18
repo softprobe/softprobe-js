@@ -30,7 +30,21 @@ export {
   DEFAULT_GEMINI_MODEL,
   type ObserveOpenAIConfig,
 } from "./openai.js";
-export { withAttributes, getPropagatedAttributes } from "./propagation.js";
+export {
+  BAGGAGE_SESSION_KEY,
+  BaggageSessionSpanProcessor,
+  createSoftprobePropagator,
+  extractTraceContext,
+  getBaggageSessionId,
+  getPropagatedAttributes,
+  injectTraceHeaders,
+  mergeBaggageHeaderValues,
+  normalizeValidSessionId,
+  setSessionBaggage,
+  withAttributes,
+  withExtractedHeaders,
+  type PropagatedAttributes,
+} from "./propagation.js";
 export {
   accumulateToolCallDeltas,
   finalizeToolCallDeltas,
