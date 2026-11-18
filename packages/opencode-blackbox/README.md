@@ -9,7 +9,7 @@ For sending OpenCode session telemetry to Softprobe, use [`@softprobe/opencode-p
 Add the plugin with the OpenCode CLI:
 
 ```bash
-opencode plugin add @softprobe/opencode-blackbox
+opencode plugin @softprobe/opencode-blackbox -g
 ```
 
 ## Authenticate
