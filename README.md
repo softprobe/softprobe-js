@@ -12,6 +12,7 @@ This repository is part of the Softprobe Blackbox ecosystem alongside public sib
 | [`@softprobe/langchain`](packages/langchain) | LangChain callback handler |
 | [`@softprobe/vercel-ai-sdk`](packages/vercel-ai-sdk) | Vercel AI SDK telemetry |
 | [`@softprobe/opencode-plugin`](packages/opencode-plugin) | OpenCode coding-agent plugin |
+| [`@softprobe/opencode-blackbox`](packages/opencode-blackbox) | OpenCode plugin for Softprobe Blackbox |
 | [`@softprobe/web-record`](packages/web-record) | Browser session recording (rrweb → OTLP) |
 
 ## Examples
