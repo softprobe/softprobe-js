@@ -150,7 +150,7 @@ function activeOutgoingTraceHeaders():
       : "00";
   const tracestate = spanCtx.traceState?.serialize();
   const sessionId =
-    readPropagatedIdentity().sessionId?.trim() ??
+    readPropagatedIdentity().sessionId?.trim() ||
     getBaggageSessionId(activeCtx);
   const baggage =
     sessionId && /^[!-~]{1,128}$/.test(sessionId)
