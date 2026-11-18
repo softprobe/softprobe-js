@@ -1,6 +1,7 @@
 {
   "name": "softprobe-js",
   "private": true,
+  "license": "MIT",
   "workspaces": [
     "packages/*"
   ],

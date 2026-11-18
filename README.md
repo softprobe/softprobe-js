@@ -2,8 +2,7 @@
 
 TypeScript/Node SDKs for [Softprobe](https://softprobe.ai) LLM observability.
 
-In the Softprobe workspace this repo is the sibling checkout `softprobe-js/`
-(next to `sp-llm/` and `thelake/`). Language-neutral contracts stay in `sp-llm`.
+This repository is part of the Softprobe Blackbox ecosystem alongside public sibling repositories [`softprobe/explorer`](https://github.com/softprobe/explorer) and [`softprobe/thelake`](https://github.com/softprobe/thelake). Language-neutral telemetry contracts live in [`softprobe/explorer`](https://github.com/softprobe/explorer).
 
 ## Packages
 
