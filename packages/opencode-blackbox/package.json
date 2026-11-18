@@ -2,7 +2,7 @@
   "name": "@softprobe/opencode-blackbox",
   "version": "0.1.21",
   "description": "OpenCode plugin that registers the Softprobe Blackbox remote MCP server and prompt guidance",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "author": "SoftProbe, Inc. <support@softprobe.ai>",
   "homepage": "https://explorer.softprobe.ai",
   "type": "module",
