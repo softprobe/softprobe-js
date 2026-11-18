@@ -19,6 +19,13 @@ export type CliCommand =
   | { readonly kind: "help" }
   | { readonly kind: "error"; readonly message: string };
 
+export type BootstrapProjectResult = {
+  readonly workspaceId: string;
+  readonly agentId: string;
+  readonly ingestionKey: IngestionKey;
+  readonly otlpEndpoint: string;
+};
+
 export type InitResult = {
   readonly projectName: ProjectName;
   readonly explorerUrl: ExplorerUrl;
@@ -26,6 +33,9 @@ export type InitResult = {
   readonly ingestionKey: IngestionKey;
   readonly source: "flag" | "oauth";
   readonly envAction: "created" | "updated" | "unchanged";
+  readonly workspaceId?: string;
+  readonly agentId?: string;
+  readonly otlpEndpoint?: string;
 };
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;

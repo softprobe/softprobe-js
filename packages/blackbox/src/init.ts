@@ -1,10 +1,11 @@
 import path from "node:path";
-import { bootstrapIngestionKey } from "./bootstrap.js";
+import { bootstrapProject } from "./bootstrap.js";
 import { writeEnvVar } from "./env.js";
 import { authenticateWithExplorer, defaultOpenUrl } from "./oauth.js";
 import { inferProjectName } from "./project.js";
 import {
   INGESTION_KEY_ENV_VAR,
+  type BootstrapProjectResult,
   type InitDeps,
   type InitOptions,
   type InitResult,
@@ -30,6 +31,7 @@ export async function runInit(
 
   let ingestionKey = options.ingestionKey;
   let source: "flag" | "oauth" = "flag";
+  let bootstrapped: BootstrapProjectResult | undefined;
 
   if (!ingestionKey) {
     source = "oauth";
@@ -40,12 +42,13 @@ export async function runInit(
       openUrl: resolvedDeps.openUrl,
       log: resolvedDeps.log,
     });
-    ingestionKey = await bootstrapIngestionKey({
+    bootstrapped = await bootstrapProject({
       explorerUrl: options.explorerUrl,
       accessToken,
       projectName,
       fetch: resolvedDeps.fetch,
     });
+    ingestionKey = bootstrapped.ingestionKey;
   }
 
   const targetEnvPath = path.isAbsolute(options.envFile)
@@ -65,5 +68,12 @@ export async function runInit(
     ingestionKey,
     source,
     envAction: written.action,
+    ...(bootstrapped
+      ? {
+          workspaceId: bootstrapped.workspaceId,
+          agentId: bootstrapped.agentId,
+          otlpEndpoint: bootstrapped.otlpEndpoint,
+        }
+      : {}),
   };
 }

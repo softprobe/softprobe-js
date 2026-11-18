@@ -49,7 +49,7 @@ describe("runInit", () => {
     );
   });
 
-  it("runs OAuth PKCE flow and provisions an ingestion key via /mcp", async () => {
+  it("runs OAuth PKCE flow and provisions via Explorer bootstrap_project", async () => {
     const dir = await makeTempDir();
     await writeFile(path.join(dir, "package.json"), JSON.stringify({ name: "travel-ota" }), "utf8");
 
@@ -71,44 +71,30 @@ describe("runInit", () => {
           id: string;
           params: { name: string; arguments: Record<string, unknown> };
         };
-        if (rpc.params.name === "create_agent") {
-          expect(rpc.params.arguments).toEqual({ name: "travel-ota" });
-          return new Response(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id: rpc.id,
-              result: {
-                isError: true,
-                content: [
-                  {
-                    type: "text",
-                    text: JSON.stringify({ code: "agent_id_exists", agent_id: "travel-ota" }),
-                  },
-                ],
-              },
-            }),
-            { status: 200 },
-          );
-        }
-        if (rpc.params.name === "get_ingestion_key") {
-          expect(rpc.params.arguments).toEqual({ agent_id: "travel-ota" });
-          return new Response(
-            JSON.stringify({
-              jsonrpc: "2.0",
-              id: rpc.id,
-              result: {
-                isError: false,
-                content: [
-                  {
-                    type: "text",
-                    text: JSON.stringify({ agentId: "travel-ota", apiKey: "spk_from_oauth" }),
-                  },
-                ],
-              },
-            }),
-            { status: 200 },
-          );
-        }
+        expect(rpc.params.name).toBe("bootstrap_project");
+        expect(rpc.params.arguments).toEqual({ project_name: "travel-ota" });
+        return new Response(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: rpc.id,
+            result: {
+              isError: false,
+              content: [
+                {
+                  type: "text",
+                  text: JSON.stringify({
+                    workspaceId: "ws-first",
+                    agentId: "travel-ota",
+                    ingestionKey: "spk_from_bootstrap",
+                    envVar: "SOFTPROBE_INGESTION_KEY",
+                    otlpEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
+                  }),
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        );
       }
       throw new Error(`Unexpected fetch URL: ${url}`);
     });
@@ -140,12 +126,15 @@ describe("runInit", () => {
       projectName: "travel-ota",
       explorerUrl: "https://explorer-staging.softprobe.ai",
       envPath: path.join(dir, ".env"),
-      ingestionKey: "spk_from_oauth",
+      ingestionKey: "spk_from_bootstrap",
       source: "oauth",
       envAction: "created",
+      workspaceId: "ws-first",
+      agentId: "travel-ota",
+      otlpEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
     });
     await expect(readFile(path.join(dir, ".env"), "utf8")).resolves.toBe(
-      "SOFTPROBE_INGESTION_KEY=spk_from_oauth\n",
+      "SOFTPROBE_INGESTION_KEY=spk_from_bootstrap\n",
     );
   });
 });

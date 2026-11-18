@@ -1,4 +1,10 @@
-import type { ExplorerUrl, FetchLike, IngestionKey, ProjectName } from "./types.js";
+import type {
+  BootstrapProjectResult,
+  ExplorerUrl,
+  FetchLike,
+  IngestionKey,
+  ProjectName,
+} from "./types.js";
 
 type McpToolCallOutput = {
   readonly isError: boolean;
@@ -40,13 +46,19 @@ function parseMcpToolResponse(raw: unknown): McpToolCallOutput {
   };
 }
 
-async function callMcpTool(params: {
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+/**
+ * Provision or reuse a workspace, Agent, and Ingestion Key via Explorer's `bootstrap_project` MCP tool.
+ */
+export async function bootstrapProject(params: {
   readonly explorerUrl: ExplorerUrl;
   readonly accessToken: string;
-  readonly name: string;
-  readonly args: Record<string, unknown>;
+  readonly projectName: ProjectName;
   readonly fetch: FetchLike;
-}): Promise<McpToolCallOutput> {
+}): Promise<BootstrapProjectResult> {
   const res = await params.fetch(`${params.explorerUrl}/mcp`, {
     method: "POST",
     headers: {
@@ -56,11 +68,11 @@ async function callMcpTool(params: {
     },
     body: JSON.stringify({
       jsonrpc: "2.0",
-      id: `${params.name}-${Date.now()}`,
+      id: `bootstrap_project-${Date.now()}`,
       method: "tools/call",
       params: {
-        name: params.name,
-        arguments: params.args,
+        name: "bootstrap_project",
+        arguments: { project_name: params.projectName },
       },
     }),
   });
@@ -68,64 +80,29 @@ async function callMcpTool(params: {
   if (!res.ok) {
     throw new Error(`Explorer MCP request failed (${res.status} ${res.statusText})`);
   }
+
   const json: unknown = await res.json();
-  return parseMcpToolResponse(json);
-}
+  const output = parseMcpToolResponse(json);
 
-function extractApiKey(body: Record<string, unknown>): IngestionKey | null {
-  for (const field of ["apiKey", "api_key", "ingestionKey", "ingestion_key", "SOFTPROBE_INGESTION_KEY"]) {
-    const value = body[field];
-    if (typeof value === "string" && value.trim().length > 0) {
-      return value.trim() as IngestionKey;
-    }
-  }
-  return null;
-}
-
-/**
- * Create or reuse an Agent in Explorer via `/mcp` and return its Ingestion Key.
- */
-export async function bootstrapIngestionKey(params: {
-  readonly explorerUrl: ExplorerUrl;
-  readonly accessToken: string;
-  readonly projectName: ProjectName;
-  readonly fetch: FetchLike;
-}): Promise<IngestionKey> {
-  const created = await callMcpTool({
-    explorerUrl: params.explorerUrl,
-    accessToken: params.accessToken,
-    name: "create_agent",
-    args: { name: params.projectName },
-    fetch: params.fetch,
-  });
-
-  if (!created.isError) {
-    const key = extractApiKey(created.body);
-    if (key) return key;
-  }
-
-  if (created.body.code === "agent_id_exists" && typeof created.body.agent_id === "string") {
-    const existing = await callMcpTool({
-      explorerUrl: params.explorerUrl,
-      accessToken: params.accessToken,
-      name: "get_ingestion_key",
-      args: { agent_id: created.body.agent_id },
-      fetch: params.fetch,
-    });
-    if (!existing.isError) {
-      const key = extractApiKey(existing.body);
-      if (key) return key;
-    }
+  if (output.isError) {
     const msg =
-      typeof existing.body.message === "string"
-        ? existing.body.message
-        : "Failed to retrieve ingestion key for existing agent";
+      nonEmptyString(output.body.message) ?? "Failed to bootstrap project from Explorer";
     throw new Error(msg);
   }
 
-  const msg =
-    typeof created.body.message === "string"
-      ? created.body.message
-      : "Failed to provision ingestion key from Explorer";
-  throw new Error(msg);
+  const workspaceId = nonEmptyString(output.body.workspaceId);
+  const agentId = nonEmptyString(output.body.agentId);
+  const ingestionKey = nonEmptyString(output.body.ingestionKey);
+  const otlpEndpoint = nonEmptyString(output.body.otlpEndpoint);
+
+  if (!workspaceId || !agentId || !ingestionKey || !otlpEndpoint) {
+    throw new Error("Explorer bootstrap_project response is missing required fields");
+  }
+
+  return {
+    workspaceId,
+    agentId,
+    ingestionKey: ingestionKey as IngestionKey,
+    otlpEndpoint,
+  };
 }
