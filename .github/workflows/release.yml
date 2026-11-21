@@ -61,7 +61,8 @@ jobs:
             packages/langchain \
             packages/vercel-ai-sdk \
             packages/opencode-plugin \
-            packages/web-record
+            packages/web-record \
+            packages/e2e
           do
             npm pkg set "version=$VERSION" --prefix "$dir"
             # npm does not rewrite "*" / workspace: on publish — pin the dep.
@@ -84,7 +85,8 @@ jobs:
             packages/opencode-plugin \
             packages/opencode-blackbox \
             packages/blackbox \
-            packages/web-record
+            packages/web-record \
+            packages/e2e
           do
             echo "Publishing ${dir}..."
             (cd "$dir" && npm publish --access public)
@@ -104,7 +106,8 @@ jobs:
             packages/opencode-plugin/package.json \
             packages/opencode-blackbox/package.json \
             packages/blackbox/package.json \
-            packages/web-record/package.json
+            packages/web-record/package.json \
+            packages/e2e/package.json
 
           git fetch origin main
           git checkout -B main origin/main
@@ -116,7 +119,8 @@ jobs:
             packages/opencode-plugin \
             packages/opencode-blackbox \
             packages/blackbox \
-            packages/web-record
+            packages/web-record \
+            packages/e2e
           do
             npm pkg set "version=$VERSION" --prefix "$dir"
           done
@@ -124,7 +128,8 @@ jobs:
             packages/langchain \
             packages/vercel-ai-sdk \
             packages/opencode-plugin \
-            packages/web-record
+            packages/web-record \
+            packages/e2e
           do
             npm pkg set "dependencies.@softprobe/tracing=*" --prefix "$dir"
           done
@@ -135,7 +140,8 @@ jobs:
             packages/opencode-plugin/package.json \
             packages/opencode-blackbox/package.json \
             packages/blackbox/package.json \
-            packages/web-record/package.json
+            packages/web-record/package.json \
+            packages/e2e/package.json
           then
             echo "main already at version $VERSION"
             exit 0
@@ -148,6 +154,7 @@ jobs:
             packages/opencode-plugin/package.json \
             packages/opencode-blackbox/package.json \
             packages/blackbox/package.json \
-            packages/web-record/package.json
+            packages/web-record/package.json \
+            packages/e2e/package.json
           git commit -m "chore: sync package versions to ${VERSION}"
           git push origin main
