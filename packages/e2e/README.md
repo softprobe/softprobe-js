@@ -51,3 +51,32 @@ test("sends workspace invite email", async ({ app, agent, screen, trace }) => {
   expect(emailCall.status).toBe(200);
 });
 ```
+
+## Playwright fixture (`@softprobe/e2e/playwright`)
+
+Import `test` and `expect` from `@softprobe/e2e/playwright` to use the `trace` fixture inside `@playwright/test` suites:
+
+```ts
+import { expect, test } from "@softprobe/e2e/playwright";
+
+test("verifies backend outbound HTTP call", async ({ page, trace }) => {
+  await page.goto("/invite");
+  await page.getByLabel("Email address").fill("lc@softprobe.ai");
+  await page.getByRole("button", { name: "Send invitation" }).click();
+
+  const emailCall = await trace.outboundHttp({
+    triggeredBy: { method: "POST", path: "/api/workspaces/:workspaceId/invites" },
+    method: "POST",
+    url: /\/v1\/account\/invite\/submit$/,
+  });
+  expect(emailCall.status).toBe(200);
+});
+```
+
+## Session compiler (`@softprobe/e2e/session-compiler`)
+
+Compile recorded `softprobe.ui.action` (`sp-ui-action-1`) sessions into deterministic `@playwright/test` specs or zero-LLM `e2e` suites with pre-seeded `.e2e/cache/<sha256>.json` `trace-1` entries:
+
+```sh
+npx softprobe-compile-session --session-id <session-id> --runner e2e --out ./e2e-suite --json
+```

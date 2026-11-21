@@ -9,8 +9,13 @@ import {
   MissingSoftprobeCredentialsError,
 } from "@softprobe/tracing/config";
 import { createBrowserRuntime, type BrowserRuntime } from "./browser-runtime.js";
+import {
+  createSemanticActionRecorder,
+  type SemanticActionRecorder,
+} from "./semantic-actions.js";
 import { createWebSessionState } from "./session-state.js";
 import type {
+  InputCaptureMode,
   RecordingHandle,
   RecordingUploadStatus,
   RrwebEventBatchItem,
@@ -54,12 +59,17 @@ export class RecordSdk implements WebRecordController {
   private readonly environment?: string;
   private readonly userId?: string;
   private readonly maskAllInputs: boolean;
+  private readonly rrwebPasswordsOnlyMask: boolean;
+  private readonly captureSemanticActions: boolean;
+  private readonly inputCapture: InputCaptureMode;
+  private readonly secretSlots?: Readonly<Record<string, string>>;
   private readonly maskTextSelector?: string;
   private readonly blockSelector?: string;
   private readonly onUploadStatus?: (status: RecordingUploadStatus) => void;
   private readonly recordOptions: Record<string, unknown>;
   private readonly replacers: Record<string, string>;
   private readonly browserRuntime: BrowserRuntime | null;
+  private semanticRecorder: SemanticActionRecorder | null = null;
   private tags: Tags;
   private events: RrwebEventBatchItem[] = [];
   private eventIndex = 0;
@@ -82,7 +92,10 @@ export class RecordSdk implements WebRecordController {
   private _uploadStatus: RecordingUploadStatus = "idle";
   private readonly onPageHide = (): void => {
     if (!this.enabled || (
-      this.events.length === 0 && !this.saving && !this.browserRuntime?.hasPendingTelemetry()
+      this.events.length === 0 &&
+      !this.saving &&
+      !this.semanticRecorder?.hasPendingWork() &&
+      !this.browserRuntime?.hasPendingTelemetry()
     )) return;
     this.setUploadStatus("incomplete");
     if (!this.saving) void this.flushInternal(true);
@@ -109,7 +122,19 @@ export class RecordSdk implements WebRecordController {
     this.serviceName = options.serviceName;
     this.environment = options.environment;
     this.userId = options.userId;
-    this.maskAllInputs = options.maskAllInputs !== false;
+    this.captureSemanticActions = options.captureSemanticActions === true;
+    this.inputCapture = resolveInputCaptureMode(
+      options.inputCapture,
+      options.maskAllInputs,
+      this.captureSemanticActions,
+    );
+    this.rrwebPasswordsOnlyMask =
+      options.maskAllInputs === undefined && this.inputCapture === "secrets-only";
+    this.maskAllInputs =
+      options.maskAllInputs !== undefined
+        ? options.maskAllInputs
+        : this.inputCapture !== "secrets-only" && this.inputCapture !== "unmasked";
+    this.secretSlots = options.secretSlots;
     this.maskTextSelector = options.maskTextSelector;
     this.blockSelector = options.blockSelector;
     this.onUploadStatus = options.onUploadStatus;
@@ -137,10 +162,19 @@ export class RecordSdk implements WebRecordController {
           onSessionId: explicitSessionId
             ? undefined
             : (discovered) => this.adoptDiscoveredSessionId(discovered),
+          ...(this.captureSemanticActions
+            ? {
+                onHttpSpanStart: (info) => this.semanticRecorder?.onHttpSpanStart(info),
+                onHttpSpan: (info) => this.semanticRecorder?.onHttpSpan(info),
+              }
+            : {}),
         }, sessionState)
       : null;
 
     if (this.enabled) {
+      if (this.captureSemanticActions) {
+        this.ensureSemanticRecorder();
+      }
       if (typeof window !== "undefined") {
         if (activeWindowPageHide) {
           window.removeEventListener("pagehide", activeWindowPageHide);
@@ -201,6 +235,18 @@ export class RecordSdk implements WebRecordController {
     }
   }
 
+  private ensureSemanticRecorder(): void {
+    if (!this.captureSemanticActions || !this.browserRuntime || this.semanticRecorder) {
+      return;
+    }
+    this.semanticRecorder = createSemanticActionRecorder({
+      getTracer: () => this.browserRuntime?.tracer,
+      isRrwebActive: () => this.stopHandle !== null,
+      inputCapture: this.inputCapture,
+      secretSlots: this.secretSlots,
+    });
+  }
+
   record(opts?: { tags?: Tags }): RecordingHandle | null {
     if (!this.enabled) return null;
     // 熔断后不再重新武装。宿主(SPA)每次路由变化都会调 record(),不挡住的话
@@ -209,6 +255,7 @@ export class RecordSdk implements WebRecordController {
     if (this.stopHandle) return this.stopHandle;
 
     if (opts?.tags) this.setTags(opts.tags);
+    this.ensureSemanticRecorder();
 
     if (typeof window !== "undefined") {
       if (activeWindowPageHide && activeWindowPageHide !== this.onPageHide) {
@@ -220,6 +267,7 @@ export class RecordSdk implements WebRecordController {
 
     const stopFn = rrwebRecord({
       maskAllInputs: this.maskAllInputs,
+      ...(this.rrwebPasswordsOnlyMask ? { maskInputOptions: { password: true } } : {}),
       ...this.recordOptions,
       ...(this.maskTextSelector ? { maskTextSelector: this.maskTextSelector } : {}),
       ...(this.blockSelector ? { blockSelector: this.blockSelector } : {}),
@@ -242,7 +290,7 @@ export class RecordSdk implements WebRecordController {
       }
       // 退避未到,这轮跳过。这里刻意不打日志——日志本身就是故障放大器。
       if (Date.now() < this.nextAttemptAt) return;
-      void this.flush();
+      void this.flushInternal(false, false);
       if (this.events.length) {
         const last = this.events[this.events.length - 1];
         const lastIndex = Number(last?.eventIndex ?? 0);
@@ -256,6 +304,8 @@ export class RecordSdk implements WebRecordController {
     this.stopHandle = {
       stop: () => {
         clearInterval(intervalId);
+        this.semanticRecorder?.stop();
+        this.semanticRecorder = null;
         stopFn?.();
         void this.flush();
         this.stopHandle = null;
@@ -265,7 +315,15 @@ export class RecordSdk implements WebRecordController {
   }
 
   stop(): void {
-    this.stopHandle?.stop();
+    if (this.stopHandle) {
+      this.stopHandle.stop();
+      return;
+    }
+    if (this.semanticRecorder) {
+      this.semanticRecorder.stop();
+      this.semanticRecorder = null;
+      void this.flush();
+    }
   }
 
   setTags(tags: Tags, override = false): void {
@@ -336,12 +394,17 @@ export class RecordSdk implements WebRecordController {
       while (this.saving) {
         await new Promise<void>((r) => setTimeout(r, 0));
       }
+      const pendingSemantic = this.semanticRecorder?.hasPendingWork() ?? false;
       const pendingSpans = this.browserRuntime?.hasPendingTelemetry() ?? false;
-      if (this.events.length === 0 && !pendingSpans) return;
+      if (this.events.length === 0 && !pendingSemantic && !pendingSpans) return;
       const before = this.events.length;
       const ok = await this.flush();
       if (!ok) return;
-      if (this.events.length >= before && !this.browserRuntime?.hasPendingTelemetry()) return;
+      if (
+        this.events.length >= before &&
+        !(this.semanticRecorder?.hasPendingWork() ?? false) &&
+        !this.browserRuntime?.hasPendingTelemetry()
+      ) return;
     }
   }
 
@@ -364,17 +427,20 @@ export class RecordSdk implements WebRecordController {
   }
 
   flush(): Promise<boolean> {
-    return this.flushInternal(false);
+    return this.flushInternal(false, true);
   }
 
-  private async flushInternal(preserveIncompleteStatus: boolean): Promise<boolean> {
+  private async flushInternal(
+    preserveIncompleteStatus: boolean,
+    flushSemanticActions = true,
+  ): Promise<boolean> {
     if (this.exportDisabled) return false;
     if (!this.enabled) return true;
     if (this.saving) {
       return this.recordingFlush ?? false;
     }
     if (!this.browserRuntime) return true;
-    const flushPromise = this.flushOtlp(preserveIncompleteStatus);
+    const flushPromise = this.flushOtlp(preserveIncompleteStatus, flushSemanticActions);
     this.recordingFlush = flushPromise;
     try {
       return await flushPromise;
@@ -383,8 +449,15 @@ export class RecordSdk implements WebRecordController {
     }
   }
 
-  private async flushOtlp(preserveIncompleteStatus: boolean): Promise<boolean> {
+  private async flushOtlp(
+    preserveIncompleteStatus: boolean,
+    flushSemanticActions: boolean,
+  ): Promise<boolean> {
     this.saving = true;
+    if (flushSemanticActions && this.semanticRecorder?.hasPendingWork()) {
+      await this.browserRuntime!.waitForIdle();
+      this.semanticRecorder.flush();
+    }
     const batch = this.events.splice(0, this.events.length);
     const batchIndex = this.batchIndex;
     const hadTelemetry = batch.length > 0 || this.browserRuntime?.hasPendingTelemetry() === true;
@@ -545,6 +618,17 @@ export class RecordSdk implements WebRecordController {
       _sp_vid: this.visitorId,
     };
   }
+}
+
+function resolveInputCaptureMode(
+  explicitMode: InputCaptureMode | undefined,
+  maskAllInputs: boolean | undefined,
+  captureSemanticActions: boolean,
+): InputCaptureMode {
+  if (explicitMode !== undefined) return explicitMode;
+  if (maskAllInputs === false) return "secrets-only";
+  if (captureSemanticActions && maskAllInputs !== true) return "secrets-only";
+  return "masked";
 }
 
 function uuid(): string {

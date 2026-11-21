@@ -62,6 +62,88 @@ export type HttpBodyCaptureOptions = {
   routes?: HttpBodyCaptureRoute[];
 };
 
+export type InputCaptureMode = "masked" | "secrets-only" | "unmasked";
+
+export type CapturedInputValue =
+  | { readonly kind: "literal"; readonly value: string }
+  | { readonly kind: "secret"; readonly slot: string }
+  | { readonly kind: "redacted"; readonly length: number };
+
+export type SemanticAnchorState = "checked" | "expanded" | "pressed" | "selected";
+
+export type SemanticModifierKey = "Alt" | "Control" | "Meta" | "Shift";
+
+export interface SemanticTarget {
+  readonly testId?: string;
+  readonly role?: string;
+  readonly name?: string;
+  readonly label?: string;
+  readonly placeholder?: string;
+  readonly text?: string;
+  readonly inputPurpose?: string;
+  readonly cssSelector?: string;
+  readonly within?: string;
+  readonly position?: { readonly index: number; readonly of: number };
+  readonly rect?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+  readonly pointOffset?: { readonly fx: number; readonly fy: number };
+  readonly framePath?: readonly string[];
+  readonly rrwebNodeId?: number;
+  readonly states?: readonly SemanticAnchorState[];
+  readonly value?: string;
+}
+
+export interface CausedHttpTrace {
+  readonly traceId: string;
+  readonly spanId?: string;
+  readonly method: string;
+  readonly url: string;
+  readonly urlTemplate?: string;
+  readonly status?: number;
+}
+
+export type SemanticVerb =
+  | { readonly name: "navigate"; readonly url: string; readonly trigger: "load" | "pushState" | "popstate" }
+  | {
+      readonly name: "click" | "dblclick" | "contextmenu" | "hover";
+      readonly target: SemanticTarget;
+      readonly modifiers?: readonly SemanticModifierKey[];
+      readonly point: { readonly x: number; readonly y: number };
+    }
+  | { readonly name: "fill"; readonly target: SemanticTarget; readonly value: CapturedInputValue; readonly replace: boolean }
+  | { readonly name: "select"; readonly target: SemanticTarget; readonly value: CapturedInputValue; readonly optionLabel?: string }
+  | { readonly name: "check"; readonly target: SemanticTarget; readonly checked: boolean }
+  | { readonly name: "press"; readonly target?: SemanticTarget; readonly key: string; readonly modifiers?: readonly SemanticModifierKey[] }
+  | { readonly name: "upload"; readonly target: SemanticTarget; readonly fileNames: readonly string[]; readonly mimeTypes: readonly string[] }
+  | { readonly name: "drag"; readonly source: SemanticTarget; readonly destination: SemanticTarget }
+  | {
+      readonly name: "scroll";
+      readonly target?: SemanticTarget;
+      readonly direction: "up" | "down" | "left" | "right";
+      readonly times: number;
+      readonly spansViewport: number;
+    }
+  | {
+      readonly name: "dialog";
+      readonly dialogType: "alert" | "confirm" | "prompt" | "beforeunload";
+      readonly accepted: boolean;
+      readonly promptText?: CapturedInputValue;
+    }
+  | { readonly name: "resize"; readonly viewport: { readonly width: number; readonly height: number } };
+
+export interface RecordedSemanticAction {
+  readonly schemaVersion: "sp-ui-action-1";
+  readonly actionIndex: number;
+  readonly timestampMs: number;
+  readonly startPath: string;
+  readonly endPath: string;
+  readonly viewport: { readonly width: number; readonly height: number };
+  readonly verb: SemanticVerb;
+  readonly causedTraces: readonly CausedHttpTrace[];
+  readonly endAnchors: readonly SemanticTarget[];
+  readonly goneAnchors: readonly SemanticTarget[];
+  readonly settleMs: number;
+}
+
 export type WebRecordInitOptions = WebRecordCredentials & {
   /** Correlate with LLM / OpenCode session (`sp.session.id`). */
   sessionId?: string;
@@ -83,8 +165,14 @@ export type WebRecordInitOptions = WebRecordCredentials & {
   replacers?: Record<string, string>;
   /** Soft-disable instead of throwing when credentials are incomplete. Default true. */
   softDisable?: boolean;
-  /** rrweb: mask all inputs. Default true for agent IDEs. */
+  /** rrweb: mask all inputs. Default true for agent IDEs unless `inputCapture: "secrets-only"` is active. */
   maskAllInputs?: boolean;
+  /** Capture live DOM semantic user actions as `softprobe.ui.action` (`sp-ui-action-1`) OTLP spans. Default false. */
+  captureSemanticActions?: boolean;
+  /** Input value capture policy for semantic actions (and rrweb default when `maskAllInputs` is omitted). */
+  inputCapture?: InputCaptureMode;
+  /** Maps CSS selectors (e.g. `input[name="apiKey"]`) to named secret slots (e.g. `API_KEY`). */
+  secretSlots?: Readonly<Record<string, string>>;
   /** CSS selector for visible text that rrweb should mask. */
   maskTextSelector?: string;
   /** CSS selector for page regions that rrweb should block from recording. */

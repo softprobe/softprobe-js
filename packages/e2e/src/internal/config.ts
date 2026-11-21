@@ -252,6 +252,7 @@ export function resolveSinkConfig(
       const endpoint = normalizeEndpointUrl(options.sink.endpoint, "blackbox");
       const token =
         nonEmptyTrimmed(options.sink.token) ??
+        nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
         nonEmptyTrimmed(env.SOFTPROBE_TOKEN) ??
         nonEmptyTrimmed(env.SP_TOKEN) ??
         nonEmptyTrimmed(env.INGESTION_KEY);
@@ -272,6 +273,7 @@ export function resolveSinkConfig(
       const endpoint = normalizeEndpointUrl(options.sink.endpoint, "arex");
       const token =
         nonEmptyTrimmed(options.sink.token) ??
+        nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
         nonEmptyTrimmed(env.SP_TOKEN) ??
         nonEmptyTrimmed(env.SOFTPROBE_TOKEN);
       const tenantId =
@@ -291,7 +293,11 @@ export function resolveSinkConfig(
     return _exhaustive;
   }
 
-  const store = validateStoreMode(options.store) ?? "auto";
+  const envStoreRaw = nonEmptyTrimmed(env.SOFTPROBE_STORE_MODE);
+  const store =
+    validateStoreMode(options.store) ??
+    (envStoreRaw ? validateStoreMode(envStoreRaw) : undefined) ??
+    "auto";
   const appId =
     nonEmptyTrimmed(options.appId) ??
     nonEmptyTrimmed(env.SOFTPROBE_APP_ID) ??
@@ -313,6 +319,8 @@ export function resolveSinkConfig(
   if (effectiveKind === "arex") {
     const rawEndpoint =
       nonEmptyTrimmed(options.endpoint) ??
+      nonEmptyTrimmed(env.SOFTPROBE_SINK_ENDPOINT) ??
+      nonEmptyTrimmed(env.SOFTPROBE_TRACE_ENDPOINT) ??
       nonEmptyTrimmed(env.SP_API_URL) ??
       nonEmptyTrimmed(env.SOFTPROBE_URL);
     if (!rawEndpoint) {
@@ -330,6 +338,7 @@ export function resolveSinkConfig(
     const endpoint = normalizeEndpointUrl(rawEndpoint, "arex");
     const token =
       nonEmptyTrimmed(options.token) ??
+      nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
       nonEmptyTrimmed(env.SP_TOKEN) ??
       nonEmptyTrimmed(env.SOFTPROBE_TOKEN);
     const tenantId =
@@ -347,6 +356,8 @@ export function resolveSinkConfig(
 
   const rawEndpoint =
     nonEmptyTrimmed(options.endpoint) ??
+    nonEmptyTrimmed(env.SOFTPROBE_SINK_ENDPOINT) ??
+    nonEmptyTrimmed(env.SOFTPROBE_TRACE_ENDPOINT) ??
     nonEmptyTrimmed(env.SOFTPROBE_URL) ??
     nonEmptyTrimmed(env.SP_API_URL) ??
     nonEmptyTrimmed(env.SOFTPROBE_BASE_URL) ??
@@ -355,6 +366,7 @@ export function resolveSinkConfig(
   const endpoint = normalizeEndpointUrl(rawEndpoint, "blackbox");
   const token =
     nonEmptyTrimmed(options.token) ??
+    nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
     nonEmptyTrimmed(env.SOFTPROBE_TOKEN) ??
     nonEmptyTrimmed(env.SP_TOKEN) ??
     nonEmptyTrimmed(env.INGESTION_KEY);

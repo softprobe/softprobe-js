@@ -23,10 +23,30 @@ export function autoInitFromScript(
     );
   if (!script) return undefined;
 
+  const captureSemanticRaw = script.dataset.captureSemanticActions?.trim().toLowerCase();
+  const captureSemanticActions =
+    captureSemanticRaw === "true" || captureSemanticRaw === "1"
+      ? true
+      : captureSemanticRaw === "false" || captureSemanticRaw === "0"
+        ? false
+        : undefined;
+  const inputCaptureRaw = script.dataset.inputCapture?.trim();
+  const inputCapture =
+    inputCaptureRaw === "masked" ||
+    inputCaptureRaw === "secrets-only" ||
+    inputCaptureRaw === "unmasked"
+      ? inputCaptureRaw
+      : undefined;
+
   const rawOptions = script.dataset.softprobeOptions?.trim();
   if (rawOptions) {
     const parsed = JSON.parse(rawOptions) as WebRecordInitOptions;
-    const session = RecordSdk.init(parsed);
+    const merged: WebRecordInitOptions = {
+      ...(captureSemanticActions !== undefined ? { captureSemanticActions } : {}),
+      ...(inputCapture !== undefined ? { inputCapture } : {}),
+      ...parsed,
+    };
+    const session = RecordSdk.init(merged);
     if (typeof window !== "undefined") {
       window.__softprobeSession = session;
     }
@@ -40,6 +60,8 @@ export function autoInitFromScript(
     ingestionKey,
     ...(script.dataset.serviceName?.trim() ? { serviceName: script.dataset.serviceName.trim() } : {}),
     ...(script.dataset.environment?.trim() ? { environment: script.dataset.environment.trim() } : {}),
+    ...(captureSemanticActions !== undefined ? { captureSemanticActions } : {}),
+    ...(inputCapture !== undefined ? { inputCapture } : {}),
   };
 
   const session = RecordSdk.init(options);

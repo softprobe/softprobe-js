@@ -167,7 +167,7 @@ export function softprobeWeb(
   return wrapped;
 }
 
-function buildSinkFromResolved(
+export function buildSinkFromResolved(
   options: SoftprobeWebOptions,
   env: Readonly<Record<string, string | undefined>>,
 ): TraceSink {
@@ -193,11 +193,11 @@ function buildSinkFromResolved(
   return _exhaustive;
 }
 
-function createTraceScope(options: {
+export function createTraceScope(options: {
   readonly ledger: BrowserAttemptLedger;
   readonly ledgerView: TriggerLedgerView;
   readonly resolveSink: () => TraceSink;
-  readonly onVerifiedTrace: (event: VerifiedTraceEvent) => void;
+  readonly onVerifiedTrace?: (event: VerifiedTraceEvent) => void;
   readonly pollingDefaults: {
     readonly pollTimeoutMs: number;
     readonly pollIntervalMs: number;

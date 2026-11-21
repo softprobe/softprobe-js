@@ -1,4 +1,4 @@
-import { trace } from "@opentelemetry/api";
+import { SpanKind, trace } from "@opentelemetry/api";
 import { FetchInstrumentation } from "@opentelemetry/browser-instrumentation/experimental/fetch";
 import { XhrInstrumentation } from "@opentelemetry/browser-instrumentation/experimental/xhr";
 import { createSessionSpanProcessor, type SessionProvider } from "@opentelemetry/browser-sdk/session";
@@ -10,7 +10,7 @@ import {
   type SpanExporter,
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace";
-import type { HttpBodyCaptureOptions } from "./types.js";
+import type { CausedHttpTrace, HttpBodyCaptureOptions } from "./types.js";
 import type { ResourceAttributes } from "@softprobe/tracing";
 import {
   createHttpBodyCaptureHooks,
@@ -34,6 +34,8 @@ export type BrowserRuntimeOptions = {
   apiOrigins?: string[];
   httpBodyCapture?: boolean | HttpBodyCaptureOptions;
   onSessionId?: (sessionId: string) => void;
+  onHttpSpanStart?: (info: { readonly traceId: string; readonly spanId: string }) => void;
+  onHttpSpan?: (info: CausedHttpTrace) => void;
 };
 
 export type BrowserRuntime = {
@@ -82,6 +84,9 @@ export function createBrowserRuntime(
   const processors: SpanProcessor[] = [
     sessionProcessor,
     softprobeSessionProcessor,
+    ...(options.onHttpSpanStart || options.onHttpSpan
+      ? [new HttpSpanObserverProcessor(options.onHttpSpanStart, options.onHttpSpan)]
+      : []),
     lifecycle,
     batchProcessor,
   ];
@@ -149,6 +154,54 @@ class SoftprobeSessionAttributeProcessor implements SpanProcessor {
   }
 
   onEnd(_span: ReadableSpan): void {}
+
+  forceFlush(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  shutdown(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
+class HttpSpanObserverProcessor implements SpanProcessor {
+  constructor(
+    private readonly onHttpSpanStart?: (info: { readonly traceId: string; readonly spanId: string }) => void,
+    private readonly onHttpSpan?: (info: CausedHttpTrace) => void,
+  ) {}
+
+  onStart(span: Span): void {
+    if (span.kind !== SpanKind.CLIENT) return;
+    const ctx = span.spanContext();
+    this.onHttpSpanStart?.({ traceId: ctx.traceId, spanId: ctx.spanId });
+  }
+
+  onEnd(span: ReadableSpan): void {
+    if (span.kind !== SpanKind.CLIENT) return;
+    const url = String(span.attributes["url.full"] ?? span.attributes["http.url"] ?? "").trim();
+    if (!url) return;
+    const method = String(
+      span.attributes["http.request.method"] ??
+        span.attributes["http.method"] ??
+        span.name ??
+        "GET",
+    )
+      .trim()
+      .toUpperCase();
+    const rawTemplate = span.attributes["url.template"];
+    const urlTemplate = typeof rawTemplate === "string" && rawTemplate.length > 0 ? rawTemplate : undefined;
+    const rawStatus = span.attributes["http.response.status_code"] ?? span.attributes["http.status_code"];
+    const status = typeof rawStatus === "number" && Number.isInteger(rawStatus) ? rawStatus : undefined;
+    const ctx = span.spanContext();
+    this.onHttpSpan?.({
+      traceId: ctx.traceId,
+      spanId: ctx.spanId,
+      method,
+      url,
+      ...(urlTemplate !== undefined ? { urlTemplate } : {}),
+      ...(status !== undefined ? { status } : {}),
+    });
+  }
 
   forceFlush(): Promise<void> {
     return Promise.resolve();
