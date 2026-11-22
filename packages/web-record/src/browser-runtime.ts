@@ -34,7 +34,13 @@ export type BrowserRuntimeOptions = {
   apiOrigins?: string[];
   httpBodyCapture?: boolean | HttpBodyCaptureOptions;
   onSessionId?: (sessionId: string) => void;
-  onHttpSpanStart?: (info: { readonly traceId: string; readonly spanId: string }) => void;
+  onHttpSpanStart?: (info: {
+    readonly traceId: string;
+    readonly spanId: string;
+    readonly method?: string;
+    readonly url?: string;
+    readonly urlTemplate?: string;
+  }) => void;
   onHttpSpan?: (info: CausedHttpTrace) => void;
 };
 
@@ -164,16 +170,48 @@ class SoftprobeSessionAttributeProcessor implements SpanProcessor {
   }
 }
 
+function isRecordObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 class HttpSpanObserverProcessor implements SpanProcessor {
   constructor(
-    private readonly onHttpSpanStart?: (info: { readonly traceId: string; readonly spanId: string }) => void,
+    private readonly onHttpSpanStart?: (info: {
+      readonly traceId: string;
+      readonly spanId: string;
+      readonly method?: string;
+      readonly url?: string;
+      readonly urlTemplate?: string;
+    }) => void,
     private readonly onHttpSpan?: (info: CausedHttpTrace) => void,
   ) {}
 
   onStart(span: Span): void {
     if (span.kind !== SpanKind.CLIENT) return;
     const ctx = span.spanContext();
-    this.onHttpSpanStart?.({ traceId: ctx.traceId, spanId: ctx.spanId });
+    let url: string | undefined;
+    let method: string | undefined;
+    let urlTemplate: string | undefined;
+    if ("attributes" in span && isRecordObject(span.attributes)) {
+      const rawUrl = String(span.attributes["url.full"] ?? span.attributes["http.url"] ?? "").trim();
+      if (rawUrl) url = rawUrl;
+      const rawName = "name" in span && typeof span.name === "string" ? span.name : "";
+      const rawMethod = String(
+        span.attributes["http.request.method"] ?? span.attributes["http.method"] ?? rawName,
+      )
+        .trim()
+        .toUpperCase();
+      if (rawMethod) method = rawMethod;
+      const rawTpl = span.attributes["url.template"];
+      if (typeof rawTpl === "string" && rawTpl.length > 0) urlTemplate = rawTpl;
+    }
+    this.onHttpSpanStart?.({
+      traceId: ctx.traceId,
+      spanId: ctx.spanId,
+      ...(method !== undefined ? { method } : {}),
+      ...(url !== undefined ? { url } : {}),
+      ...(urlTemplate !== undefined ? { urlTemplate } : {}),
+    });
   }
 
   onEnd(span: ReadableSpan): void {

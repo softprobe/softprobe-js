@@ -866,4 +866,156 @@ describe("Session compiler & multi-runtime codegen", () => {
     expect(maxInFlight).toBeGreaterThan(1);
     expect(requestedTraceUrls.length).toBeLessThanOrEqual(10);
   });
+
+  it("omits role twin .nth() on unique cssSelector locators and infers slow browser HTTP causedTraces", () => {
+    const slowTraceId = "70d9ef7fa2ac8f0fd6349af6c988f1b4";
+    const spans = [
+      {
+        trace_id: "09d54db4587744140e9e569e0d2ebc2c",
+        span_id: "36cebb08df71847d",
+        session_id: "sess_slow_ota",
+        name: "softprobe.ui.action",
+        service_name: "travel-ota-web",
+        start_time: "2026-11-22T06:22:47.375Z",
+        attributes: {
+          "sp.observation.type": "ui_action",
+          "sp.ui.action.schema": "sp-ui-action-1",
+          "sp.ui.action.index": 0,
+          "sp.ui.action.verb": "select",
+          "sp.ui.action.payload": JSON.stringify({
+            schemaVersion: "sp-ui-action-1",
+            actionIndex: 0,
+            timestampMs: 1795328567375,
+            startPath: "/index.html",
+            endPath: "/index.html",
+            viewport: { width: 1280, height: 720 },
+            verb: {
+              name: "select",
+              target: { role: "combobox", cssSelector: "#fromCity", position: { index: 0, of: 2 } },
+              value: { kind: "literal", value: "LHR" },
+            },
+            causedTraces: [],
+            endAnchors: [],
+            goneAnchors: [],
+            settleMs: 10,
+          } satisfies RecordedSemanticAction),
+        },
+      },
+      {
+        trace_id: "d41284d8f7df68b50bd3351336350853",
+        span_id: "5dfa2e52dff0ee5a",
+        session_id: "sess_slow_ota",
+        name: "softprobe.ui.action",
+        service_name: "travel-ota-web",
+        start_time: "2026-11-22T06:22:47.388Z",
+        attributes: {
+          "sp.observation.type": "ui_action",
+          "sp.ui.action.schema": "sp-ui-action-1",
+          "sp.ui.action.index": 1,
+          "sp.ui.action.verb": "select",
+          "sp.ui.action.payload": JSON.stringify({
+            schemaVersion: "sp-ui-action-1",
+            actionIndex: 1,
+            timestampMs: 1795328567388,
+            startPath: "/index.html",
+            endPath: "/index.html",
+            viewport: { width: 1280, height: 720 },
+            verb: {
+              name: "select",
+              target: { role: "combobox", cssSelector: "#toCity", position: { index: 1, of: 2 } },
+              value: { kind: "literal", value: "CDG" },
+            },
+            causedTraces: [],
+            endAnchors: [],
+            goneAnchors: [],
+            settleMs: 10,
+          } satisfies RecordedSemanticAction),
+        },
+      },
+      {
+        trace_id: "c47c0ac3251daaf985c67de2eba0c6a5",
+        span_id: "c7ace69b1f105a67",
+        session_id: "sess_slow_ota",
+        name: "softprobe.ui.action",
+        service_name: "travel-ota-web",
+        start_time: "2026-11-22T06:22:47.535Z",
+        attributes: {
+          "sp.observation.type": "ui_action",
+          "sp.ui.action.schema": "sp-ui-action-1",
+          "sp.ui.action.index": 2,
+          "sp.ui.action.verb": "click",
+          "sp.ui.action.payload": JSON.stringify({
+            schemaVersion: "sp-ui-action-1",
+            actionIndex: 2,
+            timestampMs: 1795328567535,
+            startPath: "/index.html",
+            endPath: "/index.html",
+            viewport: { width: 1280, height: 720 },
+            verb: {
+              name: "click",
+              target: { role: "button", name: "Search" },
+              point: { x: 639, y: 495 },
+            },
+            causedTraces: [],
+            endAnchors: [],
+            goneAnchors: [],
+            settleMs: 1501,
+          } satisfies RecordedSemanticAction),
+        },
+      },
+      {
+        trace_id: slowTraceId,
+        span_id: "212f017d20f67626",
+        session_id: "sess_slow_ota",
+        name: "POST",
+        service_name: "travel-ota-web",
+        start_time: "2026-11-22T06:22:47.537Z",
+        attributes: {
+          "http.request.method": "POST",
+          "http.response.status_code": 200,
+          "url.full": "http://127.0.0.1:45475/api/flights/search",
+        },
+      },
+      {
+        trace_id: slowTraceId,
+        span_id: "c4e0e2d217f45419",
+        session_id: "sess_slow_ota",
+        name: "POST /api/flights/search",
+        span_kind: "SERVER",
+        service_name: "travel-ota",
+        start_time: "2026-11-22T06:22:47.543Z",
+        attributes: {
+          "http.request.method": "POST",
+          "http.route": "/api/flights/search",
+          "http.response.status_code": 200,
+        },
+      },
+      {
+        trace_id: slowTraceId,
+        span_id: "dc0f3f49f1e3f44f",
+        parent_span_id: "c4e0e2d217f45419",
+        session_id: "sess_slow_ota",
+        name: "POST /*/*/airshopping",
+        span_kind: "CLIENT",
+        service_name: "travel-ota",
+        start_time: "2026-11-22T06:22:48.293Z",
+        attributes: {
+          "http.request.method": "POST",
+          "http.response.status_code": 200,
+          "url.full": "https://spair.softprobe.ai/ndc/v21.3/airshopping",
+        },
+      },
+    ];
+
+    const bundle = extractSessionBundleFromSpans({ session_id: "sess_slow_ota", spans });
+    expect(bundle.outboundAssertionCount).toBe(1);
+    const pwSpec =
+      compileSessionToPlaywright(bundle).files.find((f) => f.relativePath.endsWith(".spec.ts"))
+        ?.content ?? "";
+    expect(pwSpec).toContain(`page.locator("#fromCity").selectOption("LHR");`);
+    expect(pwSpec).toContain(`page.locator("#toCity").selectOption("CDG");`);
+    expect(pwSpec).not.toContain(`page.locator("#toCity").nth(1)`);
+    expect(pwSpec).toContain(`triggeredBy: { method: "POST", path: "/api/flights/search" }`);
+    expect(pwSpec).toContain(`/ndc/v21\\\\.3/airshopping$`);
+  });
 });
