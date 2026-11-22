@@ -1,6 +1,6 @@
 {
   "name": "@softprobe/langchain",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Softprobe LangChain callback handler",
   "type": "module",
   "main": "./dist/index.js",
