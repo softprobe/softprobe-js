@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, feat/application-session-capture-sdk]
+    branches: [main, feat/e2e-sdk, feat/application-session-capture-sdk]
 
 jobs:
   build-test:
@@ -19,5 +19,6 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npx playwright install --with-deps chromium
       - run: npm run build
-      - run: npm test
+      - run: E2E_TELEMETRY_DISABLED=1 npm test

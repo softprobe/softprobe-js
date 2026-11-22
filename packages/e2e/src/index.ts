@@ -35,6 +35,10 @@ export {
   type TraceScope,
 } from "./types.js";
 export {
+  softprobeCachedAgent,
+  type SoftprobeCachedAgentOptions,
+} from "./session-compiler.js";
+export {
   AgentError,
   credentials,
   expect,

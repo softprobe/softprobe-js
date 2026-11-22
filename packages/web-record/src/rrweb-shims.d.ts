@@ -6,6 +6,8 @@ declare module "rrweb" {
   }): (() => void) | undefined;
   export namespace record {
     function takeFullSnapshot(isCheckout?: boolean): void;
+    function addCustomEvent(tag: string, payload: unknown): void;
+    const mirror: { getId(node: Node): number } | undefined;
   }
   export function pack(data: unknown): string;
   export function unpack(data: string): unknown;

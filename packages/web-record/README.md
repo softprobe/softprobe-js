@@ -71,6 +71,23 @@ Add each route by exact method and path (relative path such as `"/api/flights/se
 
 Captured bodies are exported on a child span named `softprobe.http.body.capture`. OpenTelemetry owns the HTTP client span and the Softprobe child carries only the bounded JSON body after redaction. The response is returned to your app without waiting for body capture to finish.
 
+## Live semantic action capture (`sp-ui-action-1`)
+
+Enable `captureSemanticActions: true` to record semantic user actions (`click`, `dblclick`, `fill`, `select`, `check`, `press`, `upload`, `dialog`, `navigate`, `scroll`, `resize`) with live WAI-ARIA roles, accessible names, container disambiguation, causal HTTP `traceId` links, and screen-delta anchors on `softprobe.ui.action` OTLP spans:
+
+```ts
+RecordSdk.init({
+  ingestionKey: "<Ingestion Key>",
+  captureSemanticActions: true,
+  inputCapture: "secrets-only",
+  secretSlots: {
+    'input[name="apiKey"]': "API_KEY",
+  },
+});
+```
+
+Built-in secret detection classifies password, payment card, secret, and token inputs as `{ kind: "secret", slot }` without emitting plaintext values.
+
 ## Configure backend bodies
 
 Browser body rules do not configure OBI. Add the same backend and outgoing routes to OBI's native `payload_extraction` rules. Keep the default body action set to `exclude`, then use `include` and `obfuscate` rules for selected routes. See the [OBI Config v2 guide](https://opentelemetry.io/docs/zero-code/obi/configure/config-v2/) and [OBI payload-capture limits](https://github.com/open-telemetry/opentelemetry-ebpf-instrumentation/blob/main/devdocs/features.md#payload-capture).
