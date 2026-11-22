@@ -91,12 +91,15 @@ export class RecordSdk implements WebRecordController {
   private invalidSessionIdWarned = false;
   private _uploadStatus: RecordingUploadStatus = "idle";
   private readonly onPageHide = (): void => {
-    if (!this.enabled || (
+    if (!this.enabled) return;
+    if (this.semanticRecorder?.hasPendingWork()) {
+      this.semanticRecorder.flush();
+    }
+    if (
       this.events.length === 0 &&
       !this.saving &&
-      !this.semanticRecorder?.hasPendingWork() &&
       !this.browserRuntime?.hasPendingTelemetry()
-    )) return;
+    ) return;
     this.setUploadStatus("incomplete");
     if (!this.saving) void this.flushInternal(true);
   };
@@ -244,6 +247,8 @@ export class RecordSdk implements WebRecordController {
       isRrwebActive: () => this.stopHandle !== null,
       inputCapture: this.inputCapture,
       secretSlots: this.secretSlots,
+      sequenceStorageKey: `_sp_ui_seq:${this.serviceName ?? "default"}`,
+      getSessionId: () => this._sessionId,
     });
   }
 
@@ -358,6 +363,7 @@ export class RecordSdk implements WebRecordController {
     await this.drainFlush();
     this._sessionId = next;
     this.browserRuntime?.setSessionId(next);
+    this.semanticRecorder?.syncSessionId();
     try {
       if (typeof sessionStorage !== "undefined") {
         sessionStorage.setItem(this.sessionIdStorageKey, next);
@@ -372,6 +378,7 @@ export class RecordSdk implements WebRecordController {
     if (!next || !/^[!-~]{1,128}$/.test(next) || next === this._sessionId) return;
     this._sessionId = next;
     this.browserRuntime?.setSessionId(next);
+    this.semanticRecorder?.syncSessionId();
     try {
       if (typeof sessionStorage !== "undefined") {
         sessionStorage.setItem(this.sessionIdStorageKey, next);
@@ -455,7 +462,9 @@ export class RecordSdk implements WebRecordController {
   ): Promise<boolean> {
     this.saving = true;
     if (flushSemanticActions && this.semanticRecorder?.hasPendingWork()) {
-      await this.browserRuntime!.waitForIdle();
+      if (!preserveIncompleteStatus) {
+        await this.browserRuntime!.waitForIdle();
+      }
       this.semanticRecorder.flush();
     }
     const batch = this.events.splice(0, this.events.length);

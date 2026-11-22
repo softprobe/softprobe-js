@@ -135,6 +135,8 @@ export interface SemanticActionRecorderOptions {
   readonly isRrwebActive: () => boolean;
   readonly inputCapture: InputCaptureMode;
   readonly secretSlots?: Readonly<Record<string, string>>;
+  readonly sequenceStorageKey?: string;
+  readonly getSessionId?: () => string;
 }
 
 export interface SemanticActionRecorder {
@@ -146,6 +148,7 @@ export interface SemanticActionRecorder {
     readonly urlTemplate?: string;
   }): void;
   onHttpSpan(info: CausedHttpTrace): void;
+  syncSessionId(): void;
   flush(): void;
   hasPendingWork(): boolean;
   stop(): void;
@@ -1350,6 +1353,7 @@ export function createSemanticActionRecorder(
     return {
       onHttpSpanStart: () => undefined,
       onHttpSpan: () => undefined,
+      syncSessionId: () => undefined,
       flush: () => undefined,
       hasPendingWork: () => false,
       stop: () => undefined,
@@ -1385,10 +1389,63 @@ export function createSemanticActionRecorder(
   const lastCheckedByElement = new WeakMap<HTMLInputElement, { readonly checked: boolean; readonly atMs: number }>();
   const spanOwnerBySpanId = new Map<string, SettlingAction | null>();
 
+  const readPersistedSequenceState = (): {
+    readonly sessionId: string;
+    readonly nextActionIndex: number;
+    readonly lastPath: string;
+  } | null => {
+    const storageKey = options.sequenceStorageKey;
+    if (!storageKey || !options.getSessionId) return null;
+    try {
+      const raw = win.sessionStorage?.getItem(storageKey);
+      if (!raw) return null;
+      const parsed: unknown = JSON.parse(raw);
+      if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+        return null;
+      }
+      const sessionId =
+        "sessionId" in parsed && typeof parsed.sessionId === "string"
+          ? parsed.sessionId
+          : "";
+      const savedIndex =
+        "nextActionIndex" in parsed &&
+        typeof parsed.nextActionIndex === "number" &&
+        Number.isInteger(parsed.nextActionIndex) &&
+        parsed.nextActionIndex >= 0
+          ? parsed.nextActionIndex
+          : 0;
+      const lastPath =
+        "lastPath" in parsed && typeof parsed.lastPath === "string"
+          ? parsed.lastPath
+          : "";
+      if (!sessionId) return null;
+      return { sessionId, nextActionIndex: savedIndex, lastPath };
+    } catch {
+      return null;
+    }
+  };
+
+  const persistSequenceState = (pathToSave: string): void => {
+    const storageKey = options.sequenceStorageKey;
+    const sessionId = options.getSessionId?.() ?? "";
+    if (!storageKey || !sessionId) return;
+    try {
+      win.sessionStorage?.setItem(
+        storageKey,
+        JSON.stringify({
+          sessionId,
+          nextActionIndex,
+          lastPath: pathToSave,
+        }),
+      );
+    } catch {}
+  };
+
   const takeCurrentAnchors = (): readonly AnchorProjection[] =>
     snapshotAnchorProjections(doc, options.secretSlots);
 
   const emitActionRecord = (action: RecordedSemanticAction): void => {
+    persistSequenceState(action.endPath);
     const tracer = options.getTracer();
     if (!tracer) return;
 
@@ -1502,6 +1559,7 @@ export function createSemanticActionRecorder(
       quietTimer: null,
       maxTimer: null,
     };
+    persistSequenceState(entry.endPath);
     settlingAction = entry;
     scheduleSettleCheck(entry);
     entry.maxTimer = setTimeout(() => {
@@ -2263,6 +2321,36 @@ export function createSemanticActionRecorder(
   win.addEventListener("resize", onResize);
   win.addEventListener("popstate", onPopState);
 
+  const restoredSequence = readPersistedSequenceState();
+  const initialSessionId = options.getSessionId?.() ?? "";
+  if (restoredSequence && initialSessionId && restoredSequence.sessionId === initialSessionId) {
+    nextActionIndex = restoredSequence.nextActionIndex;
+    if (restoredSequence.lastPath && restoredSequence.lastPath !== lastKnownPath) {
+      const loadActionIndex = nextActionIndex++;
+      emitActionRecord({
+        schemaVersion: UI_ACTION_SCHEMA,
+        actionIndex: loadActionIndex,
+        timestampMs: Date.now(),
+        startPath: restoredSequence.lastPath,
+        endPath: lastKnownPath,
+        viewport: currentViewport(win),
+        verb: {
+          name: "navigate",
+          url: lastKnownPath,
+          trigger: "load",
+        },
+        causedTraces: [],
+        endAnchors: [],
+        goneAnchors: [],
+        settleMs: 0,
+      });
+    } else {
+      persistSequenceState(lastKnownPath);
+    }
+  } else {
+    persistSequenceState(lastKnownPath);
+  }
+
   return {
     onHttpSpanStart(info): void {
       if (stopped) return;
@@ -2321,6 +2409,11 @@ export function createSemanticActionRecorder(
         active.causedTraces.push(info);
       }
       scheduleSettleCheck(active);
+    },
+
+    syncSessionId(): void {
+      if (stopped) return;
+      persistSequenceState(lastKnownPath);
     },
 
     flush(): void {

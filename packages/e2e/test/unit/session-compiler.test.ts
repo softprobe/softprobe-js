@@ -1015,7 +1015,116 @@ describe("Session compiler & multi-runtime codegen", () => {
     expect(pwSpec).toContain(`page.locator("#fromCity").selectOption("LHR");`);
     expect(pwSpec).toContain(`page.locator("#toCity").selectOption("CDG");`);
     expect(pwSpec).not.toContain(`page.locator("#toCity").nth(1)`);
+    expect(pwSpec).toContain(`new RegExp("^[\\\\s\\\\p{Co}]*Search[\\\\s\\\\p{Co}]*$", "u")`);
     expect(pwSpec).toContain(`triggeredBy: { method: "POST", path: "/api/flights/search" }`);
     expect(pwSpec).toContain(`/ndc/v21\\\\.3/airshopping$`);
+
+    const searchNameRegex = new RegExp("^[\\s\\p{Co}]*Search[\\s\\p{Co}]*$", "u");
+    expect(searchNameRegex.test("\uf002 Search")).toBe(true);
+    expect(searchNameRegex.test("Search")).toBe(true);
+    expect(searchNameRegex.test("Search Flights")).toBe(false);
+  });
+
+  it("folds MPA cross-page load navigations into the triggering action endPath and maps image roles to img", () => {
+    const bundle = extractSessionBundleFromSpans({
+      session_id: "sess_mpa_fold",
+      spans: [
+        {
+          trace_id: "11111111111111111111111111111111",
+          span_id: "0000000000000001",
+          session_id: "sess_mpa_fold",
+          name: "softprobe.ui.action",
+          start_time: "2026-11-22T07:00:45.742Z",
+          attributes: {
+            "sp.observation.type": "ui_action",
+            "sp.ui.action.schema": "sp-ui-action-1",
+            "sp.ui.action.index": 0,
+            "sp.ui.action.verb": "click",
+            "sp.ui.action.summary": 'tap button "Search"',
+            "sp.ui.action.payload": JSON.stringify({
+              schemaVersion: "sp-ui-action-1",
+              actionIndex: 0,
+              timestampMs: 1795330845742,
+              startPath: "/index.html",
+              endPath: "/index.html",
+              viewport: { width: 1280, height: 720 },
+              verb: {
+                name: "click",
+                target: { role: "image", name: 'Brand "Logo"' },
+                point: { x: 100, y: 100 },
+              },
+              causedTraces: [],
+              endAnchors: [],
+              goneAnchors: [],
+              settleMs: 3214,
+            } satisfies RecordedSemanticAction),
+          },
+        },
+        {
+          trace_id: "22222222222222222222222222222222",
+          span_id: "0000000000000002",
+          session_id: "sess_mpa_fold",
+          name: "softprobe.ui.action",
+          start_time: "2026-11-22T07:00:49.100Z",
+          attributes: {
+            "sp.observation.type": "ui_action",
+            "sp.ui.action.schema": "sp-ui-action-1",
+            "sp.ui.action.index": 1,
+            "sp.ui.action.verb": "navigate",
+            "sp.ui.action.summary": "navigate to /list.html",
+            "sp.ui.action.payload": JSON.stringify({
+              schemaVersion: "sp-ui-action-1",
+              actionIndex: 1,
+              timestampMs: 1795330849100,
+              startPath: "/index.html",
+              endPath: "/list.html",
+              viewport: { width: 1280, height: 720 },
+              verb: {
+                name: "navigate",
+                url: "/list.html",
+                trigger: "load",
+              },
+              causedTraces: [],
+              endAnchors: [],
+              goneAnchors: [],
+              settleMs: 0,
+            } satisfies RecordedSemanticAction),
+          },
+        },
+      ],
+    });
+
+    expect(bundle.steps).toHaveLength(1);
+    expect(bundle.steps[0]?.action.endPath).toBe("/list.html");
+
+    const pwSpec =
+      compileSessionToPlaywright(bundle).files.find((f) => f.relativePath.endsWith(".spec.ts"))
+        ?.content ?? "";
+    expect(pwSpec).toContain(`getByRole("img"`);
+    expect(pwSpec).toContain(`\\\\x22Logo\\\\x22`);
+    expect(pwSpec).toContain(
+      `await expect(page).toHaveURL(new RegExp("^https?:\\\\/\\\\/[^/?#]+/list\\\\.html(?:[?#]|$)"));`,
+    );
+    const listUrlRe = new RegExp("^https?:\\/\\/[^/?#]+/list\\.html(?:[?#]|$)");
+    expect(listUrlRe.test("http://127.0.0.1:18080/list.html")).toBe(true);
+    expect(listUrlRe.test("http://127.0.0.1:18080/index.html")).toBe(false);
+    const rootUrlRe = new RegExp("^https?:\\/\\/[^/?#]+\\/?(?:[?#]|$)");
+    expect(rootUrlRe.test("http://127.0.0.1:18080/")).toBe(true);
+    expect(rootUrlRe.test("http://127.0.0.1:18080/login/")).toBe(false);
+
+    const e2eSuite = compileSessionToE2E(bundle);
+    const e2eSpec =
+      e2eSuite.files.find((f) => f.relativePath.endsWith(".e2e.ts"))?.content ?? "";
+    expect(e2eSpec).toContain(`await expect(app).toHaveURL(new RegExp("/list\\\\.html"));`);
+    const parsedCache = z
+      .object({
+        payload: z.object({
+          startPath: z.string().optional(),
+          endPath: z.string().optional(),
+        }),
+      })
+      .parse(JSON.parse(e2eSuite.cacheFiles[0]!.content));
+    expect(parsedCache.payload.startPath).toBe("/index.html");
+    expect(parsedCache.payload.endPath).toBe("/list.html");
   });
 });
