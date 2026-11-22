@@ -19,6 +19,7 @@ import { chromium } from "@playwright/test";
 import { run as runE2ESuite } from "e2e/runner";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { isTraceId } from "../../src/index.js";
+import { z } from "zod";
 import {
   compileSessionToE2E,
   compileSessionToPlaywright,
@@ -426,6 +427,139 @@ describe("Session compiler real-runtime Chromium + Playwright + zero-LLM e2e rep
         return;
       }
 
+      if (req.method === "GET" && url.pathname === "/ota/index.html") {
+        const recordFlag = req.headers["x-enable-web-record"] === "1";
+        const sdkOpts = JSON.stringify({
+          ingestionKey: "sp_live_ingest_key",
+          serviceName: "ota-web",
+          sessionId: "sess_live_unlabeled_twins_001",
+          captureSemanticActions: true,
+          inputCapture: "secrets-only",
+          otlp: { tracesEndpoint: `${blackboxOrigin}/v1/traces` },
+        });
+        const scriptTag = recordFlag
+          ? `<script src="/sdk/web-record.js" data-softprobe-options='${sdkOpts}'></script>`
+          : "";
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(`<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Travel OTA</title>
+    <style>.icon-search::before { content: "\\f002"; }</style>
+    ${scriptTag}
+  </head>
+  <body>
+    <form id="searchForm">
+      <div><label>From</label><select id="fromCity"><option value="JFK">New York (JFK)</option><option value="LHR">London Heathrow (LHR)</option></select></div>
+      <div><label>To</label><select id="toCity"><option value="SFO">San Francisco (SFO)</option><option value="CDG">Paris Charles de Gaulle (CDG)</option></select></div>
+      <div><label>Departure</label><input id="departureDate" type="text" /></div>
+      <div><button id="searchBtn" type="button"><i class="icon-search"></i> Search</button></div>
+    </form>
+    <script>
+      document.getElementById("searchBtn").addEventListener("click", async () => {
+        const origin = document.getElementById("fromCity").value;
+        const destination = document.getElementById("toCity").value;
+        const dep = document.getElementById("departureDate").value;
+        const resp = await fetch("/api/flights/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ origin, destination, dep }),
+        });
+        if (resp.ok) {
+          await window.__softprobeSession?.flush?.();
+          window.location.href = "/ota/list.html?from=" + encodeURIComponent(origin) + "&to=" + encodeURIComponent(destination);
+        }
+      });
+    </script>
+  </body>
+</html>`);
+        return;
+      }
+
+      if (req.method === "GET" && url.pathname === "/ota/list.html") {
+        const recordFlag = req.headers["x-enable-web-record"] === "1";
+        const sdkOpts = JSON.stringify({
+          ingestionKey: "sp_live_ingest_key",
+          serviceName: "ota-web",
+          sessionId: "sess_live_unlabeled_twins_001",
+          captureSemanticActions: true,
+          inputCapture: "secrets-only",
+          otlp: { tracesEndpoint: `${blackboxOrigin}/v1/traces` },
+        });
+        const scriptTag = recordFlag
+          ? `<script src="/sdk/web-record.js" data-softprobe-options='${sdkOpts}'></script>`
+          : "";
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(`<!doctype html><html><head><meta charset="utf-8" />${scriptTag}</head><body><h1>Available Flights</h1></body></html>`);
+        return;
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/flights/search") {
+        const rawText = (await readRawBuffer(req)).toString("utf8");
+        const body = z
+          .object({ origin: z.string(), destination: z.string(), dep: z.string() })
+          .parse(JSON.parse(rawText));
+        const tp = String(req.headers["traceparent"] ?? "");
+        const tpParts = tp.split("-");
+        const traceId = tpParts[1] ?? "";
+        const parentSpanId = tpParts[2] ?? randomSpanHex();
+        const emailUrl = `${emailOrigin}/v1/email/send`;
+        const ndcResp = await fetch(emailUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to: `${body.origin}-${body.destination}@ndc.local`, subject: body.dep }),
+        });
+        if (isTraceId(traceId)) {
+          const serverSpanId = randomSpanHex();
+          const clientSpanId = randomSpanHex();
+          backendTraceBatches.set(traceId, [
+            {
+              resource: {
+                attributes: [{ key: "service.name", value: { stringValue: "travel-ota" } }],
+              },
+              scopeSpans: [
+                {
+                  spans: [
+                    {
+                      traceId,
+                      spanId: serverSpanId,
+                      parentSpanId,
+                      name: "POST /api/flights/search",
+                      kind: 2,
+                      startTimeUnixNano: "1700000000000000000",
+                      endTimeUnixNano: "1700000000020000000",
+                      attributes: [
+                        { key: "http.request.method", value: { stringValue: "POST" } },
+                        { key: "url.path", value: { stringValue: "/api/flights/search" } },
+                        { key: "http.response.status_code", value: { intValue: 200 } },
+                      ],
+                    },
+                    {
+                      traceId,
+                      spanId: clientSpanId,
+                      parentSpanId: serverSpanId,
+                      name: "POST",
+                      kind: 3,
+                      startTimeUnixNano: "1700000000003000000",
+                      endTimeUnixNano: "1700000000018000000",
+                      attributes: [
+                        { key: "http.request.method", value: { stringValue: "POST" } },
+                        { key: "url.full", value: { stringValue: emailUrl } },
+                        { key: "http.response.status_code", value: { intValue: ndcResp.status } },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ]);
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+
       res.writeHead(404);
       res.end();
     });
@@ -716,6 +850,119 @@ describe("Session compiler real-runtime Chromium + Playwright + zero-LLM e2e rep
       expect(tracesReport.traces[0]?.mode).toBe("outboundHttp");
       expect(tracesReport.traces[0]?.outboundCall?.status).toBe(200);
       expect(tracesReport.traces[0]?.outboundCall?.url).toContain("/v1/email/send");
+    },
+    90_000,
+  );
+
+  it(
+    "replays unlabeled twin comboboxes, icon-font button names, and MPA load navigations in zero-LLM e2e across repeated runs",
+    async () => {
+      const browser = await chromium.launch({ headless: true });
+      try {
+        const page = await browser.newPage({
+          viewport: { width: 1280, height: 720 },
+          extraHTTPHeaders: { "x-enable-web-record": "1" },
+        });
+        await page.goto(`${appOrigin}/ota/index.html`);
+        await page.locator("#fromCity").selectOption("LHR");
+        await page.locator("#toCity").selectOption("CDG");
+        await page.locator("#departureDate").fill("2026-12-01");
+        await page.getByRole("button", { name: /search/i }).click();
+        await page.waitForURL(/\/ota\/list\.html/);
+        await page.evaluate(async () => {
+          const session: unknown = Reflect.get(window, "__softprobeSession");
+          if (typeof session === "object" && session !== null) {
+            const flushFn: unknown = Reflect.get(session, "flush");
+            if (typeof flushFn === "function") {
+              await Reflect.apply(flushFn, session, []);
+            }
+          }
+        });
+      } finally {
+        await browser.close();
+      }
+
+      const fetched = await fetchSessionSpansFromBlackbox({
+        endpoint: blackboxOrigin,
+        sessionId: "sess_live_unlabeled_twins_001",
+        token: "bb_live_token",
+        workspaceId: "ws_live_001",
+      });
+      const bundle = extractSessionBundleFromSpans(
+        { sessionId: fetched.sessionId, spans: fetched.spans },
+        {
+          sessionId: "sess_live_unlabeled_twins_001",
+          baseOrigin: appOrigin,
+          tracesByTraceId: fetched.tracesByTraceId,
+        },
+      );
+
+      const e2eProjectDir = createTempProject("sp-compiled-ota-e2e-");
+      const e2eSuite = compileSessionToE2E(bundle, {
+        projectId: "sp-compiled-ota-e2e",
+        appIdentity: "ota-web-app",
+        targetUrl: appOrigin,
+        sinkEndpoint: blackboxOrigin,
+        workspaceId: "ws_live_001",
+      });
+      for (const file of [...e2eSuite.files, ...e2eSuite.cacheFiles]) {
+        const targetPath = path.join(e2eProjectDir, file.relativePath);
+        mkdirSync(path.dirname(targetPath), { recursive: true });
+        writeFileSync(targetPath, file.content, "utf8");
+      }
+
+      const scopedEnvOverrides: Record<string, string | undefined> = {
+        E2E_TELEMETRY_DISABLED: "1",
+        APP_URL: appOrigin,
+        SOFTPROBE_SINK_ENDPOINT: blackboxOrigin,
+        SOFTPROBE_API_KEY: "bb_live_token",
+        SOFTPROBE_WORKSPACE_ID: "ws_live_001",
+        OPENAI_API_KEY: undefined,
+        ANTHROPIC_API_KEY: undefined,
+        AI_GATEWAY_API_KEY: undefined,
+        OPENROUTER_API_KEY: undefined,
+        GEMINI_API_KEY: undefined,
+        GOOGLE_GENERATIVE_AI_API_KEY: undefined,
+      };
+      const savedEnv = new Map<string, string | undefined>();
+      for (const [k, v] of Object.entries(scopedEnvOverrides)) {
+        savedEnv.set(k, process.env[k]);
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+
+      const emailsBefore = sentEmails.length;
+      try {
+        const run1 = await runE2ESuite({
+          cwd: e2eProjectDir,
+          config: path.join(e2eProjectDir, "e2e.config.ts"),
+        });
+        if (run1.exitCode !== 0) {
+          throw new Error(`run1 failed:\n${JSON.stringify(run1.report, null, 2)}`);
+        }
+        expect(run1.exitCode).toBe(0);
+        expect(run1.report.run.summary.passed).toBe(1);
+        expect(run1.report.run.usage.modelTokens).toBe(0);
+        expect(run1.report.run.usage.maxModelCallsInStep).toBe(0);
+
+        const run2 = await runE2ESuite({
+          cwd: e2eProjectDir,
+          config: path.join(e2eProjectDir, "e2e.config.ts"),
+        });
+        expect(run2.exitCode).toBe(0);
+        expect(run2.report.run.summary.passed).toBe(1);
+        expect(run2.report.run.usage.modelTokens).toBe(0);
+        expect(run2.report.run.usage.maxModelCallsInStep).toBe(0);
+      } finally {
+        for (const [k, prev] of savedEnv.entries()) {
+          if (prev === undefined) delete process.env[k];
+          else process.env[k] = prev;
+        }
+      }
+      expect(sentEmails.slice(emailsBefore)).toEqual([
+        { to: "LHR-CDG@ndc.local", subject: "2026-12-01" },
+        { to: "LHR-CDG@ndc.local", subject: "2026-12-01" },
+      ]);
     },
     90_000,
   );
