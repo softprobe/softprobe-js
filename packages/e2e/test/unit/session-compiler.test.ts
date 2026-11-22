@@ -1023,6 +1023,19 @@ describe("Session compiler & multi-runtime codegen", () => {
     expect(searchNameRegex.test("\uf002 Search")).toBe(true);
     expect(searchNameRegex.test("Search")).toBe(true);
     expect(searchNameRegex.test("Search Flights")).toBe(false);
+
+    const otaE2eSuite = compileSessionToE2E(bundle);
+    const otaE2eConfig =
+      otaE2eSuite.files.find((f) => f.relativePath === "e2e.config.ts")?.content ?? "";
+    expect(otaE2eConfig).toContain(`mode: "read-only"`);
+    const otaCacheDoc = z
+      .object({
+        payload: z.object({
+          truncated: z.boolean().optional(),
+        }),
+      })
+      .parse(JSON.parse(otaE2eSuite.cacheFiles[0]!.content));
+    expect(otaCacheDoc.payload.truncated).toBe(true);
   });
 
   it("folds MPA cross-page load navigations into the triggering action endPath and maps image roles to img", () => {
@@ -1115,7 +1128,10 @@ describe("Session compiler & multi-runtime codegen", () => {
     const e2eSuite = compileSessionToE2E(bundle);
     const e2eSpec =
       e2eSuite.files.find((f) => f.relativePath.endsWith(".e2e.ts"))?.content ?? "";
-    expect(e2eSpec).toContain(`await expect(app).toHaveURL(new RegExp("/list\\\\.html"));`);
+    expect(e2eSpec).toContain(`{ app, agent, screen, trace, browser }`);
+    expect(e2eSpec).toContain(
+      `await expect(browser).toHaveURL(new RegExp("^https?:\\\\/\\\\/[^/?#]+/list\\\\.html(?:[?#]|$)"));`,
+    );
     const parsedCache = z
       .object({
         payload: z.object({
