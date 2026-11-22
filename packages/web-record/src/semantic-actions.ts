@@ -20,7 +20,7 @@ const MAX_ANCHORS = 8;
 const MAX_POSITION_TWINS = 1000;
 const FILL_IDLE_FLUSH_MS = 600;
 const ACTION_QUIET_SETTLE_MS = 40;
-const ACTION_MAX_HTTP_SETTLE_MS = 1500;
+const ACTION_MAX_HTTP_SETTLE_MS = 15000;
 const SCROLL_DEBOUNCE_MS = 180;
 const RESIZE_DEBOUNCE_MS = 180;
 
@@ -138,7 +138,13 @@ export interface SemanticActionRecorderOptions {
 }
 
 export interface SemanticActionRecorder {
-  onHttpSpanStart(info: { readonly traceId: string; readonly spanId: string }): void;
+  onHttpSpanStart(info: {
+    readonly traceId: string;
+    readonly spanId: string;
+    readonly method?: string;
+    readonly url?: string;
+    readonly urlTemplate?: string;
+  }): void;
   onHttpSpan(info: CausedHttpTrace): void;
   flush(): void;
   hasPendingWork(): boolean;
@@ -1377,6 +1383,7 @@ export function createSemanticActionRecorder(
   let hoverTimer: ReturnType<typeof setTimeout> | null = null;
   let hoverCandidateElement: Element | null = null;
   const lastCheckedByElement = new WeakMap<HTMLInputElement, { readonly checked: boolean; readonly atMs: number }>();
+  const spanOwnerBySpanId = new Map<string, SettlingAction | null>();
 
   const takeCurrentAnchors = (): readonly AnchorProjection[] =>
     snapshotAnchorProjections(doc, options.secretSlots);
@@ -2262,14 +2269,43 @@ export function createSemanticActionRecorder(
       if (pendingFill) {
         flushPendingFill();
       }
+      if (spanOwnerBySpanId.size > 512) {
+        const oldestKey = spanOwnerBySpanId.keys().next().value;
+        if (oldestKey !== undefined) spanOwnerBySpanId.delete(oldestKey);
+      }
+      spanOwnerBySpanId.set(info.spanId, settlingAction);
       if (settlingAction) {
         settlingAction.inFlightSpanIds.add(info.spanId);
+        if (info.url && info.method) {
+          const existingIdx = settlingAction.causedTraces.findIndex(
+            (entry) => entry.spanId === info.spanId,
+          );
+          const provisional: CausedHttpTrace = {
+            traceId: info.traceId,
+            spanId: info.spanId,
+            method: info.method,
+            url: info.url,
+            ...(info.urlTemplate !== undefined ? { urlTemplate: info.urlTemplate } : {}),
+          };
+          if (existingIdx >= 0) {
+            settlingAction.causedTraces[existingIdx] = provisional;
+          } else {
+            settlingAction.causedTraces.push(provisional);
+          }
+        }
       }
     },
 
     onHttpSpan(info): void {
       if (stopped) return;
       const active = settlingAction;
+      if (info.spanId && spanOwnerBySpanId.has(info.spanId)) {
+        const owner = spanOwnerBySpanId.get(info.spanId) ?? null;
+        spanOwnerBySpanId.delete(info.spanId);
+        if (!active || owner !== active) {
+          return;
+        }
+      }
       if (!active) return;
       if (info.spanId) {
         active.inFlightSpanIds.delete(info.spanId);
@@ -2311,6 +2347,7 @@ export function createSemanticActionRecorder(
         finalizeSettlingAction();
       }
       stopped = true;
+      spanOwnerBySpanId.clear();
 
       win.removeEventListener("pointerdown", onPointerDown, true);
       win.removeEventListener("mousedown", onPointerDown, true);

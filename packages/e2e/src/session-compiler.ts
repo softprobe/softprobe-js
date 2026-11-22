@@ -924,16 +924,27 @@ export function extractSessionBundleFromSpans(
     normalizedSpans.find((s) => s.sessionId !== undefined)?.sessionId ||
     "recorded-session";
 
+  const uiActionServiceNames = new Set<string>();
   const uiActionEntries: Array<{
-    readonly action: RecordedSemanticAction;
+    action: RecordedSemanticAction;
     readonly summary: string;
   }> = [];
+
+  const readSpanServiceName = (span: NormalizedRawSpan): string | undefined =>
+    span.raw.service_name?.trim() ||
+    span.resourceAttributes["service.name"]?.trim() ||
+    span.attributes["service.name"]?.trim() ||
+    span.attributes["service_name"]?.trim() ||
+    undefined;
 
   for (const span of normalizedSpans) {
     const isUiAction =
       span.name === "softprobe.ui.action" ||
       span.attributes["sp.observation.type"] === "ui_action";
     if (!isUiAction) continue;
+
+    const svcName = readSpanServiceName(span);
+    if (svcName) uiActionServiceNames.add(svcName);
 
     const payloadRaw = span.attributes["sp.ui.action.payload"];
     if (!payloadRaw) {
@@ -967,6 +978,129 @@ export function extractSessionBundleFromSpans(
     }
     return a.action.timestampMs - b.action.timestampMs;
   });
+
+  const claimedTraceIds = new Set<string>();
+  for (const entry of uiActionEntries) {
+    for (const ct of entry.action.causedTraces) {
+      claimedTraceIds.add(ct.traceId.trim().toLowerCase());
+    }
+  }
+
+  const candidateBrowserHttpSpans = normalizedSpans
+    .filter((span) => {
+      if (!span.traceId || claimedTraceIds.has(span.traceId) || span.startMs <= 0) {
+        return false;
+      }
+      const obsType = span.attributes["sp.observation.type"] ?? span.attributes["observation_type"];
+      if (
+        span.name === "softprobe.ui.action" ||
+        span.name === "softprobe.web.recording" ||
+        span.name === "softprobe.http.body.capture" ||
+        obsType === "ui_action" ||
+        obsType === "recording" ||
+        obsType === "http_body"
+      ) {
+        return false;
+      }
+      const parentHex = decodeHexId(span.raw.parentSpanId ?? span.raw.parent_span_id, 8);
+      if (isSpanId(parentHex)) return false;
+      const rawKind = span.raw.kind ?? span.raw.span_kind;
+      if (rawKind === 2 || rawKind === "SERVER" || rawKind === "SPAN_KIND_SERVER") {
+        return false;
+      }
+      const url = (span.attributes["url.full"] ?? span.attributes["http.url"] ?? "").trim();
+      if (!url) return false;
+      const svcName = readSpanServiceName(span);
+      if (uiActionServiceNames.size > 0 && svcName && !uiActionServiceNames.has(svcName)) {
+        return false;
+      }
+      return true;
+    })
+    .sort((a, b) => a.startMs - b.startMs);
+
+  const eligibleActionIndices = uiActionEntries
+    .map((entry, idx) =>
+      entry.action.verb.name !== "resize" && entry.action.verb.name !== "dialog" ? idx : -1,
+    )
+    .filter((idx) => idx >= 0);
+
+  const inferredByActionIndex = new Map<number, CausedHttpTrace[]>();
+
+  for (const httpSpan of candidateBrowserHttpSpans) {
+    if (!httpSpan.traceId || claimedTraceIds.has(httpSpan.traceId)) continue;
+    const url = (httpSpan.attributes["url.full"] ?? httpSpan.attributes["http.url"] ?? "").trim();
+    const method = (
+      httpSpan.attributes["http.request.method"] ??
+      httpSpan.attributes["http.method"] ??
+      httpSpan.name
+    )
+      .trim()
+      .toUpperCase();
+    if (!url || !method) continue;
+
+    let chosenIdx = -1;
+    let prevPos = -1;
+    for (let p = 0; p < eligibleActionIndices.length; p += 1) {
+      const idx = eligibleActionIndices[p]!;
+      if (uiActionEntries[idx]!.action.timestampMs <= httpSpan.startMs) {
+        prevPos = p;
+      } else {
+        break;
+      }
+    }
+
+    const nextPos = prevPos + 1;
+    if (nextPos < eligibleActionIndices.length) {
+      const nextIdx = eligibleActionIndices[nextPos]!;
+      const nextAction = uiActionEntries[nextIdx]!.action;
+      const prevSettled =
+        prevPos < 0 ||
+        httpSpan.startMs >
+          uiActionEntries[eligibleActionIndices[prevPos]!]!.action.timestampMs +
+            uiActionEntries[eligibleActionIndices[prevPos]!]!.action.settleMs;
+      if (prevSettled && nextAction.timestampMs - httpSpan.startMs <= 50) {
+        chosenIdx = nextIdx;
+      }
+    }
+
+    if (chosenIdx < 0 && prevPos >= 0) {
+      const prevIdx = eligibleActionIndices[prevPos]!;
+      const prevAction = uiActionEntries[prevIdx]!.action;
+      if (httpSpan.startMs <= prevAction.timestampMs + Math.max(prevAction.settleMs, 15_000)) {
+        chosenIdx = prevIdx;
+      }
+    }
+
+    if (chosenIdx < 0) continue;
+    const targetEntry = uiActionEntries[chosenIdx]!;
+    if (targetEntry.action.causedTraces.length > 0) continue;
+
+    const rawStatus =
+      httpSpan.attributes["http.response.status_code"] ?? httpSpan.attributes["http.status_code"];
+    const parsedStatus = rawStatus ? Number.parseInt(rawStatus, 10) : Number.NaN;
+    const urlTemplate = httpSpan.attributes["url.template"]?.trim() || undefined;
+    claimedTraceIds.add(httpSpan.traceId);
+    const list = inferredByActionIndex.get(chosenIdx) ?? [];
+    list.push({
+      traceId: httpSpan.traceId,
+      ...(httpSpan.spanId ? { spanId: httpSpan.spanId } : {}),
+      method,
+      url,
+      ...(urlTemplate ? { urlTemplate } : {}),
+      ...(Number.isInteger(parsedStatus) && parsedStatus >= 0 ? { status: parsedStatus } : {}),
+    });
+    inferredByActionIndex.set(chosenIdx, list);
+  }
+
+  for (const [idx, inferredTraces] of inferredByActionIndex.entries()) {
+    const entry = uiActionEntries[idx];
+    if (entry && inferredTraces.length > 0) {
+      entry.action = {
+        ...entry.action,
+        causedTraces: inferredTraces,
+      };
+    }
+  }
 
   const rawSpansByTraceId = new Map<TraceId, Array<z.infer<typeof rawSpanObjectSchema>>>();
   const responseScalarsByTraceId = new Map<string, Set<string>>();
@@ -1387,6 +1521,7 @@ function buildPlaywrightLocatorExpr(
     : "page";
 
   let expr: string;
+  let usesTwinPosition = true;
   if (dynamicName && target.role) {
     expr = `${scopePrefix}.getByRole(${JSON.stringify(target.role)}, { name: new RegExp(${JSON.stringify(dynamicName.patternSource)}) })`;
   } else if (target.testId && !isMintedTestId(target.testId)) {
@@ -1395,6 +1530,7 @@ function buildPlaywrightLocatorExpr(
     expr = `${scopePrefix}.getByRole(${JSON.stringify(target.role)}, { name: ${JSON.stringify(target.name)}, exact: true })`;
   } else if (target.label) {
     expr = `${scopePrefix}.getByLabel(${JSON.stringify(target.label)}, { exact: true })`;
+    usesTwinPosition = false;
   } else if (target.placeholder) {
     expr = `${scopePrefix}.getByPlaceholder(${JSON.stringify(target.placeholder)}, { exact: true })`;
   } else if (dynamicText) {
@@ -1403,13 +1539,15 @@ function buildPlaywrightLocatorExpr(
     expr = `${scopePrefix}.getByText(${JSON.stringify(target.text)}, { exact: true })`;
   } else if (target.cssSelector) {
     expr = `page.locator(${JSON.stringify(target.cssSelector)})`;
+    usesTwinPosition = false;
   } else if (target.role) {
     expr = `${scopePrefix}.getByRole(${JSON.stringify(target.role)})`;
   } else {
     expr = `page.locator("body")`;
+    usesTwinPosition = false;
   }
 
-  if (target.position && target.position.of >= 2) {
+  if (usesTwinPosition && target.position && target.position.of >= 2) {
     return `${expr}.nth(${target.position.index})`;
   }
   return expr;

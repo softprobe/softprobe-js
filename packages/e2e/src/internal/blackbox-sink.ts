@@ -665,6 +665,7 @@ export class BlackboxSink implements TraceSink {
   readonly #workspaceId: string | undefined;
   readonly #explorerUrl: string | undefined;
   readonly #fetchImpl: typeof fetch;
+  #preferredTracePrefix: string | null = null;
 
   constructor(options: BlackboxSinkOptions) {
     this.sinkUrl = options.endpoint.replace(/\/+$/, "");
@@ -682,40 +683,74 @@ export class BlackboxSink implements TraceSink {
     traceId: TraceId,
     signal: AbortSignal,
   ): Promise<TracePollSnapshot> {
-    const requestUrl = `${this.sinkUrl}/api/traces/${encodeURIComponent(traceId)}`;
-    const response = await this.#fetchImpl(requestUrl, {
-      method: "GET",
-      headers: {
-        Accept: "application/json",
-        ...formatAuthHeader(this.#token),
-        ...(this.#workspaceId ? { "X-Workspace-Id": this.#workspaceId } : {}),
-      },
-      signal,
-    });
+    const encodedId = encodeURIComponent(traceId);
+    const defaultPrefixes = this.sinkUrl.endsWith("/api/thelake")
+      ? [this.sinkUrl]
+      : [this.sinkUrl, `${this.sinkUrl}/api/thelake`];
+    const prefixes = this.#preferredTracePrefix
+      ? [
+          this.#preferredTracePrefix,
+          ...defaultPrefixes.filter((p) => p !== this.#preferredTracePrefix),
+        ]
+      : defaultPrefixes;
 
-    if (response.status === 404) {
-      return { traceId, state: "awaiting_server_span" };
+    let lastResponse: Response | null = null;
+    let lastRequestUrl = `${prefixes[0]}/api/traces/${encodedId}`;
+
+    for (const prefix of prefixes) {
+      const requestUrl = `${prefix}/api/traces/${encodedId}`;
+      lastRequestUrl = requestUrl;
+      const response = await this.#fetchImpl(requestUrl, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          ...formatAuthHeader(this.#token),
+          ...(this.#workspaceId ? { "X-Workspace-Id": this.#workspaceId } : {}),
+        },
+        signal,
+      });
+      lastResponse = response;
+      const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+      if (response.status === 404 || contentType.includes("text/html")) {
+        continue;
+      }
+      if (!response.ok) {
+        const retryable =
+          response.status === 429 ||
+          response.status === 502 ||
+          response.status === 503 ||
+          response.status === 504;
+        const bodySnippet = (await response.text().catch(() => "")).slice(0, 240);
+        throw new SinkHttpError(
+          `Blackbox trace lookup GET ${requestUrl} failed with HTTP ${response.status}${bodySnippet ? ` (${bodySnippet})` : ""}`,
+          response.status,
+          retryable,
+        );
+      }
+
+      this.#preferredTracePrefix = prefix;
+      const rawJson: unknown = await response.json();
+      return parseBlackboxTracePayload(
+        traceId,
+        rawJson,
+        this.buildExplorerTraceUrl(traceId),
+      );
     }
 
-    if (!response.ok) {
+    if (lastResponse && !lastResponse.ok && lastResponse.status !== 404) {
       const retryable =
-        response.status === 429 ||
-        response.status === 502 ||
-        response.status === 503 ||
-        response.status === 504;
-      const bodySnippet = (await response.text().catch(() => "")).slice(0, 240);
+        lastResponse.status === 429 ||
+        lastResponse.status === 502 ||
+        lastResponse.status === 503 ||
+        lastResponse.status === 504;
+      const bodySnippet = (await lastResponse.text().catch(() => "")).slice(0, 240);
       throw new SinkHttpError(
-        `Blackbox trace lookup GET ${requestUrl} failed with HTTP ${response.status}${bodySnippet ? ` (${bodySnippet})` : ""}`,
-        response.status,
+        `Blackbox trace lookup GET ${lastRequestUrl} failed with HTTP ${lastResponse.status}${bodySnippet ? ` (${bodySnippet})` : ""}`,
+        lastResponse.status,
         retryable,
       );
     }
 
-    const rawJson: unknown = await response.json();
-    return parseBlackboxTracePayload(
-      traceId,
-      rawJson,
-      this.buildExplorerTraceUrl(traceId),
-    );
+    return { traceId, state: "awaiting_server_span" };
   }
 }
