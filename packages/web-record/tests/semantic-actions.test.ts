@@ -445,4 +445,83 @@ describe("Semantic action recorder (sp-ui-action-1)", () => {
     expect(flushed).toBe(true);
     expect(otlpRequests.some((u) => u.includes("/v1/traces"))).toBe(true);
   });
+
+  it("persists monotonic actionIndex and emits cross-page load navigation across MPA page reloads in the same session", async () => {
+    const exporterPage1 = new InMemorySpanExporter();
+    const sessionState1 = createWebSessionState("sess-mpa-001");
+    const runtime1 = createBrowserRuntime(
+      {
+        ingestionKey: "agent-key",
+        otlpEndpoint: "https://collector.example.test/v1/traces",
+        serviceName: "ota-web",
+      },
+      sessionState1,
+      exporterPage1,
+    );
+    window.history.replaceState(null, "", "/index.html");
+    document.body.innerHTML = `<button id="search-btn" type="button">Search</button>`;
+
+    const recorder1 = createSemanticActionRecorder({
+      getTracer: () => runtime1.tracer,
+      isRrwebActive: () => false,
+      inputCapture: "secrets-only",
+      sequenceStorageKey: "_sp_ui_seq:ota-web",
+      getSessionId: () => "sess-mpa-001",
+    });
+    document.getElementById("search-btn")!.click();
+    recorder1.flush();
+    recorder1.stop();
+    await runtime1.forceFlush();
+
+    const page1Actions = parseSemanticActions(exporterPage1);
+    expect(page1Actions).toHaveLength(1);
+    expect(page1Actions[0]?.actionIndex).toBe(0);
+    expect(page1Actions[0]?.startPath).toBe("/index.html");
+
+    await runtime1.shutdown();
+    trace.disable();
+    context.disable();
+    propagation.disable();
+
+    const exporterPage2 = new InMemorySpanExporter();
+    const sessionState2 = createWebSessionState("sess-mpa-001");
+    const runtime2 = createBrowserRuntime(
+      {
+        ingestionKey: "agent-key",
+        otlpEndpoint: "https://collector.example.test/v1/traces",
+        serviceName: "ota-web",
+      },
+      sessionState2,
+      exporterPage2,
+    );
+    runtime = runtime2;
+    window.history.replaceState(null, "", "/list.html");
+    document.body.innerHTML = `<button id="select-flight" type="button">Select flight</button>`;
+
+    recorder = createSemanticActionRecorder({
+      getTracer: () => runtime2.tracer,
+      isRrwebActive: () => false,
+      inputCapture: "secrets-only",
+      sequenceStorageKey: "_sp_ui_seq:ota-web",
+      getSessionId: () => "sess-mpa-001",
+    });
+    document.getElementById("select-flight")!.click();
+    recorder.flush();
+    await runtime2.forceFlush();
+
+    const page2Actions = parseSemanticActions(exporterPage2);
+    expect(page2Actions).toHaveLength(2);
+    expect(page2Actions[0]).toMatchObject({
+      actionIndex: 1,
+      startPath: "/index.html",
+      endPath: "/list.html",
+      verb: {
+        name: "navigate",
+        url: "/list.html",
+        trigger: "load",
+      },
+    });
+    expect(page2Actions[1]?.actionIndex).toBe(2);
+    expect(page2Actions[1]?.startPath).toBe("/list.html");
+  });
 });

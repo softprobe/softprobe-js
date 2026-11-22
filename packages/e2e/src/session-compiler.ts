@@ -333,6 +333,7 @@ export interface CompiledSessionStep {
   readonly summary: string;
   readonly dynamicNamePattern?: CompiledDynamicTextMatch;
   readonly dynamicTextPattern?: CompiledDynamicTextMatch;
+  readonly endPathMatcher?: CompiledPathMatcher;
   readonly backendTraces: readonly CompiledBackendTrace[];
 }
 
@@ -979,8 +980,60 @@ export function extractSessionBundleFromSpans(
     return a.action.timestampMs - b.action.timestampMs;
   });
 
-  const claimedTraceIds = new Set<string>();
+  const navigationCausingVerbs = new Set([
+    "click",
+    "dblclick",
+    "press",
+    "select",
+    "check",
+  ]);
+  const foldedUiActionEntries: typeof uiActionEntries = [];
   for (const entry of uiActionEntries) {
+    if (
+      foldedUiActionEntries.length > 0 &&
+      entry.action.verb.name === "navigate" &&
+      entry.action.verb.trigger === "load"
+    ) {
+      let ownerIdx = foldedUiActionEntries.length - 1;
+      while (
+        ownerIdx >= 0 &&
+        foldedUiActionEntries[ownerIdx]!.action.verb.name === "dialog"
+      ) {
+        ownerIdx -= 1;
+      }
+      const owner = ownerIdx >= 0 ? foldedUiActionEntries[ownerIdx] : undefined;
+      if (
+        owner &&
+        navigationCausingVerbs.has(owner.action.verb.name) &&
+        owner.action.endPath === entry.action.startPath &&
+        entry.action.endPath !== owner.action.endPath &&
+        entry.action.timestampMs - (owner.action.timestampMs + owner.action.settleMs) <= 15_000
+      ) {
+        for (let k = ownerIdx; k < foldedUiActionEntries.length; k += 1) {
+          const targetItem = foldedUiActionEntries[k]!;
+          targetItem.action = {
+            ...targetItem.action,
+            endPath: entry.action.endPath,
+            ...(k === ownerIdx
+              ? {
+                  causedTraces: [
+                    ...targetItem.action.causedTraces,
+                    ...entry.action.causedTraces,
+                  ],
+                  endAnchors: entry.action.endAnchors,
+                  goneAnchors: [],
+                }
+              : {}),
+          };
+        }
+        continue;
+      }
+    }
+    foldedUiActionEntries.push(entry);
+  }
+
+  const claimedTraceIds = new Set<string>();
+  for (const entry of foldedUiActionEntries) {
     for (const ct of entry.action.causedTraces) {
       claimedTraceIds.add(ct.traceId.trim().toLowerCase());
     }
@@ -1018,7 +1071,7 @@ export function extractSessionBundleFromSpans(
     })
     .sort((a, b) => a.startMs - b.startMs);
 
-  const eligibleActionIndices = uiActionEntries
+  const eligibleActionIndices = foldedUiActionEntries
     .map((entry, idx) =>
       entry.action.verb.name !== "resize" && entry.action.verb.name !== "dialog" ? idx : -1,
     )
@@ -1042,7 +1095,7 @@ export function extractSessionBundleFromSpans(
     let prevPos = -1;
     for (let p = 0; p < eligibleActionIndices.length; p += 1) {
       const idx = eligibleActionIndices[p]!;
-      if (uiActionEntries[idx]!.action.timestampMs <= httpSpan.startMs) {
+      if (foldedUiActionEntries[idx]!.action.timestampMs <= httpSpan.startMs) {
         prevPos = p;
       } else {
         break;
@@ -1052,12 +1105,12 @@ export function extractSessionBundleFromSpans(
     const nextPos = prevPos + 1;
     if (nextPos < eligibleActionIndices.length) {
       const nextIdx = eligibleActionIndices[nextPos]!;
-      const nextAction = uiActionEntries[nextIdx]!.action;
+      const nextAction = foldedUiActionEntries[nextIdx]!.action;
       const prevSettled =
         prevPos < 0 ||
         httpSpan.startMs >
-          uiActionEntries[eligibleActionIndices[prevPos]!]!.action.timestampMs +
-            uiActionEntries[eligibleActionIndices[prevPos]!]!.action.settleMs;
+          foldedUiActionEntries[eligibleActionIndices[prevPos]!]!.action.timestampMs +
+            foldedUiActionEntries[eligibleActionIndices[prevPos]!]!.action.settleMs;
       if (prevSettled && nextAction.timestampMs - httpSpan.startMs <= 50) {
         chosenIdx = nextIdx;
       }
@@ -1065,14 +1118,14 @@ export function extractSessionBundleFromSpans(
 
     if (chosenIdx < 0 && prevPos >= 0) {
       const prevIdx = eligibleActionIndices[prevPos]!;
-      const prevAction = uiActionEntries[prevIdx]!.action;
+      const prevAction = foldedUiActionEntries[prevIdx]!.action;
       if (httpSpan.startMs <= prevAction.timestampMs + Math.max(prevAction.settleMs, 15_000)) {
         chosenIdx = prevIdx;
       }
     }
 
     if (chosenIdx < 0) continue;
-    const targetEntry = uiActionEntries[chosenIdx]!;
+    const targetEntry = foldedUiActionEntries[chosenIdx]!;
     if (targetEntry.action.causedTraces.length > 0) continue;
 
     const rawStatus =
@@ -1093,7 +1146,7 @@ export function extractSessionBundleFromSpans(
   }
 
   for (const [idx, inferredTraces] of inferredByActionIndex.entries()) {
-    const entry = uiActionEntries[idx];
+    const entry = foldedUiActionEntries[idx];
     if (entry && inferredTraces.length > 0) {
       entry.action = {
         ...entry.action,
@@ -1143,7 +1196,7 @@ export function extractSessionBundleFromSpans(
   const priorTracesSeen = new Set<string>();
   let outboundAssertionCount = 0;
 
-  const steps: CompiledSessionStep[] = uiActionEntries.map((entry, idx) => {
+  const steps: CompiledSessionStep[] = foldedUiActionEntries.map((entry, idx) => {
     const { action, summary } = entry;
     collectActionSecretSlots(action.verb, secretSlots);
 
@@ -1228,12 +1281,25 @@ export function extractSessionBundleFromSpans(
       });
     }
 
+    const allRouteScalarSources = [...priorTracesSeen]
+      .map((tid) => {
+        const scalars = responseScalarsByTraceId.get(tid);
+        return scalars ? { traceId: tid, scalars } : undefined;
+      })
+      .filter((x): x is { traceId: string; scalars: Set<string> } => x !== undefined);
+    const endPathname = (action.endPath.split("?")[0] ?? "/") || "/";
+    const endPathMatcher =
+      action.endPath !== action.startPath
+        ? resolveTriggerPathMatcher(endPathname, undefined, undefined, allRouteScalarSources)
+        : undefined;
+
     return {
       stepIndex: idx,
       action,
       summary,
       ...(dynamicNamePattern ? { dynamicNamePattern } : {}),
       ...(dynamicTextPattern ? { dynamicTextPattern } : {}),
+      ...(endPathMatcher ? { endPathMatcher } : {}),
       backendTraces,
     };
   });
@@ -1511,6 +1577,34 @@ function isMintedTestId(testId: string): boolean {
   );
 }
 
+const GLYPH_OR_SPACE_CLASS = "[\\s\\p{Co}]";
+
+// Escape quotes and `>>` with hex sequences so Playwright's internal selector serializer remains valid under the Unicode `u` flag.
+function selectorSafeUnicodeRegexSource(source: string): string {
+  return source
+    .replace(/["'`]/g, (quote) => `\\x${quote.charCodeAt(0).toString(16)}`)
+    .replace(/>>/g, ">\\x3e");
+}
+
+function buildGlyphTolerantExactNameRegexSource(name: string): string {
+  const words = name
+    .trim()
+    .split(/\s+/)
+    .filter((word) => word.length > 0)
+    .map((word) => escapeRegExpLiteral(word));
+  if (words.length === 0) {
+    return `^${GLYPH_OR_SPACE_CLASS}*$`;
+  }
+  return selectorSafeUnicodeRegexSource(
+    `^${GLYPH_OR_SPACE_CLASS}*${words.join(`${GLYPH_OR_SPACE_CLASS}+`)}${GLYPH_OR_SPACE_CLASS}*$`,
+  );
+}
+
+function toPlaywrightRole(role: string | undefined): string | undefined {
+  if (role === undefined) return undefined;
+  return role === "image" ? "img" : role;
+}
+
 function buildPlaywrightLocatorExpr(
   target: SemanticTarget,
   dynamicName?: CompiledDynamicTextMatch,
@@ -1519,15 +1613,16 @@ function buildPlaywrightLocatorExpr(
   const scopePrefix = target.within
     ? `page.locator("tr, li, article, [role='row'], [role='listitem'], [role='dialog'], [role='region'], fieldset, section").filter({ hasText: ${JSON.stringify(target.within)} }).first()`
     : "page";
+  const playwrightRole = toPlaywrightRole(target.role);
 
   let expr: string;
   let usesTwinPosition = true;
-  if (dynamicName && target.role) {
-    expr = `${scopePrefix}.getByRole(${JSON.stringify(target.role)}, { name: new RegExp(${JSON.stringify(dynamicName.patternSource)}) })`;
+  if (dynamicName && playwrightRole) {
+    expr = `${scopePrefix}.getByRole(${JSON.stringify(playwrightRole)}, { name: new RegExp(${JSON.stringify(dynamicName.patternSource)}) })`;
   } else if (target.testId && !isMintedTestId(target.testId)) {
     expr = `${scopePrefix}.getByTestId(${JSON.stringify(target.testId)})`;
-  } else if (target.role && target.name) {
-    expr = `${scopePrefix}.getByRole(${JSON.stringify(target.role)}, { name: ${JSON.stringify(target.name)}, exact: true })`;
+  } else if (playwrightRole && target.name) {
+    expr = `${scopePrefix}.getByRole(${JSON.stringify(playwrightRole)}, { name: new RegExp(${JSON.stringify(buildGlyphTolerantExactNameRegexSource(target.name))}, "u") })`;
   } else if (target.label) {
     expr = `${scopePrefix}.getByLabel(${JSON.stringify(target.label)}, { exact: true })`;
     usesTwinPosition = false;
@@ -1540,8 +1635,8 @@ function buildPlaywrightLocatorExpr(
   } else if (target.cssSelector) {
     expr = `page.locator(${JSON.stringify(target.cssSelector)})`;
     usesTwinPosition = false;
-  } else if (target.role) {
-    expr = `${scopePrefix}.getByRole(${JSON.stringify(target.role)})`;
+  } else if (playwrightRole) {
+    expr = `${scopePrefix}.getByRole(${JSON.stringify(playwrightRole)})`;
   } else {
     expr = `page.locator("body")`;
     usesTwinPosition = false;
@@ -1576,13 +1671,15 @@ const PLAYWRIGHT_CONTENT_NAMED_ROLES = new Set([
 
 function buildPlaywrightAnchorAssertionExpr(anchor: SemanticTarget): string {
   const text = anchor.name ?? anchor.text;
+  const playwrightRole = toPlaywrightRole(anchor.role);
   if (
     anchor.role &&
+    playwrightRole &&
     text &&
     !anchor.label &&
     !PLAYWRIGHT_CONTENT_NAMED_ROLES.has(anchor.role)
   ) {
-    return `page.getByRole(${JSON.stringify(anchor.role)}).filter({ hasText: ${JSON.stringify(text)} }).first()`;
+    return `page.getByRole(${JSON.stringify(playwrightRole)}).filter({ hasText: ${JSON.stringify(text)} }).first()`;
   }
   return buildPlaywrightLocatorExpr(anchor);
 }
@@ -1860,6 +1957,18 @@ export function compileSessionToPlaywright(
         break;
     }
 
+    if (verb.name !== "navigate" && step.action.endPath !== step.action.startPath) {
+      const endPathname = (step.action.endPath.split("?")[0] ?? "/") || "/";
+      const pathPattern =
+        step.endPathMatcher?.kind === "regex"
+          ? step.endPathMatcher.patternSource.replace(/^\^/, "").replace(/\$$/, "(?:[?#]|$)")
+          : endPathname === "/"
+            ? "\\/?(?:[?#]|$)"
+            : `${escapeRegExpLiteral(endPathname)}(?:[?#]|$)`;
+      const urlRegexSource = `^https?:\\/\\/[^/?#]+${pathPattern}`;
+      lines.push(`    await expect(page).toHaveURL(new RegExp(${JSON.stringify(urlRegexSource)}));`);
+    }
+
     for (const anchor of selectVerifiableEndAnchors(step.action.endAnchors)) {
       const anchorLoc = buildPlaywrightAnchorAssertionExpr(anchor);
       lines.push(`    await expect(${anchorLoc}).toBeVisible();`);
@@ -1908,6 +2017,7 @@ export function compileSessionToPlaywright(
       ``,
       `export default defineConfig<SoftprobePlaywrightFixtures>({`,
       `  testDir: "./tests",`,
+      `  timeout: 60_000,`,
       `  fullyParallel: false,`,
       `  retries: 0,`,
       `  use: {`,

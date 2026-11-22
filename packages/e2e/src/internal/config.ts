@@ -6,7 +6,7 @@ import type {
   SoftprobeWebOptions,
 } from "../types.js";
 
-export const DEFAULT_POLL_TIMEOUT_MS = 15_000;
+export const DEFAULT_POLL_TIMEOUT_MS = 30_000;
 export const DEFAULT_POLL_INTERVAL_MS = 250;
 export const DEFAULT_SETTLE_MS = 150;
 export const DEFAULT_BLACKBOX_ENDPOINT = "https://explorer.softprobe.ai/api/thelake";
