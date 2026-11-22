@@ -171,51 +171,256 @@ export type SoftprobePlaywrightTest = Omit<
     ): void;
   };
 
-function stripJsComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/[^\n]*/g, "");
+function scanBalancedJsSlice(
+  source: string,
+  openIndex: number,
+  openChar: "(" | "{",
+  closeChar: ")" | "}",
+): { readonly inner: string; readonly closeIndex: number } | null {
+  let depth = 0;
+  let i = openIndex;
+  while (i < source.length) {
+    const ch = source[i]!;
+    const next = source[i + 1];
+    if (ch === "/" && next === "/") {
+      const nl = source.indexOf("\n", i + 2);
+      if (nl === -1) return null;
+      i = nl + 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      const endComment = source.indexOf("*/", i + 2);
+      if (endComment === -1) return null;
+      i = endComment + 2;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === "`") {
+      const quote = ch;
+      i += 1;
+      while (i < source.length) {
+        const qch = source[i]!;
+        if (qch === "\\") {
+          i += 2;
+          continue;
+        }
+        if (qch === quote) {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === openChar) {
+      depth += 1;
+    } else if (ch === closeChar) {
+      depth -= 1;
+      if (depth === 0) {
+        return {
+          inner: source.slice(openIndex + 1, i),
+          closeIndex: i,
+        };
+      }
+    }
+    i += 1;
+  }
+  return null;
+}
+
+function findOpeningParamParen(source: string): number {
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i]!;
+    const next = source[i + 1];
+    if (ch === "/" && next === "/") {
+      const nl = source.indexOf("\n", i + 2);
+      if (nl === -1) return -1;
+      i = nl + 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      const endComment = source.indexOf("*/", i + 2);
+      if (endComment === -1) return -1;
+      i = endComment + 2;
+      continue;
+    }
+    if (ch === "(") return i;
+    if (ch === "=" && next === ">") return -1;
+    i += 1;
+  }
+  return -1;
 }
 
 function splitTopLevelCommas(input: string): string[] {
   const parts: string[] = [];
   let depth = 0;
   let start = 0;
-  for (let i = 0; i < input.length; i += 1) {
-    const ch = input[i];
+  let i = 0;
+  while (i < input.length) {
+    const ch = input[i]!;
+    const next = input[i + 1];
+    if (ch === "/" && next === "/") {
+      const nl = input.indexOf("\n", i + 2);
+      i = nl === -1 ? input.length : nl + 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      const endComment = input.indexOf("*/", i + 2);
+      i = endComment === -1 ? input.length : endComment + 2;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === "`") {
+      const quote = ch;
+      i += 1;
+      while (i < input.length) {
+        const qch = input[i]!;
+        if (qch === "\\") {
+          i += 2;
+          continue;
+        }
+        if (qch === quote) {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
     if (ch === "{" || ch === "[" || ch === "(") depth += 1;
     else if (ch === "}" || ch === "]" || ch === ")") depth = Math.max(0, depth - 1);
     else if (ch === "," && depth === 0) {
       parts.push(input.slice(start, i).trim());
       start = i + 1;
     }
+    i += 1;
   }
   const tail = input.slice(start).trim();
   if (tail) parts.push(tail);
   return parts;
 }
 
+function stripLeadingCommentsAndWhitespace(input: string): string {
+  let i = 0;
+  while (i < input.length) {
+    const ch = input[i]!;
+    const next = input[i + 1];
+    if (/\s/.test(ch)) {
+      i += 1;
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      const nl = input.indexOf("\n", i + 2);
+      if (nl === -1) return "";
+      i = nl + 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      const endComment = input.indexOf("*/", i + 2);
+      if (endComment === -1) return "";
+      i = endComment + 2;
+      continue;
+    }
+    break;
+  }
+  return input.slice(i);
+}
+
+function stripCommentsPreservingStrings(input: string): string {
+  let out = "";
+  let i = 0;
+  while (i < input.length) {
+    const ch = input[i]!;
+    const next = input[i + 1];
+    if (ch === "/" && next === "/") {
+      const nl = input.indexOf("\n", i + 2);
+      if (nl === -1) break;
+      out += "\n";
+      i = nl + 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      const endComment = input.indexOf("*/", i + 2);
+      if (endComment === -1) break;
+      out += " ";
+      i = endComment + 2;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === "`") {
+      const quote = ch;
+      out += ch;
+      i += 1;
+      while (i < input.length) {
+        const qch = input[i]!;
+        out += qch;
+        if (qch === "\\") {
+          if (i + 1 < input.length) {
+            out += input[i + 1]!;
+          }
+          i += 2;
+          continue;
+        }
+        i += 1;
+        if (qch === quote) break;
+      }
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
+function extractTopLevelBindingPropertyName(entry: string): string {
+  const cleaned = stripCommentsPreservingStrings(entry).trim();
+  let i = 0;
+  let depth = 0;
+  while (i < cleaned.length) {
+    const ch = cleaned[i]!;
+    if (ch === "'" || ch === '"' || ch === "`") {
+      const quote = ch;
+      i += 1;
+      while (i < cleaned.length) {
+        if (cleaned[i] === "\\") {
+          i += 2;
+          continue;
+        }
+        if (cleaned[i] === quote) {
+          i += 1;
+          break;
+        }
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === "(" || ch === "{" || ch === "[") depth += 1;
+    else if (ch === ")" || ch === "}" || ch === "]") depth = Math.max(0, depth - 1);
+    else if ((ch === ":" || ch === "=") && depth === 0) {
+      return cleaned.slice(0, i).trim();
+    }
+    i += 1;
+  }
+  return cleaned.trim();
+}
+
 function extractFixtureParamNames(fn: (...args: never[]) => unknown): string[] | null {
-  const cleaned = stripJsComments(fn.toString());
-  const match = /(?:async)?(?:\s+function)?[^(]*\(([^)]*)/.exec(cleaned);
-  if (!match?.[1]) return null;
-  const trimmed = match[1].trim();
+  const source = fn.toString();
+  const openParen = findOpeningParamParen(source);
+  if (openParen === -1) return null;
+  const paramList = scanBalancedJsSlice(source, openParen, "(", ")");
+  if (!paramList) return null;
+  const trimmed = stripLeadingCommentsAndWhitespace(paramList.inner).trim();
   if (!trimmed) return [];
   const [firstParam] = splitTopLevelCommas(trimmed);
-  if (!firstParam || !firstParam.startsWith("{") || !firstParam.endsWith("}")) {
+  if (!firstParam) return null;
+  const normalizedFirst = stripLeadingCommentsAndWhitespace(firstParam);
+  if (!normalizedFirst.startsWith("{")) {
     return null;
   }
-  return splitTopLevelCommas(firstParam.slice(1, -1)).map((entry) => {
-    const colonIdx = entry.indexOf(":");
-    const eqIdx = entry.indexOf("=");
-    const cutIdx =
-      colonIdx >= 0 && eqIdx >= 0
-        ? Math.min(colonIdx, eqIdx)
-        : colonIdx >= 0
-          ? colonIdx
-          : eqIdx;
-    return (cutIdx >= 0 ? entry.slice(0, cutIdx) : entry).trim();
-  });
+  const destructured = scanBalancedJsSlice(normalizedFirst, 0, "{", "}");
+  if (!destructured) return null;
+  return splitTopLevelCommas(destructured.inner)
+    .map(extractTopLevelBindingPropertyName)
+    .filter((name) => name.length > 0 && !name.startsWith("..."));
 }
 
 function adaptTraceFixtureCallback<F extends (...args: never[]) => unknown>(fn: F): F {

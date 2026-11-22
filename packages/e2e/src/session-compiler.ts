@@ -309,10 +309,15 @@ export interface CompiledDynamicTextMatch {
   readonly matchedScalars: readonly string[];
 }
 
+export type CompiledPathMatcher =
+  | { readonly kind: "exact"; readonly pathname: string }
+  | { readonly kind: "regex"; readonly patternSource: string };
+
 export interface CompiledBackendTrace {
   readonly traceId: TraceId;
   readonly triggerMethod: string;
   readonly triggerPath: string;
+  readonly triggerPathMatcher: CompiledPathMatcher;
   readonly triggerUrl: string;
   readonly urlTemplate?: string;
   readonly triggerStatus?: number;
@@ -489,10 +494,22 @@ function parseTimestampMs(
   nanoRaw: string | number | undefined,
   isoRaw: string | undefined,
 ): number {
-  if (nanoRaw !== undefined) {
-    try {
-      return Number(BigInt(nanoRaw) / 1_000_000n);
-    } catch {}
+  if (typeof nanoRaw === "number") {
+    if (Number.isFinite(nanoRaw) && nanoRaw > 0) {
+      return Math.trunc(nanoRaw / 1_000_000);
+    }
+  } else if (typeof nanoRaw === "string") {
+    const trimmed = nanoRaw.trim();
+    if (/^\d+$/.test(trimmed)) {
+      try {
+        return Number(BigInt(trimmed) / 1_000_000n);
+      } catch {}
+    } else if (trimmed !== "") {
+      const parsedNum = Number(trimmed);
+      if (Number.isFinite(parsedNum) && parsedNum > 0) {
+        return Math.trunc(parsedNum / 1_000_000);
+      }
+    }
   }
   if (isoRaw) {
     const parsed = Date.parse(isoRaw);
@@ -628,6 +645,166 @@ function detectDynamicTextPattern(
     derivedFromTraceId: matchedEntries[0]!.traceId,
     matchedScalars: ranges.map((r) => r.scalar),
   };
+}
+
+const COLON_PARAM_SEGMENT_RE = /^:[A-Za-z_][A-Za-z0-9_]*$/;
+const BRACE_PARAM_SEGMENT_RE = /^\{[^/}]+\}$/;
+
+function extractRouteTemplatePathname(rawTemplate: string): string | undefined {
+  const trimmed = rawTemplate.trim();
+  if (!trimmed) return undefined;
+  let candidate = trimmed;
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:\/\//.test(trimmed)) {
+    const schemeEnd = trimmed.indexOf("://") + 3;
+    const slashIdx = trimmed.indexOf("/", schemeEnd);
+    const queryOrHashIdx = trimmed.slice(schemeEnd).search(/[?#]/);
+    if (slashIdx >= 0 && (queryOrHashIdx === -1 || slashIdx < schemeEnd + queryOrHashIdx)) {
+      candidate = trimmed.slice(slashIdx);
+    } else {
+      candidate = "/";
+    }
+  } else if (!trimmed.startsWith("/")) {
+    const methodStripped = trimmed.replace(/^[A-Z]+\s+/, "").trim();
+    if (!methodStripped.startsWith("/")) return undefined;
+    candidate = methodStripped;
+  }
+  const withoutHash = (candidate.split("#")[0] ?? "/").trim();
+  const withoutQuery = (withoutHash.split("?")[0] ?? "/").trim();
+  if (withoutQuery === "" || withoutQuery === "/") return "/";
+  return `/${withoutQuery.replace(/^\/+|\/+$/g, "")}`;
+}
+
+function compileRouteTemplateRegexSource(rawTemplate: string): string | undefined {
+  const pathname = extractRouteTemplatePathname(rawTemplate);
+  if (!pathname || pathname === "/") return undefined;
+  const segments = pathname.slice(1).split("/");
+  let hasDynamicSegment = false;
+  const compiled = segments.map((seg) => {
+    if (seg === "**") {
+      hasDynamicSegment = true;
+      return ".*";
+    }
+    if (COLON_PARAM_SEGMENT_RE.test(seg) || BRACE_PARAM_SEGMENT_RE.test(seg)) {
+      hasDynamicSegment = true;
+      return "[^/]+";
+    }
+    if (seg.includes("*")) {
+      hasDynamicSegment = true;
+      let out = "";
+      for (const ch of seg) {
+        out += ch === "*" ? "[^/]*" : escapeRegExpLiteral(ch);
+      }
+      return out;
+    }
+    return escapeRegExpLiteral(seg);
+  });
+  if (!hasDynamicSegment) return undefined;
+  return `^\\/${compiled.join("\\/")}\\/?$`;
+}
+
+function detectDynamicPathRegexSource(
+  triggerPath: string,
+  priorScalarsByTrace: ReadonlyArray<{
+    readonly traceId: string;
+    readonly scalars: ReadonlySet<string>;
+  }>,
+): string | undefined {
+  if (!triggerPath || triggerPath === "/") return undefined;
+  const normalized = `/${triggerPath.replace(/^\/+|\/+$/g, "")}`;
+  const allScalars = new Set<string>();
+  for (const entry of priorScalarsByTrace) {
+    for (const s of entry.scalars) {
+      if (!s.includes("/")) allScalars.add(s);
+    }
+  }
+  if (allScalars.size === 0) return undefined;
+  const sortedScalars = [...allScalars].sort((a, b) => b.length - a.length);
+
+  let matchedAny = false;
+  const compiledSegments = normalized
+    .slice(1)
+    .split("/")
+    .map((segment) => {
+      if (!segment) return "";
+      const exactMatch = sortedScalars.find((sc) => segment === sc);
+      if (exactMatch !== undefined) {
+        matchedAny = true;
+        return "[^/]+";
+      }
+      const subMatch = detectDynamicTextPattern(segment, [
+        { traceId: "path", scalars: allScalars },
+      ]);
+      if (subMatch) {
+        matchedAny = true;
+        return subMatch.patternSource
+          .replace(/^\^/, "")
+          .replace(/\$$/, "")
+          .replaceAll(".*", "[^/]+");
+      }
+      return escapeRegExpLiteral(segment);
+    });
+
+  if (!matchedAny) return undefined;
+  return `^\\/${compiledSegments.join("\\/")}\\/?$`;
+}
+
+function resolveTriggerPathMatcher(
+  triggerPath: string,
+  urlTemplate: string | undefined,
+  serverRoute: string | undefined,
+  priorScalarsByTrace: ReadonlyArray<{
+    readonly traceId: string;
+    readonly scalars: ReadonlySet<string>;
+  }>,
+): CompiledPathMatcher {
+  for (const candidateTemplate of [urlTemplate, serverRoute]) {
+    if (!candidateTemplate) continue;
+    const regexSource = compileRouteTemplateRegexSource(candidateTemplate);
+    if (regexSource && new RegExp(regexSource).test(triggerPath)) {
+      return { kind: "regex", patternSource: regexSource };
+    }
+  }
+  const dynamicScalarSource = detectDynamicPathRegexSource(triggerPath, priorScalarsByTrace);
+  if (dynamicScalarSource && new RegExp(dynamicScalarSource).test(triggerPath)) {
+    return { kind: "regex", patternSource: dynamicScalarSource };
+  }
+  return { kind: "exact", pathname: triggerPath };
+}
+
+function allocateDisambiguatedIdentifiers(
+  slots: readonly string[],
+  normalize: (slot: string) => string,
+): ReadonlyMap<string, string> {
+  const uniqueSorted = [...new Set(slots)].sort(compareCodeUnits);
+  const used = new Set<string>();
+  const mapping = new Map<string, string>();
+  for (const slot of uniqueSorted) {
+    const rawBase = normalize(slot);
+    const base = rawBase.length > 0 ? rawBase : "slot";
+    let candidate = base;
+    let suffix = 2;
+    while (used.has(candidate)) {
+      candidate = `${base}_${suffix}`;
+      suffix += 1;
+    }
+    used.add(candidate);
+    mapping.set(slot, candidate);
+  }
+  return mapping;
+}
+
+function allocatePlaywrightSecretVars(slots: readonly string[]): ReadonlyMap<string, string> {
+  return allocateDisambiguatedIdentifiers(
+    slots,
+    (slot) => `secret_${slot.replace(/[^A-Za-z0-9_]/g, "_") || "slot"}`,
+  );
+}
+
+function allocateE2ESecretParamKeys(slots: readonly string[]): ReadonlyMap<string, string> {
+  return allocateDisambiguatedIdentifiers(
+    slots,
+    (slot) => slot.toLowerCase().replace(/[^a-z0-9_]/g, "_") || "secret",
+  );
 }
 
 function extractVerbPrimaryTarget(verb: SemanticVerb): SemanticTarget | undefined {
@@ -887,20 +1064,27 @@ export function extractSessionBundleFromSpans(
 
       const outboundCalls = snapshot?.state === "ingested" ? snapshot.outboundHttp : [];
       outboundAssertionCount += outboundCalls.length;
+      const serverRoute =
+        snapshot?.state === "ingested" ? snapshot.serverEntry.routeOrPath : undefined;
+      const triggerPathMatcher = resolveTriggerPathMatcher(
+        triggerPath,
+        ct.urlTemplate,
+        serverRoute,
+        priorScalarSources,
+      );
 
       backendTraces.push({
         traceId: traceIdLower,
         triggerMethod: ct.method.toUpperCase(),
         triggerPath,
+        triggerPathMatcher,
         triggerUrl: ct.url,
         ...(ct.urlTemplate ? { urlTemplate: ct.urlTemplate } : {}),
         ...(ct.status !== undefined ? { triggerStatus: ct.status } : {}),
         ...(snapshot?.state === "ingested"
           ? {
               serverServiceName: snapshot.serverEntry.serviceName,
-              ...(snapshot.serverEntry.routeOrPath
-                ? { serverRoute: snapshot.serverEntry.routeOrPath }
-                : {}),
+              ...(serverRoute ? { serverRoute } : {}),
               ...(snapshot.serverEntry.status !== undefined
                 ? { serverStatus: snapshot.serverEntry.status }
                 : {}),
@@ -936,7 +1120,7 @@ export interface FetchSessionSpansOptions {
   readonly workspaceId?: string;
   readonly from?: string;
   readonly to?: string;
-  readonly fetchImpl?: typeof fetch;
+  readonly fetchImpl?: (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => Promise<Response>;
   readonly signal?: AbortSignal;
 }
 
@@ -1077,8 +1261,23 @@ export async function fetchSessionSpansFromBlackbox(
   }
 
   const tracesByTraceId: Record<string, unknown> = {};
-  for (const traceId of traceIds) {
-    for (const traceUrl of buildTraceEndpointCandidates(options.endpoint, traceId)) {
+  const orderedTraceIds = [...traceIds];
+  let preferredCandidateIndex: number | null = null;
+
+  const fetchSingleTrace = async (traceId: string): Promise<void> => {
+    const candidates = buildTraceEndpointCandidates(options.endpoint, traceId);
+    const candidateIndices = candidates.map((_, idx) => idx);
+    if (
+      preferredCandidateIndex !== null &&
+      preferredCandidateIndex >= 0 &&
+      preferredCandidateIndex < candidateIndices.length
+    ) {
+      candidateIndices.splice(preferredCandidateIndex, 1);
+      candidateIndices.unshift(preferredCandidateIndex);
+    }
+
+    for (const idx of candidateIndices) {
+      const traceUrl = candidates[idx]!;
       const resp = await fetchFn(traceUrl, {
         method: "GET",
         headers,
@@ -1087,10 +1286,31 @@ export async function fetchSessionSpansFromBlackbox(
       if (!resp || !resp.ok || isHtmlFallbackResponse(resp)) continue;
       const body: unknown = await resp.json().catch(() => undefined);
       if (body !== undefined) {
+        if (preferredCandidateIndex === null) {
+          preferredCandidateIndex = idx;
+        }
         tracesByTraceId[traceId] = body;
-        break;
+        return;
       }
     }
+  };
+
+  if (orderedTraceIds.length > 0) {
+    await fetchSingleTrace(orderedTraceIds[0]!);
+    const remaining = orderedTraceIds.slice(1);
+    const concurrency = Math.min(4, remaining.length);
+    let cursor = 0;
+    const workers = Array.from({ length: concurrency }, async () => {
+      while (cursor < remaining.length) {
+        const currentIdx = cursor;
+        cursor += 1;
+        const tid = remaining[currentIdx];
+        if (tid !== undefined) {
+          await fetchSingleTrace(tid);
+        }
+      }
+    });
+    await Promise.all(workers);
   }
 
   return {
@@ -1250,6 +1470,40 @@ function formatOutboundUrlMatcherCode(rawUrl: string): string {
   }
 }
 
+function formatTriggerPathMatcherCode(matcher: CompiledPathMatcher): string {
+  switch (matcher.kind) {
+    case "exact":
+      return JSON.stringify(matcher.pathname);
+    case "regex":
+      return `new RegExp(${JSON.stringify(matcher.patternSource)})`;
+    default: {
+      const _exhaustive: never = matcher;
+      return _exhaustive;
+    }
+  }
+}
+
+function triggerPathMatcherKey(method: string, matcher: CompiledPathMatcher): string {
+  return matcher.kind === "exact"
+    ? `${method}\u0000exact\u0000${matcher.pathname}`
+    : `${method}\u0000regex\u0000${matcher.patternSource}`;
+}
+
+function formatWaitForResponsePredicateExpr(
+  bt: CompiledBackendTrace,
+  occurrenceNumber: number,
+): string {
+  const pathCheck =
+    bt.triggerPathMatcher.kind === "exact"
+      ? `new URL(res.url()).pathname === ${JSON.stringify(bt.triggerPathMatcher.pathname)}`
+      : `new RegExp(${JSON.stringify(bt.triggerPathMatcher.patternSource)}).test(new URL(res.url()).pathname)`;
+  const basePredicate = `(res) => res.request().method() === ${JSON.stringify(bt.triggerMethod)} && ${pathCheck}`;
+  if (occurrenceNumber <= 1) {
+    return basePredicate;
+  }
+  return `(() => { let seen = 0; return (res) => res.request().method() === ${JSON.stringify(bt.triggerMethod)} && ${pathCheck} && ++seen === ${occurrenceNumber}; })()`;
+}
+
 export function compileSessionToPlaywright(
   bundle: CompiledSessionBundle,
   options: CompilePlaywrightOptions = {},
@@ -1283,9 +1537,11 @@ export function compileSessionToPlaywright(
     `  test(${JSON.stringify(`replays session ${bundle.sessionId}`)}, async ({ page, trace }) => {`,
   );
 
+  const secretVarBySlot = allocatePlaywrightSecretVars(bundle.secretSlots);
   for (const slot of bundle.secretSlots) {
+    const secretIdent = secretVarBySlot.get(slot)!;
     lines.push(
-      `    const secret_${slot.replace(/[^A-Za-z0-9_]/g, "_")} = requireSecret(${JSON.stringify(`SP_SECRET_${slot}`)}, ${JSON.stringify(`E2E_SECRET_${slot}`)});`,
+      `    const ${secretIdent} = requireSecret(${JSON.stringify(`SP_SECRET_${slot}`)}, ${JSON.stringify(`E2E_SECRET_${slot}`)});`,
     );
   }
 
@@ -1312,7 +1568,8 @@ export function compileSessionToPlaywright(
           dialogVerb.promptText?.kind === "literal"
             ? JSON.stringify(dialogVerb.promptText.value)
             : dialogVerb.promptText?.kind === "secret"
-              ? `secret_${dialogVerb.promptText.slot.replace(/[^A-Za-z0-9_]/g, "_")}`
+              ? (secretVarBySlot.get(dialogVerb.promptText.slot) ??
+                `secret_${dialogVerb.promptText.slot.replace(/[^A-Za-z0-9_]/g, "_")}`)
               : "";
         lines.push(`    page.once("dialog", (dialog) => dialog.accept(${promptArg}));`);
       } else {
@@ -1320,17 +1577,34 @@ export function compileSessionToPlaywright(
       }
     }
 
-    const firstHttpTrigger = step.backendTraces[0];
     const emitActionLine = (actionStmt: string) => {
-      if (firstHttpTrigger) {
+      if (step.backendTraces.length === 0) {
+        lines.push(`    ${actionStmt}`);
+        return;
+      }
+      if (step.backendTraces.length === 1) {
+        const singleTrigger = step.backendTraces[0]!;
         lines.push(
-          `    const responsePromise_${i} = page.waitForResponse((res) => res.request().method() === ${JSON.stringify(firstHttpTrigger.triggerMethod)} && new URL(res.url()).pathname === ${JSON.stringify(firstHttpTrigger.triggerPath)});`,
+          `    const responsePromise_${i} = page.waitForResponse(${formatWaitForResponsePredicateExpr(singleTrigger, 1)});`,
           `    ${actionStmt}`,
           `    await responsePromise_${i};`,
         );
-      } else {
-        lines.push(`    ${actionStmt}`);
+        return;
       }
+      const occurrenceByKey = new Map<string, number>();
+      const waitExprs = step.backendTraces.map((bt) => {
+        const key = triggerPathMatcherKey(bt.triggerMethod, bt.triggerPathMatcher);
+        const occ = (occurrenceByKey.get(key) ?? 0) + 1;
+        occurrenceByKey.set(key, occ);
+        return `      page.waitForResponse(${formatWaitForResponsePredicateExpr(bt, occ)}),`;
+      });
+      lines.push(
+        `    const responsePromises_${i} = [`,
+        ...waitExprs,
+        `    ];`,
+        `    ${actionStmt}`,
+        `    await Promise.all(responsePromises_${i});`,
+      );
     };
 
     switch (verb.name) {
@@ -1366,7 +1640,9 @@ export function compileSessionToPlaywright(
         if (verb.value.kind === "literal") {
           emitActionLine(`await ${loc}.fill(${JSON.stringify(verb.value.value)});`);
         } else if (verb.value.kind === "secret") {
-          const ident = `secret_${verb.value.slot.replace(/[^A-Za-z0-9_]/g, "_")}`;
+          const ident =
+            secretVarBySlot.get(verb.value.slot) ??
+            `secret_${verb.value.slot.replace(/[^A-Za-z0-9_]/g, "_")}`;
           emitActionLine(`await ${loc}.fill(${ident});`);
         } else {
           throw new Error(
@@ -1380,7 +1656,9 @@ export function compileSessionToPlaywright(
         if (verb.value.kind === "literal") {
           emitActionLine(`await ${loc}.selectOption(${JSON.stringify(verb.value.value)});`);
         } else if (verb.value.kind === "secret") {
-          const ident = `secret_${verb.value.slot.replace(/[^A-Za-z0-9_]/g, "_")}`;
+          const ident =
+            secretVarBySlot.get(verb.value.slot) ??
+            `secret_${verb.value.slot.replace(/[^A-Za-z0-9_]/g, "_")}`;
           emitActionLine(`await ${loc}.selectOption(${ident});`);
         } else if (verb.optionLabel) {
           emitActionLine(`await ${loc}.selectOption({ label: ${JSON.stringify(verb.optionLabel)} });`);
@@ -1456,7 +1734,7 @@ export function compileSessionToPlaywright(
         const varName = `outbound_${i}_${tIdx}_${cIdx}`;
         lines.push(
           `    const ${varName} = await trace.outboundHttp({`,
-          `      triggeredBy: { method: ${JSON.stringify(bt.triggerMethod)}, path: ${JSON.stringify(bt.triggerPath)} },`,
+          `      triggeredBy: { method: ${JSON.stringify(bt.triggerMethod)}, path: ${formatTriggerPathMatcherCode(bt.triggerPathMatcher)} },`,
           `      method: ${JSON.stringify(call.method)},`,
           `      url: ${formatOutboundUrlMatcherCode(call.url)},`,
           ...(call.status > 0 ? [`      status: ${call.status},`] : []),
@@ -1642,8 +1920,9 @@ export interface E2ECacheKeyResult {
 // Match @e2e-dev/core 0.24.0 trace-1 cache key projection across appIdentity, testId, conservative/6 policy, and secret descriptors.
 export function buildE2ECacheKeyAndHash(input: E2ECacheKeyInput): E2ECacheKeyResult {
   const projectedParams: Record<string, unknown> = {};
-  for (const slot of input.secretSlots ?? []) {
-    const paramKey = slot.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+  const paramKeyBySlot = allocateE2ESecretParamKeys(input.secretSlots ?? []);
+  for (const slot of [...new Set(input.secretSlots ?? [])].sort(compareCodeUnits)) {
+    const paramKey = paramKeyBySlot.get(slot)!;
     projectedParams[paramKey] = {
       kind: "secret",
       name: slot,
@@ -2371,8 +2650,9 @@ export function compileSessionToE2E(
     }
 
     if (group.secretSlots.length > 0) {
+      const paramKeyBySlot = allocateE2ESecretParamKeys(group.secretSlots);
       const paramEntries = group.secretSlots.map((slot) => {
-        const paramKey = slot.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+        const paramKey = paramKeyBySlot.get(slot)!;
         return `${JSON.stringify(paramKey)}: secrets.get(${JSON.stringify(slot)})`;
       });
       testLines.push(
@@ -2393,7 +2673,7 @@ export function compileSessionToE2E(
         const varName = `outbound_${gIdx}_${tIdx}_${cIdx}`;
         testLines.push(
           `    const ${varName} = await trace.outboundHttp({`,
-          `      triggeredBy: { method: ${JSON.stringify(bt.triggerMethod)}, path: ${JSON.stringify(bt.triggerPath)} },`,
+          `      triggeredBy: { method: ${JSON.stringify(bt.triggerMethod)}, path: ${formatTriggerPathMatcherCode(bt.triggerPathMatcher)} },`,
           `      method: ${JSON.stringify(call.method)},`,
           `      url: ${formatOutboundUrlMatcherCode(call.url)},`,
           ...(call.status > 0 ? [`      status: ${call.status},`] : []),

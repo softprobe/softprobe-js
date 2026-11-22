@@ -41,6 +41,10 @@ const PLAYWRIGHT_CLI_PATH = path.join(
   REPO_ROOT,
   "node_modules/@playwright/test/cli.js",
 );
+const TSC_CLI_PATH = path.join(
+  REPO_ROOT,
+  "node_modules/typescript/bin/tsc",
+);
 const OTLP_ROOT_MODULE_PATH = path.join(
   REPO_ROOT,
   "node_modules/@opentelemetry/otlp-transformer/build/esm/generated/root.js",
@@ -525,6 +529,63 @@ describe("Session compiler real-runtime Chromium + Playwright + zero-LLM e2e rep
         mkdirSync(path.dirname(targetPath), { recursive: true });
         writeFileSync(targetPath, file.content, "utf8");
       }
+      writeFileSync(
+        path.join(pwProjectDir, "tests/fixture-adaptation.spec.ts"),
+        [
+          `import { expect, test } from "@softprobe/e2e/playwright";`,
+          `import type { TraceScope } from "@softprobe/e2e";`,
+          ``,
+          `function fallbackScope(_a: number, _b: number): TraceScope {`,
+          `  throw new Error("fallbackScope should not run when Playwright injects trace");`,
+          `}`,
+          ``,
+          `test("injects trace with nested call defaults and inline comments", async ({`,
+          `  page /* a:b */,`,
+          `  baseURL = "http://127.0.0.1:1/a)b,c",`,
+          `  trace /* inline */ = fallbackScope(1, 2),`,
+          `}) => {`,
+          `  expect(typeof page.goto).toBe("function");`,
+          `  expect(typeof baseURL).toBe("string");`,
+          `  expect(typeof trace.outboundHttp).toBe("function");`,
+          `});`,
+          ``,
+          `test("injects trace under destructured property alias", async ({`,
+          `  page,`,
+          `  trace: customTrace,`,
+          `}) => {`,
+          `  expect(typeof page.goto).toBe("function");`,
+          `  expect(typeof customTrace.outboundHttp).toBe("function");`,
+          `});`,
+          ``,
+        ].join("\n"),
+        "utf8",
+      );
+      writeFileSync(
+        path.join(pwProjectDir, "tsconfig.json"),
+        JSON.stringify(
+          {
+            compilerOptions: {
+              target: "ES2022",
+              module: "NodeNext",
+              moduleResolution: "NodeNext",
+              strict: true,
+              noEmit: true,
+              skipLibCheck: true,
+              types: ["node"],
+            },
+            include: ["playwright.config.ts", "tests/**/*.ts"],
+          },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      await execFileAsync(process.execPath, [
+        TSC_CLI_PATH,
+        "--noEmit",
+        "-p",
+        path.join(pwProjectDir, "tsconfig.json"),
+      ]);
 
       const emailsBeforePw = sentEmails.length;
       const pwChildEnv: Record<string, string | undefined> = {
@@ -559,7 +620,7 @@ describe("Session compiler real-runtime Chromium + Playwright + zero-LLM e2e rep
           `Playwright CLI failed: ${execErr.message ?? ""}\nSTDOUT:\n${execErr.stdout ?? ""}\nSTDERR:\n${execErr.stderr ?? ""}`,
         );
       }
-      expect(pwStdout + pwStderr).toContain("1 passed");
+      expect(pwStdout + pwStderr).toContain("3 passed");
       expect(sentEmails.length).toBe(emailsBeforePw + 1);
 
       const e2eProjectDir = createTempProject("sp-compiled-e2e-");

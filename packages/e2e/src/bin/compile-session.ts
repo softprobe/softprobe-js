@@ -20,6 +20,25 @@ export interface CompileSessionCliResult {
   readonly cacheFilesWritten: readonly string[];
 }
 
+export const COMPILE_SESSION_USAGE = [
+  "Usage: softprobe-compile-session (--session-id <id> | --session-file <path>) [options]",
+  "",
+  "Options:",
+  "  --session-id <id>        Blackbox session ID to fetch and compile",
+  "  --session-file <path>    Local session spans JSON file to compile offline",
+  "  --runner <playwright|e2e> Target test runner (default: playwright)",
+  "  --out <dir>              Output directory for generated files (default: .)",
+  "  --target-url <url>       Base URL of the application under test",
+  "  --endpoint <url>         Blackbox Explorer or TheLake API endpoint",
+  "  --token <token>          Bearer token (defaults to SOFTPROBE_API_KEY / SP_TOKEN)",
+  "  --workspace-id <id>      Workspace ID header (defaults to SOFTPROBE_WORKSPACE_ID)",
+  "  --project-id <id>        e2e projectId when --runner e2e is selected",
+  "  --app-identity <name>    e2e app.identity when --runner e2e is selected",
+  "  --force                  Overwrite existing test and config files; content-addressed .e2e/cache/<sha256>.json entries always refresh idempotently",
+  "  --json                   Emit machine-readable JSON result to stdout",
+  "  -h, --help               Show this help text",
+].join("\n");
+
 function writeArtifacts(
   outDir: string,
   artifacts: readonly GeneratedFileArtifact[],
@@ -63,9 +82,23 @@ export async function runCompileSessionCli(
       "app-identity": { type: "string" },
       force: { type: "boolean", default: false },
       json: { type: "boolean", default: false },
+      help: { type: "boolean", short: "h", default: false },
     },
     strict: true,
   });
+
+  if (values.help) {
+    process.stdout.write(`${COMPILE_SESSION_USAGE}\n`);
+    return {
+      ok: true,
+      runner: "playwright",
+      sessionId: "",
+      actionCount: 0,
+      outboundAssertionCount: 0,
+      filesWritten: [],
+      cacheFilesWritten: [],
+    };
+  }
 
   const runnerRaw = (values.runner ?? "playwright").trim().toLowerCase();
   if (runnerRaw !== "playwright" && runnerRaw !== "e2e") {
