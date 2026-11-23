@@ -2155,7 +2155,7 @@ export function compileSessionToPlaywright(
       ``,
       `export default defineConfig<SoftprobePlaywrightFixtures>({`,
       `  testDir: "./tests",`,
-      `  timeout: 60_000,`,
+      `  timeout: 120_000,`,
       `  fullyParallel: false,`,
       `  retries: 0,`,
       `  use: {`,
