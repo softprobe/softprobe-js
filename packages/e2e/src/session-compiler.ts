@@ -346,7 +346,6 @@ export interface CompiledSessionBundle {
   readonly steps: readonly CompiledSessionStep[];
   readonly secretSlots: readonly string[];
   readonly outboundAssertionCount: number;
-  readonly responseDynamicScalars?: readonly string[];
 }
 
 export interface ExtractSessionBundleOptions {
@@ -523,39 +522,9 @@ function parseTimestampMs(
   return 0;
 }
 
-const TRIVIAL_RESPONSE_WORDS = new Set([
-  "true",
-  "false",
-  "null",
-  "ok",
-  "yes",
-  "no",
-  "idle",
-  "ready",
-  "done",
-  "error",
-  "success",
-  "pending",
-  "active",
-  "confirmed",
-  "cancelled",
-  "canceled",
-  "economy",
-  "business",
-  "admin",
-  "user",
-  "member",
-  "usd",
-  "eur",
-  "gbp",
-]);
-
-function isNonTrivialDynamicScalar(text: string): boolean {
+function isDigitBearingResponseToken(text: string): boolean {
   const trimmed = text.trim();
-  if (trimmed.length < 3 || trimmed.length > 120) return false;
-  if (TRIVIAL_RESPONSE_WORDS.has(trimmed.toLowerCase())) return false;
-  if (/\d/.test(trimmed)) return true;
-  return trimmed.length >= 6 && /[A-Za-z]/.test(trimmed) && /[A-Z0-9_-]/.test(trimmed);
+  return trimmed.length >= 3 && trimmed.length <= 120 && /\d/.test(trimmed);
 }
 
 function collectResponseJsonScalars(
@@ -565,7 +534,7 @@ function collectResponseJsonScalars(
 ): void {
   if (value === undefined || value === null || depth > 8) return;
   if (typeof value === "string") {
-    if (isNonTrivialDynamicScalar(value)) {
+    if (isDigitBearingResponseToken(value)) {
       sink.add(value.trim());
     }
     return;
@@ -871,40 +840,6 @@ function collectActionLiteralScalars(verb: SemanticVerb, sink: Set<string>): voi
   if (verb.name === "dialog" && verb.promptText?.kind === "literal") {
     const trimmed = verb.promptText.value.trim();
     if (trimmed !== "") sink.add(trimmed);
-  }
-}
-
-function collectEnvelopeResponseScalars(rawEnvelope: unknown, sink: Set<string>): void {
-  const parsed = rawSessionInputEnvelopeSchema.safeParse(rawEnvelope);
-  if (!parsed.success) return;
-  const data = parsed.data;
-  const inspectSpan = (sp: z.infer<typeof rawSpanObjectSchema>) => {
-    const attrs = normalizeAttributes(sp.attributes);
-    const rawResp =
-      attrs["http.response.body.content"] ??
-      attrs["http.response.body"] ??
-      attrs["sp.http.response.body"];
-    if (rawResp) {
-      const parsedJson = parseJsonBodyValue(rawResp);
-      if (parsedJson !== undefined) {
-        collectResponseJsonScalars(parsedJson, sink);
-      }
-    }
-  };
-  for (const rs of [
-    ...(data.trace?.resourceSpans ?? []),
-    ...(data.batches ?? []),
-    ...(data.resourceSpans ?? []),
-  ]) {
-    for (const scope of [
-      ...(rs.scopeSpans ?? []),
-      ...(rs.instrumentationLibrarySpans ?? []),
-    ]) {
-      for (const sp of scope.spans ?? []) inspectSpan(sp);
-    }
-  }
-  for (const sp of [...(data.spans ?? []), ...(data.observations ?? [])]) {
-    inspectSpan(sp);
   }
 }
 
@@ -1258,26 +1193,14 @@ export function extractSessionBundleFromSpans(
     }
   }
 
-  for (const [rawTraceId, rawEnvelope] of Object.entries(extraTraces)) {
-    const traceHex = decodeHexId(rawTraceId, 16);
-    if (!isTraceId(traceHex)) continue;
-    const scalarSet = responseScalarsByTraceId.get(traceHex) ?? new Set<string>();
-    collectEnvelopeResponseScalars(rawEnvelope, scalarSet);
-    if (scalarSet.size > 0) {
-      responseScalarsByTraceId.set(traceHex, scalarSet);
-    }
-  }
-
   let inferredOrigin = options.baseOrigin?.trim();
   const secretSlots = new Set<string>();
-  const userLiterals = new Set<string>();
   const priorTracesSeen = new Set<string>();
   let outboundAssertionCount = 0;
 
   const steps: CompiledSessionStep[] = foldedUiActionEntries.map((entry, idx) => {
     const { action, summary } = entry;
     collectActionSecretSlots(action.verb, secretSlots);
-    collectActionLiteralScalars(action.verb, userLiterals);
 
     for (const span of normalizedSpans) {
       if (
@@ -1383,22 +1306,12 @@ export function extractSessionBundleFromSpans(
     };
   });
 
-  const allResponseScalars = new Set<string>();
-  for (const scalars of responseScalarsByTraceId.values()) {
-    for (const s of scalars) {
-      if (!userLiterals.has(s)) {
-        allResponseScalars.add(s);
-      }
-    }
-  }
-
   return {
     sessionId: resolvedSessionId,
     ...(inferredOrigin ? { baseOrigin: inferredOrigin } : {}),
     steps,
     secretSlots: [...secretSlots].sort(),
     outboundAssertionCount,
-    responseDynamicScalars: [...allResponseScalars].sort(),
   };
 }
 
@@ -1632,73 +1545,72 @@ export interface CompiledPlaywrightSuite {
   readonly files: readonly GeneratedFileArtifact[];
 }
 
-const VOLATILE_SCALAR_RE =
-  /^(?:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$)/i;
+type OutboundAssertionNode =
+  | { readonly kind: "literal"; readonly value: string | null }
+  | { readonly kind: "any"; readonly ctor: "String" | "Number" | "Boolean" }
+  | { readonly kind: "array"; readonly items: readonly OutboundAssertionNode[] }
+  | {
+      readonly kind: "object";
+      readonly entries: ReadonlyArray<readonly [string, OutboundAssertionNode]>;
+    };
 
-function buildBundleAssertionScalarFilter(bundle: CompiledSessionBundle): {
-  readonly dynamicScalars: ReadonlySet<string>;
-  readonly userLiterals: ReadonlySet<string>;
-} {
+function collectBundleUserLiterals(bundle: CompiledSessionBundle): ReadonlySet<string> {
   const userLiterals = new Set<string>();
   for (const step of bundle.steps) {
     collectActionLiteralScalars(step.action.verb, userLiterals);
   }
-  const dynamicScalars = new Set<string>(bundle.responseDynamicScalars ?? []);
-  for (const step of bundle.steps) {
-    for (const bt of step.backendTraces) {
-      for (const oc of bt.outboundCalls) {
-        if (oc.response.json !== undefined) {
-          const temp = new Set<string>();
-          collectResponseJsonScalars(oc.response.json, temp);
-          for (const s of temp) {
-            if (!userLiterals.has(s)) dynamicScalars.add(s);
-          }
-        }
-      }
-    }
-  }
-  for (const lit of userLiterals) {
-    dynamicScalars.delete(lit);
-  }
-  return { dynamicScalars, userLiterals };
+  return userLiterals;
 }
 
-function sanitizeJsonForAssertion(
+function buildOutboundAssertionAst(
   value: JsonValue | undefined,
-  filter?: {
-    readonly dynamicScalars: ReadonlySet<string>;
-    readonly userLiterals: ReadonlySet<string>;
-  },
+  userLiterals: ReadonlySet<string>,
   depth = 0,
-): JsonValue | undefined {
+): OutboundAssertionNode | undefined {
   if (value === undefined || depth > 6) return undefined;
-  if (value === null || typeof value === "boolean" || typeof value === "number") {
-    return value;
-  }
+  if (value === null) return { kind: "literal", value: null };
+  if (typeof value === "boolean") return { kind: "any", ctor: "Boolean" };
+  if (typeof value === "number") return { kind: "any", ctor: "Number" };
   if (typeof value === "string") {
     if (value.includes("[REDACTED]")) return undefined;
     const trimmed = value.trim();
-    if (filter && !filter.userLiterals.has(trimmed)) {
-      if (filter.dynamicScalars.has(trimmed) || VOLATILE_SCALAR_RE.test(trimmed)) {
-        return undefined;
-      }
-    }
-    return value;
+    return trimmed.length >= 2 && userLiterals.has(trimmed)
+      ? { kind: "literal", value }
+      : { kind: "any", ctor: "String" };
   }
   if (Array.isArray(value)) {
-    const mapped = value
-      .map((item) => sanitizeJsonForAssertion(item, filter, depth + 1))
-      .filter((item): item is JsonValue => item !== undefined);
-    return mapped.length === value.length ? mapped : undefined;
+    const items = value
+      .map((item) => buildOutboundAssertionAst(item, userLiterals, depth + 1))
+      .filter((item): item is OutboundAssertionNode => item !== undefined);
+    return items.length === value.length ? { kind: "array", items } : undefined;
   }
-  const entries: Array<[string, JsonValue]> = [];
+  const entries: Array<readonly [string, OutboundAssertionNode]> = [];
   for (const [k, v] of Object.entries(value)) {
-    const clean = sanitizeJsonForAssertion(v, filter, depth + 1);
-    if (clean !== undefined) {
-      entries.push([k, clean]);
+    const child = buildOutboundAssertionAst(v, userLiterals, depth + 1);
+    if (child !== undefined) {
+      entries.push([k, child]);
     }
   }
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  return entries.length > 0 ? { kind: "object", entries } : undefined;
+}
+
+function formatOutboundAssertionCode(node: OutboundAssertionNode): string {
+  switch (node.kind) {
+    case "literal":
+      return JSON.stringify(node.value);
+    case "any":
+      return `expect.any(${node.ctor})`;
+    case "array":
+      return `[${node.items.map(formatOutboundAssertionCode).join(", ")}]`;
+    case "object":
+      return `{ ${node.entries
+        .map(([k, v]) => `${JSON.stringify(k)}: ${formatOutboundAssertionCode(v)}`)
+        .join(", ")} }`;
+    default: {
+      const _exhaustive: never = node;
+      return _exhaustive;
+    }
+  }
 }
 
 function isMintedTestId(testId: string): boolean {
@@ -1910,7 +1822,7 @@ export function compileSessionToPlaywright(
   );
 
   const secretVarBySlot = allocatePlaywrightSecretVars(bundle.secretSlots);
-  const assertionScalarFilter = buildBundleAssertionScalarFilter(bundle);
+  const userLiterals = collectBundleUserLiterals(bundle);
   for (const slot of bundle.secretSlots) {
     const secretIdent = secretVarBySlot.get(slot)!;
     lines.push(
@@ -2128,10 +2040,10 @@ export function compileSessionToPlaywright(
         if (call.status > 0) {
           lines.push(`    expect(${varName}.status).toBe(${call.status});`);
         }
-        const expectedJson = sanitizeJsonForAssertion(call.request.json, assertionScalarFilter);
-        if (expectedJson !== undefined && typeof expectedJson === "object" && expectedJson !== null) {
+        const expectedAst = buildOutboundAssertionAst(call.request.json, userLiterals);
+        if (expectedAst?.kind === "object") {
           lines.push(
-            `    expect(${varName}.request.json).toMatchObject(${JSON.stringify(expectedJson)});`,
+            `    expect(${varName}.request.json).toMatchObject(${formatOutboundAssertionCode(expectedAst)});`,
           );
         }
       }
@@ -3028,7 +2940,7 @@ export function compileSessionToE2E(
   const extraFixtureFiles: GeneratedFileArtifact[] = [];
   const cacheFiles: GeneratedFileArtifact[] = [];
   const callCounts = new Map<string, number>();
-  const assertionScalarFilter = buildBundleAssertionScalarFilter(bundle);
+  const userLiterals = collectBundleUserLiterals(bundle);
 
   const needsSecretsImport = bundle.secretSlots.length > 0;
   const needsBrowserFixture = groups.some(
@@ -3154,10 +3066,10 @@ export function compileSessionToE2E(
         if (call.status > 0) {
           testLines.push(`    expect(${varName}.status).toBe(${call.status});`);
         }
-        const expectedJson = sanitizeJsonForAssertion(call.request.json, assertionScalarFilter);
-        if (expectedJson !== undefined && typeof expectedJson === "object" && expectedJson !== null) {
+        const expectedAst = buildOutboundAssertionAst(call.request.json, userLiterals);
+        if (expectedAst?.kind === "object") {
           testLines.push(
-            `    expect(${varName}.request.json).toMatchObject(${JSON.stringify(expectedJson)});`,
+            `    expect(${varName}.request.json).toMatchObject(${formatOutboundAssertionCode(expectedAst)});`,
           );
         }
       }

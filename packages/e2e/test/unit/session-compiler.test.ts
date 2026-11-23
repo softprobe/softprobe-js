@@ -248,7 +248,9 @@ describe("Session compiler & multi-runtime codegen", () => {
     expect(pwSpec).toContain(`SP_SECRET_PASSWORD`);
     expect(pwSpec).toContain(`new RegExp("^Pay USD .* and issue ticket$")`);
     expect(pwSpec).toContain(`trace.outboundHttp`);
-    expect(pwSpec).toContain(`passengerEmail`);
+    expect(pwSpec).toContain(
+      `expect(outbound_3_0_0.request.json).toMatchObject({ "passengerEmail": "traveler@softprobe.ai", "currency": expect.any(String) });`,
+    );
 
     const e2eSuite = compileSessionToE2E(bundle, {
       projectId: "ota-e2e",
@@ -1144,7 +1146,7 @@ describe("Session compiler & multi-runtime codegen", () => {
     expect(parsedCache.payload.endPath).toBe("/list.html");
   });
 
-  it("folds MPA load past trailing unload scrolls, matches HTTP/2 path-only outbound URLs, and omits server-minted response scalars from outbound request assertions", () => {
+  it("folds MPA load past trailing unload scrolls, matches HTTP/2 path-only outbound URLs, and asserts user-literal provenance plus expect.any type shapes on outbound JSON", () => {
     const searchTraceId = "bb1cae1eaaadd13d09ff99ef25263890";
     const bookTraceId = "b6d1218d807ec0e1e6b3ffede96fbf86";
     const spans = [
@@ -1362,6 +1364,8 @@ describe("Session compiler & multi-runtime codegen", () => {
                 recipientEmail: "alex@example.com",
                 eventType: "BOOKING_CONFIRMED",
                 sentAt: "2026-11-23T07:16:28.486Z",
+                amount: 185.5,
+                active: true,
               }),
             },
           },
@@ -1379,7 +1383,7 @@ describe("Session compiler & multi-runtime codegen", () => {
         ?.content ?? "";
     expect(pwSpec).toContain(`url: new RegExp("/ndc/v21\\\\.3/ordercreate$")`);
     expect(pwSpec).toContain(
-      `expect(outbound_1_1_1.request.json).toMatchObject({"recipientEmail":"alex@example.com","eventType":"BOOKING_CONFIRMED"});`,
+      `expect(outbound_1_1_1.request.json).toMatchObject({ "bookingId": expect.any(String), "confirmationNumber": expect.any(String), "recipientEmail": "alex@example.com", "eventType": expect.any(String), "sentAt": expect.any(String), "amount": expect.any(Number), "active": expect.any(Boolean) });`,
     );
     expect(pwSpec).not.toContain("BK1795418188251");
     expect(pwSpec).not.toContain("UJTZFJ");
@@ -1391,6 +1395,9 @@ describe("Session compiler & multi-runtime codegen", () => {
     const e2eSpec =
       compileSessionToE2E(bundle).files.find((f) => f.relativePath.endsWith(".e2e.ts"))?.content ??
       "";
+    expect(e2eSpec).toContain(
+      `expect(outbound_0_1_1.request.json).toMatchObject({ "bookingId": expect.any(String), "confirmationNumber": expect.any(String), "recipientEmail": "alex@example.com", "eventType": expect.any(String), "sentAt": expect.any(String), "amount": expect.any(Number), "active": expect.any(Boolean) });`,
+    );
     expect(e2eSpec).toContain(
       `await expect(browser).toHaveURL(new RegExp("^https?:\\\\/\\\\/[^/?#]+/payment\\\\.html(?:[?#]|$)"));`,
     );
