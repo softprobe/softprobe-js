@@ -252,10 +252,7 @@ export function resolveSinkConfig(
       const endpoint = normalizeEndpointUrl(options.sink.endpoint, "blackbox");
       const token =
         nonEmptyTrimmed(options.sink.token) ??
-        nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
-        nonEmptyTrimmed(env.SOFTPROBE_TOKEN) ??
-        nonEmptyTrimmed(env.SP_TOKEN) ??
-        nonEmptyTrimmed(env.INGESTION_KEY);
+        nonEmptyTrimmed(env.SOFTPROBE_API_KEY);
       const workspaceId =
         nonEmptyTrimmed(options.sink.workspaceId) ??
         nonEmptyTrimmed(env.SOFTPROBE_WORKSPACE_ID) ??
@@ -274,8 +271,7 @@ export function resolveSinkConfig(
       const token =
         nonEmptyTrimmed(options.sink.token) ??
         nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
-        nonEmptyTrimmed(env.SP_TOKEN) ??
-        nonEmptyTrimmed(env.SOFTPROBE_TOKEN);
+        nonEmptyTrimmed(env.SP_TOKEN);
       const tenantId =
         nonEmptyTrimmed(options.sink.tenantId) ??
         nonEmptyTrimmed(env.SP_TENANT_ID);
@@ -339,8 +335,7 @@ export function resolveSinkConfig(
     const token =
       nonEmptyTrimmed(options.token) ??
       nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
-      nonEmptyTrimmed(env.SP_TOKEN) ??
-      nonEmptyTrimmed(env.SOFTPROBE_TOKEN);
+      nonEmptyTrimmed(env.SP_TOKEN);
     const tenantId =
       nonEmptyTrimmed(options.tenantId) ?? nonEmptyTrimmed(env.SP_TENANT_ID);
     const explorerUrl = deriveExplorerBaseUrl(options.explorerUrl, endpoint, env);
@@ -366,10 +361,7 @@ export function resolveSinkConfig(
   const endpoint = normalizeEndpointUrl(rawEndpoint, "blackbox");
   const token =
     nonEmptyTrimmed(options.token) ??
-    nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
-    nonEmptyTrimmed(env.SOFTPROBE_TOKEN) ??
-    nonEmptyTrimmed(env.SP_TOKEN) ??
-    nonEmptyTrimmed(env.INGESTION_KEY);
+    nonEmptyTrimmed(env.SOFTPROBE_API_KEY);
   const explorerUrl = deriveExplorerBaseUrl(options.explorerUrl, endpoint, env);
 
   return {

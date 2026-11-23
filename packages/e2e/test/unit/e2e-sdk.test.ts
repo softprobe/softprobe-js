@@ -122,12 +122,12 @@ describe("@softprobe/e2e public contract and branded types", () => {
         endpoint: "https://explorer-staging.softprobe.ai",
         workspaceId: "a0528065-36ad-4650-a184-1e745c7c695d",
       },
-      { SOFTPROBE_TOKEN: "tok_test" },
+      { SOFTPROBE_API_KEY: "api_key_test" },
     );
     expect(resolvedBlackbox).toEqual({
       kind: "blackbox",
       endpoint: "https://explorer-staging.softprobe.ai/api/thelake",
-      token: "tok_test",
+      token: "api_key_test",
       workspaceId: "a0528065-36ad-4650-a184-1e745c7c695d",
       explorerUrl: "https://explorer-staging.softprobe.ai",
     });
@@ -140,6 +140,7 @@ describe("@softprobe/e2e public contract and branded types", () => {
       {
         SP_API_URL: "http://127.0.0.1:18090/",
         SP_TOKEN: "sp_tok",
+        SOFTPROBE_TOKEN: "ignored-alias",
         SP_TENANT_ID: "tenant_7",
       },
     );
@@ -149,6 +150,18 @@ describe("@softprobe/e2e public contract and branded types", () => {
       appId: "travel-ota",
       token: "sp_tok",
       tenantId: "tenant_7",
+    });
+
+    expect(
+      resolveSinkConfig(
+        { store: "blackbox", endpoint: "https://explorer-staging.softprobe.ai", workspaceId: "ws_test" },
+        { SOFTPROBE_TOKEN: "ignored-alias", SP_TOKEN: "ignored-jwt", INGESTION_KEY: "ingest-only" },
+      ),
+    ).toEqual({
+      kind: "blackbox",
+      endpoint: "https://explorer-staging.softprobe.ai/api/thelake",
+      workspaceId: "ws_test",
+      explorerUrl: "https://explorer-staging.softprobe.ai",
     });
 
     expect(() => splitSoftprobeWebOptions({ pollTimeoutMs: 0 })).toThrow();
