@@ -346,6 +346,7 @@ export interface CompiledSessionBundle {
   readonly steps: readonly CompiledSessionStep[];
   readonly secretSlots: readonly string[];
   readonly outboundAssertionCount: number;
+  readonly responseDynamicScalars?: readonly string[];
 }
 
 export interface ExtractSessionBundleOptions {
@@ -536,6 +537,11 @@ const TRIVIAL_RESPONSE_WORDS = new Set([
   "success",
   "pending",
   "active",
+  "confirmed",
+  "cancelled",
+  "canceled",
+  "economy",
+  "business",
   "admin",
   "user",
   "member",
@@ -850,6 +856,58 @@ function collectActionSecretSlots(verb: SemanticVerb, sink: Set<string>): void {
   }
 }
 
+function collectActionLiteralScalars(verb: SemanticVerb, sink: Set<string>): void {
+  if (
+    (verb.name === "fill" || verb.name === "select") &&
+    verb.value.kind === "literal"
+  ) {
+    const trimmed = verb.value.value.trim();
+    if (trimmed !== "") sink.add(trimmed);
+  }
+  if (verb.name === "select" && verb.optionLabel) {
+    const trimmed = verb.optionLabel.trim();
+    if (trimmed !== "") sink.add(trimmed);
+  }
+  if (verb.name === "dialog" && verb.promptText?.kind === "literal") {
+    const trimmed = verb.promptText.value.trim();
+    if (trimmed !== "") sink.add(trimmed);
+  }
+}
+
+function collectEnvelopeResponseScalars(rawEnvelope: unknown, sink: Set<string>): void {
+  const parsed = rawSessionInputEnvelopeSchema.safeParse(rawEnvelope);
+  if (!parsed.success) return;
+  const data = parsed.data;
+  const inspectSpan = (sp: z.infer<typeof rawSpanObjectSchema>) => {
+    const attrs = normalizeAttributes(sp.attributes);
+    const rawResp =
+      attrs["http.response.body.content"] ??
+      attrs["http.response.body"] ??
+      attrs["sp.http.response.body"];
+    if (rawResp) {
+      const parsedJson = parseJsonBodyValue(rawResp);
+      if (parsedJson !== undefined) {
+        collectResponseJsonScalars(parsedJson, sink);
+      }
+    }
+  };
+  for (const rs of [
+    ...(data.trace?.resourceSpans ?? []),
+    ...(data.batches ?? []),
+    ...(data.resourceSpans ?? []),
+  ]) {
+    for (const scope of [
+      ...(rs.scopeSpans ?? []),
+      ...(rs.instrumentationLibrarySpans ?? []),
+    ]) {
+      for (const sp of scope.spans ?? []) inspectSpan(sp);
+    }
+  }
+  for (const sp of [...(data.spans ?? []), ...(data.observations ?? [])]) {
+    inspectSpan(sp);
+  }
+}
+
 export function extractSessionBundleFromSpans(
   rawInput: unknown,
   options: ExtractSessionBundleOptions = {},
@@ -990,6 +1048,7 @@ export function extractSessionBundleFromSpans(
     "select",
     "check",
   ]);
+  const passiveTrailingVerbs = new Set(["dialog", "scroll", "hover", "resize"]);
   const foldedUiActionEntries: typeof uiActionEntries = [];
   for (const entry of uiActionEntries) {
     if (
@@ -1000,7 +1059,7 @@ export function extractSessionBundleFromSpans(
       let ownerIdx = foldedUiActionEntries.length - 1;
       while (
         ownerIdx >= 0 &&
-        foldedUiActionEntries[ownerIdx]!.action.verb.name === "dialog"
+        passiveTrailingVerbs.has(foldedUiActionEntries[ownerIdx]!.action.verb.name)
       ) {
         ownerIdx -= 1;
       }
@@ -1012,23 +1071,28 @@ export function extractSessionBundleFromSpans(
         entry.action.endPath !== owner.action.endPath &&
         entry.action.timestampMs - (owner.action.timestampMs + owner.action.settleMs) <= 15_000
       ) {
-        for (let k = ownerIdx; k < foldedUiActionEntries.length; k += 1) {
-          const targetItem = foldedUiActionEntries[k]!;
-          targetItem.action = {
-            ...targetItem.action,
+        const retainedDialogs = foldedUiActionEntries
+          .slice(ownerIdx + 1)
+          .filter((item) => item.action.verb.name === "dialog")
+          .map((item) => ({
+            ...item,
+            action: {
+              ...item.action,
+              endPath: entry.action.endPath,
+            },
+          }));
+        foldedUiActionEntries.length = ownerIdx + 1;
+        foldedUiActionEntries[ownerIdx] = {
+          ...owner,
+          action: {
+            ...owner.action,
             endPath: entry.action.endPath,
-            ...(k === ownerIdx
-              ? {
-                  causedTraces: [
-                    ...targetItem.action.causedTraces,
-                    ...entry.action.causedTraces,
-                  ],
-                  endAnchors: entry.action.endAnchors,
-                  goneAnchors: [],
-                }
-              : {}),
-          };
-        }
+            causedTraces: [...owner.action.causedTraces, ...entry.action.causedTraces],
+            endAnchors: entry.action.endAnchors,
+            goneAnchors: [],
+          },
+        };
+        foldedUiActionEntries.push(...retainedDialogs);
         continue;
       }
     }
@@ -1194,14 +1258,26 @@ export function extractSessionBundleFromSpans(
     }
   }
 
+  for (const [rawTraceId, rawEnvelope] of Object.entries(extraTraces)) {
+    const traceHex = decodeHexId(rawTraceId, 16);
+    if (!isTraceId(traceHex)) continue;
+    const scalarSet = responseScalarsByTraceId.get(traceHex) ?? new Set<string>();
+    collectEnvelopeResponseScalars(rawEnvelope, scalarSet);
+    if (scalarSet.size > 0) {
+      responseScalarsByTraceId.set(traceHex, scalarSet);
+    }
+  }
+
   let inferredOrigin = options.baseOrigin?.trim();
   const secretSlots = new Set<string>();
+  const userLiterals = new Set<string>();
   const priorTracesSeen = new Set<string>();
   let outboundAssertionCount = 0;
 
   const steps: CompiledSessionStep[] = foldedUiActionEntries.map((entry, idx) => {
     const { action, summary } = entry;
     collectActionSecretSlots(action.verb, secretSlots);
+    collectActionLiteralScalars(action.verb, userLiterals);
 
     for (const span of normalizedSpans) {
       if (
@@ -1307,12 +1383,22 @@ export function extractSessionBundleFromSpans(
     };
   });
 
+  const allResponseScalars = new Set<string>();
+  for (const scalars of responseScalarsByTraceId.values()) {
+    for (const s of scalars) {
+      if (!userLiterals.has(s)) {
+        allResponseScalars.add(s);
+      }
+    }
+  }
+
   return {
     sessionId: resolvedSessionId,
     ...(inferredOrigin ? { baseOrigin: inferredOrigin } : {}),
     steps,
     secretSlots: [...secretSlots].sort(),
     outboundAssertionCount,
+    responseDynamicScalars: [...allResponseScalars].sort(),
   };
 }
 
@@ -1546,24 +1632,68 @@ export interface CompiledPlaywrightSuite {
   readonly files: readonly GeneratedFileArtifact[];
 }
 
-function sanitizeJsonForAssertion(value: JsonValue | undefined, depth = 0): JsonValue | undefined {
+const VOLATILE_SCALAR_RE =
+  /^(?:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$)/i;
+
+function buildBundleAssertionScalarFilter(bundle: CompiledSessionBundle): {
+  readonly dynamicScalars: ReadonlySet<string>;
+  readonly userLiterals: ReadonlySet<string>;
+} {
+  const userLiterals = new Set<string>();
+  for (const step of bundle.steps) {
+    collectActionLiteralScalars(step.action.verb, userLiterals);
+  }
+  const dynamicScalars = new Set<string>(bundle.responseDynamicScalars ?? []);
+  for (const step of bundle.steps) {
+    for (const bt of step.backendTraces) {
+      for (const oc of bt.outboundCalls) {
+        if (oc.response.json !== undefined) {
+          const temp = new Set<string>();
+          collectResponseJsonScalars(oc.response.json, temp);
+          for (const s of temp) {
+            if (!userLiterals.has(s)) dynamicScalars.add(s);
+          }
+        }
+      }
+    }
+  }
+  for (const lit of userLiterals) {
+    dynamicScalars.delete(lit);
+  }
+  return { dynamicScalars, userLiterals };
+}
+
+function sanitizeJsonForAssertion(
+  value: JsonValue | undefined,
+  filter?: {
+    readonly dynamicScalars: ReadonlySet<string>;
+    readonly userLiterals: ReadonlySet<string>;
+  },
+  depth = 0,
+): JsonValue | undefined {
   if (value === undefined || depth > 6) return undefined;
   if (value === null || typeof value === "boolean" || typeof value === "number") {
     return value;
   }
   if (typeof value === "string") {
     if (value.includes("[REDACTED]")) return undefined;
+    const trimmed = value.trim();
+    if (filter && !filter.userLiterals.has(trimmed)) {
+      if (filter.dynamicScalars.has(trimmed) || VOLATILE_SCALAR_RE.test(trimmed)) {
+        return undefined;
+      }
+    }
     return value;
   }
   if (Array.isArray(value)) {
     const mapped = value
-      .map((item) => sanitizeJsonForAssertion(item, depth + 1))
+      .map((item) => sanitizeJsonForAssertion(item, filter, depth + 1))
       .filter((item): item is JsonValue => item !== undefined);
     return mapped.length === value.length ? mapped : undefined;
   }
   const entries: Array<[string, JsonValue]> = [];
   for (const [k, v] of Object.entries(value)) {
-    const clean = sanitizeJsonForAssertion(v, depth + 1);
+    const clean = sanitizeJsonForAssertion(v, filter, depth + 1);
     if (clean !== undefined) {
       entries.push([k, clean]);
     }
@@ -1704,6 +1834,10 @@ function formatOutboundUrlMatcherCode(rawUrl: string): string {
     const parsed = new URL(rawUrl);
     return `new RegExp(${JSON.stringify(`${escapeRegExpLiteral(parsed.pathname)}$`)})`;
   } catch {
+    if (rawUrl.startsWith("/")) {
+      const pathname = (rawUrl.split(/[?#]/)[0] ?? "/") || "/";
+      return `new RegExp(${JSON.stringify(`${escapeRegExpLiteral(pathname)}$`)})`;
+    }
     return JSON.stringify(rawUrl);
   }
 }
@@ -1776,6 +1910,7 @@ export function compileSessionToPlaywright(
   );
 
   const secretVarBySlot = allocatePlaywrightSecretVars(bundle.secretSlots);
+  const assertionScalarFilter = buildBundleAssertionScalarFilter(bundle);
   for (const slot of bundle.secretSlots) {
     const secretIdent = secretVarBySlot.get(slot)!;
     lines.push(
@@ -1993,7 +2128,7 @@ export function compileSessionToPlaywright(
         if (call.status > 0) {
           lines.push(`    expect(${varName}.status).toBe(${call.status});`);
         }
-        const expectedJson = sanitizeJsonForAssertion(call.request.json);
+        const expectedJson = sanitizeJsonForAssertion(call.request.json, assertionScalarFilter);
         if (expectedJson !== undefined && typeof expectedJson === "object" && expectedJson !== null) {
           lines.push(
             `    expect(${varName}.request.json).toMatchObject(${JSON.stringify(expectedJson)});`,
@@ -2893,6 +3028,7 @@ export function compileSessionToE2E(
   const extraFixtureFiles: GeneratedFileArtifact[] = [];
   const cacheFiles: GeneratedFileArtifact[] = [];
   const callCounts = new Map<string, number>();
+  const assertionScalarFilter = buildBundleAssertionScalarFilter(bundle);
 
   const needsSecretsImport = bundle.secretSlots.length > 0;
   const needsBrowserFixture = groups.some(
@@ -3018,7 +3154,7 @@ export function compileSessionToE2E(
         if (call.status > 0) {
           testLines.push(`    expect(${varName}.status).toBe(${call.status});`);
         }
-        const expectedJson = sanitizeJsonForAssertion(call.request.json);
+        const expectedJson = sanitizeJsonForAssertion(call.request.json, assertionScalarFilter);
         if (expectedJson !== undefined && typeof expectedJson === "object" && expectedJson !== null) {
           testLines.push(
             `    expect(${varName}.request.json).toMatchObject(${JSON.stringify(expectedJson)});`,

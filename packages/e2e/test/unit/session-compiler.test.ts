@@ -1143,4 +1143,257 @@ describe("Session compiler & multi-runtime codegen", () => {
     expect(parsedCache.payload.startPath).toBe("/index.html");
     expect(parsedCache.payload.endPath).toBe("/list.html");
   });
+
+  it("folds MPA load past trailing unload scrolls, matches HTTP/2 path-only outbound URLs, and omits server-minted response scalars from outbound request assertions", () => {
+    const searchTraceId = "bb1cae1eaaadd13d09ff99ef25263890";
+    const bookTraceId = "b6d1218d807ec0e1e6b3ffede96fbf86";
+    const spans = [
+      {
+        trace_id: "11111111111111111111111111111111",
+        span_id: "0000000000000001",
+        session_id: "sess_ota_v2",
+        name: "softprobe.ui.action",
+        start_time: "2026-11-23T07:16:20.000Z",
+        attributes: {
+          "sp.observation.type": "ui_action",
+          "sp.ui.action.schema": "sp-ui-action-1",
+          "sp.ui.action.index": 0,
+          "sp.ui.action.verb": "fill",
+          "sp.ui.action.summary": 'type "alex@example.com" into Email',
+          "sp.ui.action.payload": JSON.stringify({
+            schemaVersion: "sp-ui-action-1",
+            actionIndex: 0,
+            timestampMs: 1795418180000,
+            startPath: "/booking.html",
+            endPath: "/booking.html",
+            viewport: { width: 1280, height: 720 },
+            verb: {
+              name: "fill",
+              target: { role: "textbox", cssSelector: "#contactEmail" },
+              value: { kind: "literal", value: "alex@example.com" },
+              replace: true,
+            },
+            causedTraces: [],
+            endAnchors: [],
+            goneAnchors: [],
+            settleMs: 10,
+          } satisfies RecordedSemanticAction),
+        },
+      },
+      {
+        trace_id: "22222222222222222222222222222222",
+        span_id: "0000000000000002",
+        session_id: "sess_ota_v2",
+        name: "softprobe.ui.action",
+        start_time: "2026-11-23T07:16:27.500Z",
+        attributes: {
+          "sp.observation.type": "ui_action",
+          "sp.ui.action.schema": "sp-ui-action-1",
+          "sp.ui.action.index": 1,
+          "sp.ui.action.verb": "click",
+          "sp.ui.action.summary": 'tap button "Confirm Booking"',
+          "sp.ui.action.payload": JSON.stringify({
+            schemaVersion: "sp-ui-action-1",
+            actionIndex: 1,
+            timestampMs: 1795418187500,
+            startPath: "/booking.html",
+            endPath: "/booking.html",
+            viewport: { width: 1280, height: 720 },
+            verb: {
+              name: "click",
+              target: { role: "button", name: "Confirm Booking" },
+              point: { x: 400, y: 600 },
+            },
+            causedTraces: [
+              {
+                traceId: searchTraceId,
+                method: "POST",
+                url: "http://127.0.0.1:8080/api/flights/search",
+                status: 200,
+              },
+              {
+                traceId: bookTraceId,
+                method: "POST",
+                url: "http://127.0.0.1:8080/api/flights/book",
+                status: 200,
+              },
+            ],
+            endAnchors: [],
+            goneAnchors: [],
+            settleMs: 500,
+          } satisfies RecordedSemanticAction),
+        },
+      },
+      {
+        trace_id: "33333333333333333333333333333333",
+        span_id: "0000000000000003",
+        session_id: "sess_ota_v2",
+        name: "softprobe.ui.action",
+        start_time: "2026-11-23T07:16:27.900Z",
+        attributes: {
+          "sp.observation.type": "ui_action",
+          "sp.ui.action.schema": "sp-ui-action-1",
+          "sp.ui.action.index": 2,
+          "sp.ui.action.verb": "scroll",
+          "sp.ui.action.summary": "scroll down",
+          "sp.ui.action.payload": JSON.stringify({
+            schemaVersion: "sp-ui-action-1",
+            actionIndex: 2,
+            timestampMs: 1795418187900,
+            startPath: "/booking.html",
+            endPath: "/booking.html",
+            viewport: { width: 1280, height: 720 },
+            verb: {
+              name: "scroll",
+              direction: "down",
+              times: 1,
+              spansViewport: 0.4,
+            },
+            causedTraces: [],
+            endAnchors: [],
+            goneAnchors: [],
+            settleMs: 5,
+          } satisfies RecordedSemanticAction),
+        },
+      },
+      {
+        trace_id: "44444444444444444444444444444444",
+        span_id: "0000000000000004",
+        session_id: "sess_ota_v2",
+        name: "softprobe.ui.action",
+        start_time: "2026-11-23T07:16:28.600Z",
+        attributes: {
+          "sp.observation.type": "ui_action",
+          "sp.ui.action.schema": "sp-ui-action-1",
+          "sp.ui.action.index": 3,
+          "sp.ui.action.verb": "navigate",
+          "sp.ui.action.summary": "navigate to /payment.html",
+          "sp.ui.action.payload": JSON.stringify({
+            schemaVersion: "sp-ui-action-1",
+            actionIndex: 3,
+            timestampMs: 1795418188600,
+            startPath: "/booking.html",
+            endPath: "/payment.html",
+            viewport: { width: 1280, height: 720 },
+            verb: {
+              name: "navigate",
+              url: "/payment.html",
+              trigger: "load",
+            },
+            causedTraces: [],
+            endAnchors: [],
+            goneAnchors: [],
+            settleMs: 0,
+          } satisfies RecordedSemanticAction),
+        },
+      },
+    ];
+
+    const tracesByTraceId = {
+      [searchTraceId]: {
+        spans: [
+          {
+            trace_id: searchTraceId,
+            span_id: "af7c2172aabc40c3",
+            name: "POST /api/flights/search",
+            span_kind: "SERVER",
+            service_name: "travel-ota",
+            start_time: "2026-11-23T07:16:20.961Z",
+            attributes: {
+              "http.request.method": "POST",
+              "http.route": "/api/flights/search",
+              "http.response.status_code": "200",
+              "http.response.body.content": JSON.stringify({
+                flights: [{ flightId: "FL1795418186550866" }],
+              }),
+            },
+          },
+        ],
+      },
+      [bookTraceId]: {
+        spans: [
+          {
+            trace_id: bookTraceId,
+            span_id: "1327e7faf726d94d",
+            name: "POST /api/flights/book",
+            span_kind: "SERVER",
+            service_name: "travel-ota",
+            start_time: "2026-11-23T07:16:27.566Z",
+            attributes: {
+              "http.request.method": "POST",
+              "http.route": "/api/flights/book",
+              "http.response.status_code": "200",
+              "http.response.body.content": JSON.stringify({
+                bookingId: "BK1795418188251",
+                confirmationNumber: "UJTZFJ",
+                status: "CONFIRMED",
+              }),
+            },
+          },
+          {
+            trace_id: bookTraceId,
+            span_id: "03fb87a6d5ea33e0",
+            parent_span_id: "1327e7faf726d94d",
+            name: "POST /*/*/ordercreate",
+            span_kind: "CLIENT",
+            service_name: "travel-ota",
+            start_time: "2026-11-23T07:16:28.165Z",
+            attributes: {
+              "http.request.method": "POST",
+              "url.full": "/ndc/v21.3/ordercreate",
+              "http.response.status_code": "200",
+            },
+          },
+          {
+            trace_id: bookTraceId,
+            span_id: "22ce09408ddd0999",
+            parent_span_id: "1327e7faf726d94d",
+            name: "POST /v1/notifications/confirmation",
+            span_kind: "CLIENT",
+            service_name: "travel-ota",
+            start_time: "2026-11-23T07:16:28.486Z",
+            attributes: {
+              "http.request.method": "POST",
+              "url.full": "http://127.0.0.1:8083/v1/notifications/confirmation",
+              "http.response.status_code": "200",
+              "http.request.body.content": JSON.stringify({
+                bookingId: "BK1795418188251",
+                confirmationNumber: "UJTZFJ",
+                recipientEmail: "alex@example.com",
+                eventType: "BOOKING_CONFIRMED",
+                sentAt: "2026-11-23T07:16:28.486Z",
+              }),
+            },
+          },
+        ],
+      },
+    };
+
+    const bundle = extractSessionBundleFromSpans(
+      { session_id: "sess_ota_v2", spans },
+      { tracesByTraceId },
+    );
+    expect(bundle.steps).toHaveLength(2);
+    const pwSpec =
+      compileSessionToPlaywright(bundle).files.find((f) => f.relativePath.endsWith(".spec.ts"))
+        ?.content ?? "";
+    expect(pwSpec).toContain(`url: new RegExp("/ndc/v21\\\\.3/ordercreate$")`);
+    expect(pwSpec).toContain(
+      `expect(outbound_1_1_1.request.json).toMatchObject({"recipientEmail":"alex@example.com","eventType":"BOOKING_CONFIRMED"});`,
+    );
+    expect(pwSpec).not.toContain("BK1795418188251");
+    expect(pwSpec).not.toContain("UJTZFJ");
+    expect(pwSpec).not.toContain(`page.goto("/payment.html")`);
+    expect(pwSpec).toContain(
+      `await expect(page).toHaveURL(new RegExp("^https?:\\\\/\\\\/[^/?#]+/payment\\\\.html(?:[?#]|$)"));`,
+    );
+
+    const e2eSpec =
+      compileSessionToE2E(bundle).files.find((f) => f.relativePath.endsWith(".e2e.ts"))?.content ??
+      "";
+    expect(e2eSpec).toContain(
+      `await expect(browser).toHaveURL(new RegExp("^https?:\\\\/\\\\/[^/?#]+/payment\\\\.html(?:[?#]|$)"));`,
+    );
+    expect(e2eSpec).not.toContain("Step 2:");
+  });
 });
