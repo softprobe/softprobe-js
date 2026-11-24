@@ -70,17 +70,13 @@ export class UnloadSpillQueue {
     const entries = this.readEntries(storage, Date.now());
     if (entries.length === 0) return 0;
 
-    try {
-      storage.removeItem(this.storageKey);
-    } catch {
-      return 0;
-    }
-
     let sent = 0;
-    for (let index = 0; index < entries.length; index += 1) {
-      const entry = entries[index]!;
+    for (const entry of entries) {
       const payload = base64ToUint8Array(entry.bytesBase64);
-      if (!payload) continue;
+      if (!payload) {
+        this.removeEntrySync(storage, entry);
+        continue;
+      }
 
       let ok = false;
       try {
@@ -89,15 +85,33 @@ export class UnloadSpillQueue {
         ok = false;
       }
       if (!ok) {
-        for (let rest = index; rest < entries.length; rest += 1) {
-          const remaining = base64ToUint8Array(entries[rest]!.bytesBase64);
-          if (remaining) this.enqueueSync(remaining);
-        }
         break;
       }
+      this.removeEntrySync(storage, entry);
       sent += 1;
     }
     return sent;
+  }
+
+  private removeEntrySync(storage: Storage, target: QueuedOtlpEntry): void {
+    const current = this.readEntries(storage, Date.now());
+    const idx = current.findIndex(
+      (item) =>
+        item.createdAtMs === target.createdAtMs &&
+        item.byteLength === target.byteLength &&
+        item.bytesBase64 === target.bytesBase64,
+    );
+    if (idx === -1) return;
+    current.splice(idx, 1);
+    try {
+      if (current.length === 0) {
+        storage.removeItem(this.storageKey);
+      } else {
+        storage.setItem(this.storageKey, JSON.stringify(current));
+      }
+    } catch {
+      // Ignore storage write errors during cleanup.
+    }
   }
 
   private readEntries(storage: Storage, now: number): QueuedOtlpEntry[] {

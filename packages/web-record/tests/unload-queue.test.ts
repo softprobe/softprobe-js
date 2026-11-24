@@ -87,4 +87,26 @@ describe("UnloadSpillQueue", () => {
     expect(queue.enqueueSync(new Uint8Array([4, 5, 6]))).toBe(true);
     expect(queue.size()).toBe(1);
   });
+
+  it("keeps entry in sessionStorage while send is in flight so rapid page navigation does not drop it", async () => {
+    const queue = new UnloadSpillQueue(KEY);
+    const payload = new Uint8Array([10, 20, 30]);
+    expect(queue.enqueueSync(payload)).toBe(true);
+
+    let resolveSend!: (ok: boolean) => void;
+    const draining = queue.drain(
+      () => new Promise<boolean>((resolve) => {
+        resolveSend = resolve;
+      }),
+    );
+
+    // While fetch is still in flight on an intermediate page, entry remains persisted.
+    expect(queue.size()).toBe(1);
+    expect(sessionStorage.getItem(KEY)).toBeTruthy();
+
+    resolveSend(true);
+    expect(await draining).toBe(1);
+    expect(queue.size()).toBe(0);
+    expect(sessionStorage.getItem(KEY)).toBeNull();
+  });
 });
