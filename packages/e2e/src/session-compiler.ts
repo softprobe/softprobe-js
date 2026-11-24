@@ -1537,6 +1537,16 @@ export interface CompilePlaywrightOptions {
   readonly store?: "auto" | "blackbox" | "arex";
 }
 
+function workspaceIdExpressionForStore(
+  store: "auto" | "blackbox" | "arex" | undefined,
+  workspaceId: string,
+): string {
+  const expression = JSON.stringify(workspaceId);
+  return store === "arex"
+    ? `process.env.SOFTPROBE_WORKSPACE_ID ?? ${expression}`
+    : expression;
+}
+
 export interface CompiledPlaywrightSuite {
   readonly runner: "playwright";
   readonly sessionId: string;
@@ -2080,7 +2090,9 @@ export function compileSessionToPlaywright(
               ? [`      endpoint: process.env.SOFTPROBE_SINK_ENDPOINT ?? ${JSON.stringify(options.sinkEndpoint)},`]
               : []),
             ...(options.workspaceId
-              ? [`      workspaceId: ${JSON.stringify(options.workspaceId)},`]
+              ? [
+                  `      workspaceId: ${workspaceIdExpressionForStore(options.store, options.workspaceId)},`,
+                ]
               : []),
             ...(options.appId
               ? [`      appId: process.env.SOFTPROBE_APP_ID ?? ${JSON.stringify(options.appId)},`]
@@ -3141,7 +3153,9 @@ export function compileSessionToE2E(
         ? [`        endpoint: process.env.SOFTPROBE_SINK_ENDPOINT ?? ${JSON.stringify(options.sinkEndpoint)},`]
         : []),
       ...(options.workspaceId
-        ? [`        workspaceId: ${JSON.stringify(options.workspaceId)},`]
+        ? [
+            `        workspaceId: ${workspaceIdExpressionForStore(options.store, options.workspaceId)},`,
+          ]
         : []),
       ...(options.appId
         ? [`        appId: process.env.SOFTPROBE_APP_ID ?? ${JSON.stringify(options.appId)},`]
