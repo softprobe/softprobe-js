@@ -255,9 +255,7 @@ export function resolveSinkConfig(
         nonEmptyTrimmed(options.sink.softprobeApiKey) ??
         nonEmptyTrimmed(env.SOFTPROBE_API_KEY);
       const workspaceId =
-        nonEmptyTrimmed(options.sink.workspaceId) ??
-        nonEmptyTrimmed(env.SOFTPROBE_WORKSPACE_ID) ??
-        nonEmptyTrimmed(env.SP_WORKSPACE_ID);
+        nonEmptyTrimmed(options.sink.workspaceId);
       const explorerUrl = deriveExplorerBaseUrl(options.sink.explorerUrl, endpoint, env);
       return {
         kind: "blackbox",
@@ -301,9 +299,7 @@ export function resolveSinkConfig(
     nonEmptyTrimmed(env.SOFTPROBE_APP_ID) ??
     nonEmptyTrimmed(env.SP_APP_ID);
   const workspaceId =
-    nonEmptyTrimmed(options.workspaceId) ??
-    nonEmptyTrimmed(env.SOFTPROBE_WORKSPACE_ID) ??
-    nonEmptyTrimmed(env.SP_WORKSPACE_ID);
+    nonEmptyTrimmed(options.workspaceId);
 
   const effectiveKind: "blackbox" | "arex" =
     store === "arex"

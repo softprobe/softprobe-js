@@ -2080,7 +2080,7 @@ export function compileSessionToPlaywright(
               ? [`      endpoint: process.env.SOFTPROBE_SINK_ENDPOINT ?? ${JSON.stringify(options.sinkEndpoint)},`]
               : []),
             ...(options.workspaceId
-              ? [`      workspaceId: process.env.SOFTPROBE_WORKSPACE_ID ?? ${JSON.stringify(options.workspaceId)},`]
+              ? [`      workspaceId: ${JSON.stringify(options.workspaceId)},`]
               : []),
             ...(options.appId
               ? [`      appId: process.env.SOFTPROBE_APP_ID ?? ${JSON.stringify(options.appId)},`]
@@ -3141,7 +3141,7 @@ export function compileSessionToE2E(
         ? [`        endpoint: process.env.SOFTPROBE_SINK_ENDPOINT ?? ${JSON.stringify(options.sinkEndpoint)},`]
         : []),
       ...(options.workspaceId
-        ? [`        workspaceId: process.env.SOFTPROBE_WORKSPACE_ID ?? ${JSON.stringify(options.workspaceId)},`]
+        ? [`        workspaceId: ${JSON.stringify(options.workspaceId)},`]
         : []),
       ...(options.appId
         ? [`        appId: process.env.SOFTPROBE_APP_ID ?? ${JSON.stringify(options.appId)},`]
