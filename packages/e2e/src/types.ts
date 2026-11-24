@@ -40,7 +40,7 @@ export type SoftprobeSinkConfig =
       readonly kind: "arex";
       readonly endpoint: string;
       readonly appId: string;
-      readonly softprobeApiKey?: string;
+      readonly token?: string;
       readonly tenantId?: string;
       readonly explorerUrl?: string;
     };
@@ -48,6 +48,7 @@ export type SoftprobeSinkConfig =
 export interface SoftprobeWebOptions extends WebOptions {
   readonly sink?: SoftprobeSinkConfig;
   readonly endpoint?: string;
+  readonly token?: string;
   readonly softprobeApiKey?: string;
   readonly workspaceId?: string;
   readonly tenantId?: string;

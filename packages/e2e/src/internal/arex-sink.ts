@@ -220,7 +220,7 @@ export function parseArexTracePayload(
 export interface ArexSinkOptions {
   readonly endpoint: string;
   readonly appId: string;
-  readonly softprobeApiKey?: string;
+  readonly token?: string;
   readonly tenantId?: string;
   readonly explorerUrl?: string;
   readonly fetchImpl?: typeof fetch;
@@ -230,7 +230,7 @@ export class ArexSink implements TraceSink {
   readonly kind = "arex" as const;
   readonly sinkUrl: string;
   readonly #appId: string;
-  readonly #softprobeApiKey: string | undefined;
+  readonly #token: string | undefined;
   readonly #tenantId: string | undefined;
   readonly #explorerUrl: string | undefined;
   readonly #fetchImpl: typeof fetch;
@@ -238,7 +238,7 @@ export class ArexSink implements TraceSink {
   constructor(options: ArexSinkOptions) {
     this.sinkUrl = options.endpoint.replace(/\/+$/, "");
     this.#appId = options.appId.trim();
-    this.#softprobeApiKey = options.softprobeApiKey;
+    this.#token = options.token;
     this.#tenantId = options.tenantId;
     this.#explorerUrl = options.explorerUrl;
     this.#fetchImpl = options.fetchImpl ?? fetch;
@@ -258,7 +258,7 @@ export class ArexSink implements TraceSink {
       method: "GET",
       headers: {
         Accept: "application/json",
-        ...formatAuthHeader(this.#softprobeApiKey),
+        ...formatAuthHeader(this.#token),
         ...(this.#tenantId ? { "X-Tenant-Id": this.#tenantId } : {}),
       },
       signal,

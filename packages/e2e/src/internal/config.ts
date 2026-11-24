@@ -14,6 +14,7 @@ export const DEFAULT_BLACKBOX_ENDPOINT = "https://explorer.softprobe.ai/api/thel
 const SOFTPROBE_OPTION_KEYS = new Set<string>([
   "sink",
   "endpoint",
+  "token",
   "softprobeApiKey",
   "workspaceId",
   "tenantId",
@@ -268,9 +269,11 @@ export function resolveSinkConfig(
     }
     if (options.sink.kind === "arex") {
       const endpoint = normalizeEndpointUrl(options.sink.endpoint, "arex");
-      const softprobeApiKey =
-        nonEmptyTrimmed(options.sink.softprobeApiKey) ??
-        nonEmptyTrimmed(env.SOFTPROBE_API_KEY);
+      const token =
+        nonEmptyTrimmed(options.sink.token) ??
+        nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
+        nonEmptyTrimmed(env.SP_TOKEN) ??
+        nonEmptyTrimmed(env.SOFTPROBE_TOKEN);
       const tenantId =
         nonEmptyTrimmed(options.sink.tenantId) ??
         nonEmptyTrimmed(env.SP_TENANT_ID);
@@ -279,7 +282,7 @@ export function resolveSinkConfig(
         kind: "arex",
         endpoint,
         appId: options.sink.appId.trim(),
-        ...(softprobeApiKey ? { softprobeApiKey } : {}),
+        ...(token ? { token } : {}),
         ...(tenantId ? { tenantId } : {}),
         ...(explorerUrl ? { explorerUrl } : {}),
       };
@@ -331,9 +334,11 @@ export function resolveSinkConfig(
       );
     }
     const endpoint = normalizeEndpointUrl(rawEndpoint, "arex");
-    const softprobeApiKey =
-      nonEmptyTrimmed(options.softprobeApiKey) ??
-      nonEmptyTrimmed(env.SOFTPROBE_API_KEY);
+    const token =
+      nonEmptyTrimmed(options.token) ??
+      nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
+      nonEmptyTrimmed(env.SP_TOKEN) ??
+      nonEmptyTrimmed(env.SOFTPROBE_TOKEN);
     const tenantId =
       nonEmptyTrimmed(options.tenantId) ?? nonEmptyTrimmed(env.SP_TENANT_ID);
     const explorerUrl = deriveExplorerBaseUrl(options.explorerUrl, endpoint, env);
@@ -341,7 +346,7 @@ export function resolveSinkConfig(
       kind: "arex",
       endpoint,
       appId,
-      ...(softprobeApiKey ? { softprobeApiKey } : {}),
+      ...(token ? { token } : {}),
       ...(tenantId ? { tenantId } : {}),
       ...(explorerUrl ? { explorerUrl } : {}),
     };

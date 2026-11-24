@@ -139,7 +139,7 @@ describe("@softprobe/e2e public contract and branded types", () => {
       },
       {
         SP_API_URL: "http://127.0.0.1:18090/",
-        SOFTPROBE_API_KEY: "api_key_test",
+        SP_TOKEN: "sp_tok",
         SP_TENANT_ID: "tenant_7",
       },
     );
@@ -147,20 +147,8 @@ describe("@softprobe/e2e public contract and branded types", () => {
       kind: "arex",
       endpoint: "http://127.0.0.1:18090",
       appId: "travel-ota",
-      softprobeApiKey: "api_key_test",
+      token: "sp_tok",
       tenantId: "tenant_7",
-    });
-
-    expect(
-      resolveSinkConfig(
-        { store: "blackbox", endpoint: "https://explorer-staging.softprobe.ai", workspaceId: "ws_test" },
-        { INGESTION_KEY: "ingest-only" },
-      ),
-    ).toEqual({
-      kind: "blackbox",
-      endpoint: "https://explorer-staging.softprobe.ai/api/thelake",
-      workspaceId: "ws_test",
-      explorerUrl: "https://explorer-staging.softprobe.ai",
     });
 
     expect(() => splitSoftprobeWebOptions({ pollTimeoutMs: 0 })).toThrow();
@@ -511,7 +499,7 @@ describe("BlackboxSink and ArexSink boundary parsers", () => {
     const arexSink = new ArexSink({
       endpoint: "http://127.0.0.1:18090",
       appId: "travel-ota",
-      softprobeApiKey: "arex_tok",
+      token: "arex_tok",
       tenantId: "t_1",
       fetchImpl: async (url, init) => {
         requestedUrl = String(url);

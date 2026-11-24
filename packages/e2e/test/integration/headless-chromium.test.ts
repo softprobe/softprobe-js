@@ -1107,7 +1107,7 @@ export default {
           kind: "arex",
           endpoint: ${JSON.stringify(arexOrigin)},
           appId: "demo-app",
-          softprobeApiKey: "arex_int_token",
+          token: "arex_int_token",
           tenantId: "tenant_int_1",
         },
         pollTimeoutMs: 5000,

@@ -184,7 +184,7 @@ export function buildSinkFromResolved(
     return new ArexSink({
       endpoint: sinkConfig.endpoint,
       appId: sinkConfig.appId,
-      softprobeApiKey: sinkConfig.softprobeApiKey,
+      token: sinkConfig.token,
       tenantId: sinkConfig.tenantId,
       explorerUrl: sinkConfig.explorerUrl,
     });
