@@ -64,7 +64,7 @@ describe("@softprobe/e2e public contract and branded types", () => {
     expect(isAgentError).toBe(upstreamIsAgentError);
   });
 
-  it("exposes root, playwright, session-compiler, and compile-session CLI subpaths in package.json exports", () => {
+  it("exposes root and playwright subpaths in package.json exports", () => {
     const pkgDir = path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
       "../..",
@@ -85,8 +85,6 @@ describe("@softprobe/e2e public contract and branded types", () => {
       expect(Object.keys(rawPkg.exports)).toEqual([
         ".",
         "./playwright",
-        "./session-compiler",
-        "./bin/compile-session.js",
       ]);
     }
   });

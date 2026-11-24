@@ -5,9 +5,6 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "softprobe-compile-session": "dist/bin/compile-session.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -18,16 +15,6 @@
       "types": "./dist/playwright.d.ts",
       "import": "./dist/playwright.js",
       "default": "./dist/playwright.js"
-    },
-    "./session-compiler": {
-      "types": "./dist/session-compiler.d.ts",
-      "import": "./dist/session-compiler.js",
-      "default": "./dist/session-compiler.js"
-    },
-    "./bin/compile-session.js": {
-      "types": "./dist/bin/compile-session.d.ts",
-      "import": "./dist/bin/compile-session.js",
-      "default": "./dist/bin/compile-session.js"
     }
   },
   "files": [
