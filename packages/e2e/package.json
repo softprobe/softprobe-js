@@ -1,6 +1,6 @@
 {
   "name": "@softprobe/e2e",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Full-stack E2E testing SDK pairing e2e browser replay with W3C distributed trace verification across Softprobe Blackbox and Arex",
   "type": "module",
   "main": "./dist/index.js",
