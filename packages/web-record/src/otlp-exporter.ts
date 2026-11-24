@@ -4,9 +4,10 @@ import { ProtobufTraceSerializer } from "@opentelemetry/otlp-transformer";
 import type { ReadableSpan, SpanExporter } from "@opentelemetry/sdk-trace";
 
 // Chromium enforces a cumulative 64 KiB cap across all active keepalive fetches in a renderer
-// and retains that quota until response streams finish. Reserve keepalive strictly for small
-// hidden-page unload flushes and fall back to standard fetch if the renderer quota is full.
-const MAX_UNLOAD_KEEPALIVE_BYTES = 32 * 1024;
+// and retains that quota until response streams finish. Keep unload keepalive chunks <= 28 KiB
+// and spill anything larger to sessionStorage.
+const MAX_UNLOAD_KEEPALIVE_BYTES = 28 * 1024;
+const RECORDING_SPAN_NAME = "softprobe.web.recording";
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_RETRIES = 4;
 const INITIAL_BACKOFF_MS = 400;
@@ -83,6 +84,85 @@ export class BrowserOtlpProtoSpanExporter implements SpanExporter {
   async shutdown(): Promise<void> {
     this.stopped = true;
     await this.forceFlush();
+  }
+
+  async sendSerialized(body: Uint8Array): Promise<boolean> {
+    if (this.stopped) return false;
+    const payload = new Uint8Array(body);
+    const result = await context.with(suppressTracing(context.active()), () =>
+      this.sendWithRetry(payload),
+    );
+    return result.code === ExportResultCode.SUCCESS;
+  }
+
+  exportUnloadSync(spans: ReadableSpan[], spill: (bytes: Uint8Array) => boolean): void {
+    if (this.stopped || spans.length === 0) return;
+
+    const traceSpans: ReadableSpan[] = [];
+    const recordingSpans: ReadableSpan[] = [];
+    for (const span of spans) {
+      if (span.name === RECORDING_SPAN_NAME) {
+        recordingSpans.push(span);
+      } else {
+        traceSpans.push(span);
+      }
+    }
+
+    this.dispatchUnloadGroup(traceSpans, spill);
+    this.dispatchUnloadGroup(recordingSpans, spill);
+  }
+
+  private dispatchUnloadGroup(
+    spans: ReadableSpan[],
+    spill: (bytes: Uint8Array) => boolean,
+  ): void {
+    if (spans.length === 0) return;
+    let serialized: Uint8Array | undefined;
+    try {
+      serialized = ProtobufTraceSerializer.serializeRequest(spans);
+    } catch {
+      return;
+    }
+    if (!serialized) return;
+
+    if (serialized.byteLength <= MAX_UNLOAD_KEEPALIVE_BYTES) {
+      this.sendKeepaliveOrSpill(new Uint8Array(serialized), spill);
+      return;
+    }
+    if (spans.length === 1) {
+      spill(new Uint8Array(serialized));
+      return;
+    }
+
+    const mid = Math.floor(spans.length / 2);
+    this.dispatchUnloadGroup(spans.slice(0, mid), spill);
+    this.dispatchUnloadGroup(spans.slice(mid), spill);
+  }
+
+  private sendKeepaliveOrSpill(
+    body: Uint8Array<ArrayBuffer>,
+    spill: (bytes: Uint8Array) => boolean,
+  ): void {
+    const fetchApi = resolveUnwrappedFetch();
+    try {
+      const task = context.with(suppressTracing(context.active()), () =>
+        this.postPayload(fetchApi, body, new AbortController().signal, true),
+      )
+        .then((response) => {
+          if (response.status < 200 || response.status > 299) {
+            spill(body);
+          }
+        })
+        .catch(() => {
+          spill(body);
+        })
+        .finally(() => {
+          this.inflight.delete(task);
+        });
+      this.inflight.add(task);
+    } catch {
+      spill(body);
+    }
   }
 
   private async sendWithRetry(body: Uint8Array<ArrayBuffer>): Promise<ExportResult> {

@@ -24,6 +24,8 @@ const testState = vi.hoisted(() => {
       hasPendingTelemetry: ReturnType<typeof vi.fn>;
       waitForIdle: ReturnType<typeof vi.fn>;
       forceFlush: ReturnType<typeof vi.fn>;
+      flushUnloadSync: ReturnType<typeof vi.fn>;
+      sendSerializedBytes: ReturnType<typeof vi.fn>;
       setSessionId: ReturnType<typeof vi.fn>;
       shutdown: ReturnType<typeof vi.fn>;
     };
@@ -78,6 +80,10 @@ const testState = vi.hoisted(() => {
         throw error;
       }
     }),
+    flushUnloadSync: vi.fn(() => {
+      state.active = false;
+    }),
+    sendSerializedBytes: vi.fn(async () => true),
     setSessionId: vi.fn((sessionId: string) => {
       state.sessionId = sessionId;
     }),
@@ -439,35 +445,28 @@ describe("RecordSdk", () => {
     expect(sdk.sessionId).toBe("session-after");
   });
 
-  it("reports an incomplete pagehide flush until OTel confirms export", async () => {
-    let release!: () => void;
-    testState.exportGate = new Promise<void>((resolve) => { release = resolve; });
+  it("flushes rrweb events synchronously on pagehide without awaiting", () => {
     const statuses: string[] = [];
     const sdk = recordingSdk({ onUploadStatus: (status: string) => statuses.push(status) });
-    internals(sdk).systemInfo = {};
     internals(sdk).events = [{ type: 4, timestamp: 1, eventIndex: 1 }];
     sdk.record();
 
     window.dispatchEvent(new Event("pagehide"));
     expect(sdk.uploadStatus).toBe("incomplete");
-    release();
-    await vi.waitFor(() => expect(sdk.uploadStatus).toBe("uploaded"));
+    expect(testState.runtime.flushUnloadSync).toHaveBeenCalledTimes(1);
+    expect(testState.runtime.waitForIdle).not.toHaveBeenCalled();
     expect(statuses).toContain("incomplete");
   });
 
-  it("flushes pending HTTP trace spans on pagehide even when manual mode never started rrweb", async () => {
-    let release!: () => void;
+  it("flushes pending HTTP trace spans synchronously on pagehide even when manual mode never started rrweb", () => {
     testState.active = true;
-    testState.exportGate = new Promise<void>((resolve) => { release = resolve; });
     const statuses: string[] = [];
     const sdk = recordingSdk({ onUploadStatus: (status: string) => statuses.push(status) });
 
     window.dispatchEvent(new Event("pagehide"));
     expect(sdk.uploadStatus).toBe("incomplete");
-    expect(testState.runtime.waitForIdle).toHaveBeenCalledTimes(1);
-    release();
-    await vi.waitFor(() => expect(sdk.uploadStatus).toBe("uploaded"));
-    expect(testState.runtime.forceFlush).toHaveBeenCalledTimes(1);
+    expect(testState.runtime.flushUnloadSync).toHaveBeenCalledTimes(1);
+    expect(testState.runtime.waitForIdle).not.toHaveBeenCalled();
     expect(statuses).toContain("incomplete");
   });
 

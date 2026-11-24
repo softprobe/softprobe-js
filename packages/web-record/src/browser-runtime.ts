@@ -4,7 +4,6 @@ import { XhrInstrumentation } from "@opentelemetry/browser-instrumentation/exper
 import { createSessionSpanProcessor, type SessionProvider } from "@opentelemetry/browser-sdk/session";
 import { startTracesSdk } from "@opentelemetry/browser-sdk/traces";
 import {
-  BatchSpanProcessor,
   type ReadableSpan,
   type Span,
   type SpanExporter,
@@ -49,6 +48,8 @@ export type BrowserRuntime = {
   hasPendingTelemetry: () => boolean;
   waitForIdle: () => Promise<void>;
   forceFlush: () => Promise<void>;
+  flushUnloadSync: (spill: (bytes: Uint8Array) => boolean) => void;
+  sendSerializedBytes: (bytes: Uint8Array) => Promise<boolean>;
   setSessionId: (sessionId: string) => void;
   shutdown: () => Promise<void>;
 };
@@ -75,16 +76,16 @@ export function createBrowserRuntime(
     onSessionId: options.onSessionId,
   });
   const collectorUrl = new URL(options.otlpEndpoint);
-  const exporter = exporterOverride ?? new BrowserOtlpProtoSpanExporter({
-    url: collectorUrl.toString(),
-    ingestionKey: options.ingestionKey ?? "",
-    headers: options.otlpHeaders,
-  });
-  const batchProcessor = new BatchSpanProcessor({
-    exporter,
+  const otlpExporter = exporterOverride
+    ? null
+    : new BrowserOtlpProtoSpanExporter({
+        url: collectorUrl.toString(),
+        ingestionKey: options.ingestionKey ?? "",
+        headers: options.otlpHeaders,
+      });
+  const exporter = exporterOverride ?? otlpExporter!;
+  const batchProcessor = new BrowserSpanBatcher(exporter, {
     scheduledDelayMillis: 1000,
-    exportTimeoutMillis: 30000,
-    maxQueueSize: 2048,
     maxExportBatchSize: 512,
   });
   const processors: SpanProcessor[] = [
@@ -141,6 +142,20 @@ export function createBrowserRuntime(
       } finally {
         lifecycle.markFlushed();
       }
+    },
+    flushUnloadSync: (spill) => {
+      const pending = batchProcessor.drainSync();
+      if (pending.length === 0) return;
+      if (otlpExporter) {
+        otlpExporter.exportUnloadSync(pending, spill);
+      } else {
+        exporter.export(pending, () => undefined);
+      }
+      lifecycle.markFlushed();
+    },
+    sendSerializedBytes: async (bytes) => {
+      if (!otlpExporter) return true;
+      return otlpExporter.sendSerialized(bytes);
     },
     setSessionId: (sessionId) => sessionState.setSessionId(sessionId),
     shutdown: async () => {
@@ -284,4 +299,84 @@ function sanitizeUrl(rawUrl: string): string {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+class BrowserSpanBatcher implements SpanProcessor {
+  private readonly queue: ReadableSpan[] = [];
+  private readonly inflight = new Set<Promise<void>>();
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private stopped = false;
+
+  constructor(
+    private readonly exporter: SpanExporter,
+    private readonly options: {
+      scheduledDelayMillis: number;
+      maxExportBatchSize: number;
+    },
+  ) {}
+
+  onStart(_span: Span): void {}
+
+  onEnd(span: ReadableSpan): void {
+    if (this.stopped) return;
+    this.queue.push(span);
+    if (this.queue.length >= this.options.maxExportBatchSize) {
+      this.clearTimer();
+      void this.exportBatch(this.queue.splice(0, this.options.maxExportBatchSize));
+      return;
+    }
+    this.schedule();
+  }
+
+  drainSync(): ReadableSpan[] {
+    this.clearTimer();
+    if (this.queue.length === 0) return [];
+    return this.queue.splice(0, this.queue.length);
+  }
+
+  async forceFlush(): Promise<void> {
+    this.clearTimer();
+    while (this.queue.length > 0) {
+      await this.exportBatch(this.queue.splice(0, this.options.maxExportBatchSize));
+    }
+    await Promise.allSettled([...this.inflight]);
+    await this.exporter.forceFlush?.();
+  }
+
+  async shutdown(): Promise<void> {
+    this.stopped = true;
+    await this.forceFlush();
+    await this.exporter.shutdown?.();
+  }
+
+  private schedule(): void {
+    if (this.timer !== null) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      if (this.queue.length > 0) {
+        void this.exportBatch(this.queue.splice(0, this.options.maxExportBatchSize));
+      }
+    }, this.options.scheduledDelayMillis);
+  }
+
+  private clearTimer(): void {
+    if (this.timer === null) return;
+    clearTimeout(this.timer);
+    this.timer = null;
+  }
+
+  private exportBatch(batch: ReadableSpan[]): Promise<void> {
+    if (batch.length === 0) return Promise.resolve();
+    const task = new Promise<void>((resolve) => {
+      try {
+        this.exporter.export(batch, () => resolve());
+      } catch {
+        resolve();
+      }
+    }).finally(() => {
+      this.inflight.delete(task);
+    });
+    this.inflight.add(task);
+    return task;
+  }
 }

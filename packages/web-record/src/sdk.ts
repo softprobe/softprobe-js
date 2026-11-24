@@ -14,6 +14,7 @@ import {
   type SemanticActionRecorder,
 } from "./semantic-actions.js";
 import { createWebSessionState } from "./session-state.js";
+import { UnloadSpillQueue } from "./unload-queue.js";
 import type {
   InputCaptureMode,
   RecordingHandle,
@@ -32,12 +33,14 @@ const BACKOFF_MAX_MS = 5 * 60_000;
 const COOKIE_NAME = "_sp_vid";
 const COOKIE_MAX_AGE = 365 * 24 * 60 * 60;
 const SESSION_ID_STORAGE_PREFIX = "_sp_session_id:";
+const UNLOAD_QUEUE_STORAGE_PREFIX = "_sp_unload_queue:";
 const RECORDING_SPAN_NAME = "softprobe.web.recording";
 const RECORDING_EVENT_NAME = "sp.recording.batch";
 const RECORDING_EVENTS_ATTRIBUTE = "sp.recording.events";
 const VALID_SESSION_ID = /^[!-~]{1,128}$/;
 
 let activeWindowPageHide: (() => void) | null = null;
+let activeWindowVisibilityChange: (() => void) | null = null;
 
 type Compressible = eventWithTime & {
   data?: unknown;
@@ -69,6 +72,7 @@ export class RecordSdk implements WebRecordController {
   private readonly recordOptions: Record<string, unknown>;
   private readonly replacers: Record<string, string>;
   private readonly browserRuntime: BrowserRuntime | null;
+  private readonly unloadQueue: UnloadSpillQueue;
   private semanticRecorder: SemanticActionRecorder | null = null;
   private tags: Tags;
   private events: RrwebEventBatchItem[] = [];
@@ -91,17 +95,13 @@ export class RecordSdk implements WebRecordController {
   private invalidSessionIdWarned = false;
   private _uploadStatus: RecordingUploadStatus = "idle";
   private readonly onPageHide = (): void => {
-    if (!this.enabled) return;
-    if (this.semanticRecorder?.hasPendingWork()) {
-      this.semanticRecorder.flush();
+    this.flushOnUnloadSync();
+  };
+
+  private readonly onVisibilityChange = (): void => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      this.flushOnUnloadSync();
     }
-    if (
-      this.events.length === 0 &&
-      !this.saving &&
-      !this.browserRuntime?.hasPendingTelemetry()
-    ) return;
-    this.setUploadStatus("incomplete");
-    if (!this.saving) void this.flushInternal(true);
   };
 
   private constructor(
@@ -119,6 +119,9 @@ export class RecordSdk implements WebRecordController {
     this.apiOrigins = [...(options.apiOrigins ?? [])];
     this.otlpEndpoint = options.otlpEndpoint;
     this.sessionIdStorageKey = `${SESSION_ID_STORAGE_PREFIX}${options.serviceName ?? "default"}`;
+    this.unloadQueue = new UnloadSpillQueue(
+      `${UNLOAD_QUEUE_STORAGE_PREFIX}${options.serviceName ?? "default"}`,
+    );
     const explicitSessionId = this.normalizeExplicitSessionId(options.sessionId);
     this._sessionId = getOrCreateSessionId(explicitSessionId, this.sessionIdStorageKey);
     this.intervalMs = Math.max(options.interval ?? 5000, 5000);
@@ -178,12 +181,27 @@ export class RecordSdk implements WebRecordController {
       if (this.captureSemanticActions) {
         this.ensureSemanticRecorder();
       }
+      void this.collectSystemInfo().then((info) => {
+        if (!this.systemInfo) this.systemInfo = info;
+      });
+      if (this.browserRuntime) {
+        void this.unloadQueue.drain((bytes) =>
+          this.browserRuntime!.sendSerializedBytes(bytes),
+        );
+      }
       if (typeof window !== "undefined") {
         if (activeWindowPageHide) {
           window.removeEventListener("pagehide", activeWindowPageHide);
         }
         activeWindowPageHide = this.onPageHide;
         window.addEventListener("pagehide", this.onPageHide);
+      }
+      if (typeof document !== "undefined") {
+        if (activeWindowVisibilityChange) {
+          document.removeEventListener("visibilitychange", activeWindowVisibilityChange);
+        }
+        activeWindowVisibilityChange = this.onVisibilityChange;
+        document.addEventListener("visibilitychange", this.onVisibilityChange);
       }
       if (!options.manual) {
         this.record();
@@ -268,6 +286,13 @@ export class RecordSdk implements WebRecordController {
       }
       activeWindowPageHide = this.onPageHide;
       window.addEventListener("pagehide", this.onPageHide);
+    }
+    if (typeof document !== "undefined") {
+      if (activeWindowVisibilityChange && activeWindowVisibilityChange !== this.onVisibilityChange) {
+        document.removeEventListener("visibilitychange", activeWindowVisibilityChange);
+      }
+      activeWindowVisibilityChange = this.onVisibilityChange;
+      document.addEventListener("visibilitychange", this.onVisibilityChange);
     }
 
     const stopFn = rrwebRecord({
@@ -522,6 +547,96 @@ export class RecordSdk implements WebRecordController {
     } finally {
       this.saving = false;
     }
+  }
+
+  private flushOnUnloadSync(): void {
+    if (!this.enabled || this.exportDisabled || !this.browserRuntime) return;
+    if (this.semanticRecorder?.hasPendingWork()) {
+      this.semanticRecorder.flush();
+    }
+
+    const batch = this.events.splice(0, this.events.length);
+    const hasPendingSpans = this.browserRuntime.hasPendingTelemetry();
+    if (batch.length === 0 && !hasPendingSpans) return;
+
+    this.setUploadStatus("incomplete");
+    if (batch.length > 0) {
+      const systemInfo = this.systemInfo ?? this.collectSyncSystemInfoFallback();
+      const attributes = this.buildRecordingAttributes(systemInfo);
+      const batchIndex = this.batchIndex;
+      const now = Date.now();
+      const firstTimestamp = batch[0]?.timestamp;
+      const startTime = new Date(typeof firstTimestamp === "number" ? firstTimestamp : now);
+      const endTime = new Date(now);
+      const span = this.browserRuntime.tracer.startSpan(RECORDING_SPAN_NAME, {
+        startTime,
+        attributes: {
+          ...attributes,
+          "sp.observation.type": "recording",
+          "sp.recording.batch_index": batchIndex,
+        },
+      });
+      try {
+        span.addEvent(
+          RECORDING_EVENT_NAME,
+          { [RECORDING_EVENTS_ATTRIBUTE]: JSON.stringify(batch) },
+          endTime,
+        );
+        span.setStatus({ code: SpanStatusCode.OK });
+      } finally {
+        span.end(endTime);
+      }
+      this.batchIndex = batchIndex + 1;
+    }
+
+    this.browserRuntime.flushUnloadSync((bytes) => this.unloadQueue.enqueueSync(bytes));
+  }
+
+  private buildRecordingAttributes(
+    systemInfo: Record<string, string | number | null>,
+  ): Record<string, string | number | boolean> {
+    const attributes: Record<string, string | number | boolean> = {};
+    for (const [key, value] of Object.entries({ ...systemInfo, ...this.tags })) {
+      const resolved = this.replacers[key] || value;
+      if (
+        typeof resolved === "string" ||
+        typeof resolved === "number" ||
+        typeof resolved === "boolean"
+      ) {
+        attributes[key] = resolved;
+      }
+    }
+    return attributes;
+  }
+
+  private collectSyncSystemInfoFallback(): Record<string, string | number | null> {
+    return {
+      _sp_ua: typeof navigator !== "undefined" ? navigator.userAgent : "",
+      _sp_url:
+        typeof window !== "undefined"
+          ? window.location.hostname + window.location.pathname
+          : "",
+      _sp_search: typeof window !== "undefined" ? window.location.search : "",
+      _sp_referer:
+        typeof document !== "undefined" ? document.referrer || null : null,
+      _sp_os: "Unknown",
+      _sp_osVersion: "Unknown",
+      _sp_browser: "Unknown",
+      _sp_browserVersion: "Unknown",
+      _sp_cpu: "Unknown",
+      _sp_device: "desktop",
+      _sp_width: typeof window !== "undefined" ? window.innerWidth : 0,
+      _sp_height: typeof window !== "undefined" ? window.innerHeight : 0,
+      _sp_scrollWidth:
+        typeof document !== "undefined"
+          ? document.documentElement.scrollWidth
+          : 0,
+      _sp_scrollHeight:
+        typeof document !== "undefined"
+          ? document.documentElement.scrollHeight
+          : 0,
+      _sp_vid: this.visitorId,
+    };
   }
 
   private setUploadStatus(status: RecordingUploadStatus): void {
