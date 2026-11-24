@@ -78,6 +78,8 @@ export interface SemanticTarget {
   readonly role?: string;
   readonly name?: string;
   readonly label?: string;
+  readonly nearbyLabel?: string;
+  readonly interactive?: boolean;
   readonly placeholder?: string;
   readonly text?: string;
   readonly inputPurpose?: string;

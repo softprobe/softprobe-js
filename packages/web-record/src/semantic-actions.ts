@@ -944,6 +944,78 @@ function computeTwinPosition(
   return index >= 0 ? { index, of: matches.length } : undefined;
 }
 
+const INTERACTIVE_ROLES = new Set([
+  "button",
+  "link",
+  "textbox",
+  "combobox",
+  "listbox",
+  "option",
+  "checkbox",
+  "radio",
+  "switch",
+  "tab",
+  "menuitem",
+  "menuitemcheckbox",
+  "menuitemradio",
+  "slider",
+  "spinbutton",
+  "searchbox",
+]);
+
+const FORM_CONTROL_ROLES = new Set([
+  "textbox",
+  "combobox",
+  "checkbox",
+  "radio",
+  "switch",
+  "slider",
+  "spinbutton",
+  "searchbox",
+]);
+
+function isInteractiveElement(el: Element, role: string | undefined): boolean {
+  const tag = el.tagName.toLowerCase();
+  if (tag === "a") {
+    return el.hasAttribute("href") || role === "link" || role === "button";
+  }
+  if (["button", "input", "select", "textarea", "summary", "option"].includes(tag)) {
+    return true;
+  }
+  if (role && INTERACTIVE_ROLES.has(role)) return true;
+  if (el.hasAttribute("onclick") || el.getAttribute("tabindex") === "0") return true;
+  return (el as HTMLElement).isContentEditable === true;
+}
+
+function computeNearbyLabel(el: Element, role: string | undefined): string | undefined {
+  const tag = el.tagName.toLowerCase();
+  if (!["input", "select", "textarea"].includes(tag) && !(role && FORM_CONTROL_ROLES.has(role))) {
+    return undefined;
+  }
+
+  const prev = el.previousElementSibling;
+  if (prev && ["label", "span", "div", "p", "dt"].includes(prev.tagName.toLowerCase())) {
+    if (!prev.querySelector("input, select, textarea, button")) {
+      const text = collapseText(collectVisibleText(prev));
+      if (text) return boundText(text, MAX_DESCRIPTOR_CHARS);
+    }
+  }
+
+  let ancestor: Element | null = el.parentElement;
+  for (let depth = 0; depth < 2 && ancestor; depth += 1) {
+    const controls = ancestor.querySelectorAll("input, select, textarea");
+    if (controls.length === 1) {
+      const lbl = ancestor.querySelector("label");
+      if (lbl && !lbl.querySelector("input, select, textarea")) {
+        const text = collapseText(collectVisibleText(lbl));
+        if (text) return boundText(text, MAX_DESCRIPTOR_CHARS);
+      }
+    }
+    ancestor = ancestor.parentElement;
+  }
+  return undefined;
+}
+
 export function describeLiveTarget(
   el: Element,
   options?: {
@@ -970,6 +1042,11 @@ export function describeLiveTarget(
     rawText !== "" && rawText !== boundedName
       ? boundText(rawText, MAX_DESCRIPTOR_CHARS)
       : undefined;
+  const nearbyLabel =
+    boundedName === undefined && placeholder === undefined && testId === undefined
+      ? computeNearbyLabel(el, role)
+      : undefined;
+  const interactive = isInteractiveElement(el, role);
 
   const coreIdentity: CoreIdentityFields = {
     ...(role !== undefined ? { role } : {}),
@@ -1012,6 +1089,8 @@ export function describeLiveTarget(
     ...(role !== undefined ? { role } : {}),
     ...(boundedName !== undefined ? { name: boundedName } : {}),
     ...(boundedLabel !== undefined ? { label: boundedLabel } : {}),
+    ...(nearbyLabel !== undefined ? { nearbyLabel } : {}),
+    interactive,
     ...(placeholder !== undefined ? { placeholder } : {}),
     ...(boundedText !== undefined ? { text: boundedText } : {}),
     ...(inputPurpose !== undefined ? { inputPurpose } : {}),
@@ -1171,7 +1250,7 @@ export function computeAnchorDelta(
 
 function formatTargetSummaryLabel(target: SemanticTarget | undefined): string {
   if (!target) return "the screen";
-  const label = target.name ?? target.text ?? target.placeholder ?? target.testId ?? "";
+  const label = target.name ?? target.nearbyLabel ?? target.text ?? target.placeholder ?? target.testId ?? "";
   const role = target.role ?? "element";
   const base = label === "" ? role : `${role} ${JSON.stringify(boundText(label, 40))}`;
   const withWithin = target.within !== undefined

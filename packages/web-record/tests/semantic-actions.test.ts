@@ -524,4 +524,61 @@ describe("Semantic action recorder (sp-ui-action-1)", () => {
     expect(page2Actions[1]?.actionIndex).toBe(2);
     expect(page2Actions[1]?.startPath).toBe("/list.html");
   });
+
+  it("captures nearbyLabel on unlabeled form controls and interactive=false on static label clicks", async () => {
+    const exporter = new InMemorySpanExporter();
+    const sessionState = createWebSessionState("sess-nearby-001");
+    runtime = createBrowserRuntime(
+      {
+        ingestionKey: "agent-key",
+        otlpEndpoint: "https://collector.example.test/v1/traces",
+        serviceName: "ota-web",
+      },
+      sessionState,
+      exporter,
+    );
+    document.body.innerHTML = `
+      <div class="field">
+        <label>From</label>
+        <select id="fromCity">
+          <option value="LHR">London Heathrow (LHR)</option>
+          <option value="CDG">Paris Charles de Gaulle (CDG)</option>
+        </select>
+      </div>
+      <div id="static-hint">Phone Number * Email Address *</div>
+    `;
+
+    recorder = createSemanticActionRecorder({
+      getTracer: () => runtime!.tracer,
+      isRrwebActive: () => false,
+      inputCapture: "secrets-only",
+      getSessionId: () => "sess-nearby-001",
+    });
+
+    const select = document.getElementById("fromCity") as HTMLSelectElement;
+    select.value = "CDG";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    document.getElementById("static-hint")!.click();
+
+    recorder.flush();
+    await runtime.forceFlush();
+
+    const actions = parseSemanticActions(exporter);
+    expect(actions).toHaveLength(2);
+    expect(actions[0]?.verb).toMatchObject({
+      name: "select",
+      target: {
+        role: "combobox",
+        cssSelector: expect.stringMatching(/fromCity/),
+        nearbyLabel: "From",
+        interactive: true,
+      },
+    });
+    expect(actions[1]?.verb).toMatchObject({
+      name: "click",
+      target: {
+        interactive: false,
+      },
+    });
+  });
 });

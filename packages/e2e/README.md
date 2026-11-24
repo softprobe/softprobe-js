@@ -72,11 +72,3 @@ test("verifies backend outbound HTTP call", async ({ page, trace }) => {
   expect(emailCall.status).toBe(200);
 });
 ```
-
-## Session compiler (`@softprobe/e2e/session-compiler`)
-
-Compile recorded `softprobe.ui.action` (`sp-ui-action-1`) sessions into deterministic `@playwright/test` specs or zero-LLM `e2e` suites with pre-seeded `.e2e/cache/<sha256>.json` `trace-1` entries:
-
-```sh
-npx softprobe-compile-session --session-id <session-id> --runner e2e --out ./e2e-suite --json
-```
