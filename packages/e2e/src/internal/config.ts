@@ -14,7 +14,7 @@ export const DEFAULT_BLACKBOX_ENDPOINT = "https://explorer.softprobe.ai/api/thel
 const SOFTPROBE_OPTION_KEYS = new Set<string>([
   "sink",
   "endpoint",
-  "token",
+  "softprobeApiKey",
   "workspaceId",
   "tenantId",
   "appId",
@@ -250,8 +250,8 @@ export function resolveSinkConfig(
   if (options.sink !== undefined) {
     if (options.sink.kind === "blackbox") {
       const endpoint = normalizeEndpointUrl(options.sink.endpoint, "blackbox");
-      const token =
-        nonEmptyTrimmed(options.sink.token) ??
+      const softprobeApiKey =
+        nonEmptyTrimmed(options.sink.softprobeApiKey) ??
         nonEmptyTrimmed(env.SOFTPROBE_API_KEY);
       const workspaceId =
         nonEmptyTrimmed(options.sink.workspaceId) ??
@@ -261,17 +261,16 @@ export function resolveSinkConfig(
       return {
         kind: "blackbox",
         endpoint,
-        ...(token ? { token } : {}),
+        ...(softprobeApiKey ? { softprobeApiKey } : {}),
         ...(workspaceId ? { workspaceId } : {}),
         ...(explorerUrl ? { explorerUrl } : {}),
       };
     }
     if (options.sink.kind === "arex") {
       const endpoint = normalizeEndpointUrl(options.sink.endpoint, "arex");
-      const token =
-        nonEmptyTrimmed(options.sink.token) ??
-        nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
-        nonEmptyTrimmed(env.SP_TOKEN);
+      const softprobeApiKey =
+        nonEmptyTrimmed(options.sink.softprobeApiKey) ??
+        nonEmptyTrimmed(env.SOFTPROBE_API_KEY);
       const tenantId =
         nonEmptyTrimmed(options.sink.tenantId) ??
         nonEmptyTrimmed(env.SP_TENANT_ID);
@@ -280,7 +279,7 @@ export function resolveSinkConfig(
         kind: "arex",
         endpoint,
         appId: options.sink.appId.trim(),
-        ...(token ? { token } : {}),
+        ...(softprobeApiKey ? { softprobeApiKey } : {}),
         ...(tenantId ? { tenantId } : {}),
         ...(explorerUrl ? { explorerUrl } : {}),
       };
@@ -332,10 +331,9 @@ export function resolveSinkConfig(
       );
     }
     const endpoint = normalizeEndpointUrl(rawEndpoint, "arex");
-    const token =
-      nonEmptyTrimmed(options.token) ??
-      nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
-      nonEmptyTrimmed(env.SP_TOKEN);
+    const softprobeApiKey =
+      nonEmptyTrimmed(options.softprobeApiKey) ??
+      nonEmptyTrimmed(env.SOFTPROBE_API_KEY);
     const tenantId =
       nonEmptyTrimmed(options.tenantId) ?? nonEmptyTrimmed(env.SP_TENANT_ID);
     const explorerUrl = deriveExplorerBaseUrl(options.explorerUrl, endpoint, env);
@@ -343,7 +341,7 @@ export function resolveSinkConfig(
       kind: "arex",
       endpoint,
       appId,
-      ...(token ? { token } : {}),
+      ...(softprobeApiKey ? { softprobeApiKey } : {}),
       ...(tenantId ? { tenantId } : {}),
       ...(explorerUrl ? { explorerUrl } : {}),
     };
@@ -359,15 +357,15 @@ export function resolveSinkConfig(
     nonEmptyTrimmed(env.THELAKE_URL) ??
     DEFAULT_BLACKBOX_ENDPOINT;
   const endpoint = normalizeEndpointUrl(rawEndpoint, "blackbox");
-  const token =
-    nonEmptyTrimmed(options.token) ??
+  const softprobeApiKey =
+    nonEmptyTrimmed(options.softprobeApiKey) ??
     nonEmptyTrimmed(env.SOFTPROBE_API_KEY);
   const explorerUrl = deriveExplorerBaseUrl(options.explorerUrl, endpoint, env);
 
   return {
     kind: "blackbox",
     endpoint,
-    ...(token ? { token } : {}),
+    ...(softprobeApiKey ? { softprobeApiKey } : {}),
     ...(workspaceId ? { workspaceId } : {}),
     ...(explorerUrl ? { explorerUrl } : {}),
   };

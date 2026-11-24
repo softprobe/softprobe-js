@@ -175,7 +175,7 @@ export function buildSinkFromResolved(
   if (sinkConfig.kind === "blackbox") {
     return new BlackboxSink({
       endpoint: sinkConfig.endpoint,
-      token: sinkConfig.token,
+      softprobeApiKey: sinkConfig.softprobeApiKey,
       workspaceId: sinkConfig.workspaceId,
       explorerUrl: sinkConfig.explorerUrl,
     });
@@ -184,7 +184,7 @@ export function buildSinkFromResolved(
     return new ArexSink({
       endpoint: sinkConfig.endpoint,
       appId: sinkConfig.appId,
-      token: sinkConfig.token,
+      softprobeApiKey: sinkConfig.softprobeApiKey,
       tenantId: sinkConfig.tenantId,
       explorerUrl: sinkConfig.explorerUrl,
     });

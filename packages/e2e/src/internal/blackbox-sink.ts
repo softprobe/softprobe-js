@@ -652,7 +652,7 @@ export function parseBlackboxTracePayload(
 
 export interface BlackboxSinkOptions {
   readonly endpoint: string;
-  readonly token?: string;
+  readonly softprobeApiKey?: string;
   readonly workspaceId?: string;
   readonly explorerUrl?: string;
   readonly fetchImpl?: typeof fetch;
@@ -661,7 +661,7 @@ export interface BlackboxSinkOptions {
 export class BlackboxSink implements TraceSink {
   readonly kind = "blackbox" as const;
   readonly sinkUrl: string;
-  readonly #token: string | undefined;
+  readonly #softprobeApiKey: string | undefined;
   readonly #workspaceId: string | undefined;
   readonly #explorerUrl: string | undefined;
   readonly #fetchImpl: typeof fetch;
@@ -669,7 +669,7 @@ export class BlackboxSink implements TraceSink {
 
   constructor(options: BlackboxSinkOptions) {
     this.sinkUrl = options.endpoint.replace(/\/+$/, "");
-    this.#token = options.token;
+    this.#softprobeApiKey = options.softprobeApiKey;
     this.#workspaceId = options.workspaceId;
     this.#explorerUrl = options.explorerUrl;
     this.#fetchImpl = options.fetchImpl ?? fetch;
@@ -704,7 +704,7 @@ export class BlackboxSink implements TraceSink {
         method: "GET",
         headers: {
           Accept: "application/json",
-          ...formatAuthHeader(this.#token),
+          ...formatAuthHeader(this.#softprobeApiKey),
           ...(this.#workspaceId ? { "X-Workspace-Id": this.#workspaceId } : {}),
         },
         signal,

@@ -127,7 +127,7 @@ describe("@softprobe/e2e public contract and branded types", () => {
     expect(resolvedBlackbox).toEqual({
       kind: "blackbox",
       endpoint: "https://explorer-staging.softprobe.ai/api/thelake",
-      token: "api_key_test",
+      softprobeApiKey: "api_key_test",
       workspaceId: "a0528065-36ad-4650-a184-1e745c7c695d",
       explorerUrl: "https://explorer-staging.softprobe.ai",
     });
@@ -139,8 +139,7 @@ describe("@softprobe/e2e public contract and branded types", () => {
       },
       {
         SP_API_URL: "http://127.0.0.1:18090/",
-        SP_TOKEN: "sp_tok",
-        SOFTPROBE_TOKEN: "ignored-alias",
+        SOFTPROBE_API_KEY: "api_key_test",
         SP_TENANT_ID: "tenant_7",
       },
     );
@@ -148,14 +147,14 @@ describe("@softprobe/e2e public contract and branded types", () => {
       kind: "arex",
       endpoint: "http://127.0.0.1:18090",
       appId: "travel-ota",
-      token: "sp_tok",
+      softprobeApiKey: "api_key_test",
       tenantId: "tenant_7",
     });
 
     expect(
       resolveSinkConfig(
         { store: "blackbox", endpoint: "https://explorer-staging.softprobe.ai", workspaceId: "ws_test" },
-        { SOFTPROBE_TOKEN: "ignored-alias", SP_TOKEN: "ignored-jwt", INGESTION_KEY: "ingest-only" },
+        { INGESTION_KEY: "ingest-only" },
       ),
     ).toEqual({
       kind: "blackbox",
@@ -440,7 +439,7 @@ describe("BlackboxSink and ArexSink boundary parsers", () => {
     const seenHeaders: Headers[] = [];
     const sink = new BlackboxSink({
       endpoint: "https://explorer.softprobe.ai/api/thelake",
-      token: "bb_secret",
+      softprobeApiKey: "bb_secret",
       workspaceId: "ws_uuid",
       explorerUrl: "https://explorer.softprobe.ai",
       fetchImpl: async (_url, init) => {
@@ -512,7 +511,7 @@ describe("BlackboxSink and ArexSink boundary parsers", () => {
     const arexSink = new ArexSink({
       endpoint: "http://127.0.0.1:18090",
       appId: "travel-ota",
-      token: "arex_tok",
+      softprobeApiKey: "arex_tok",
       tenantId: "t_1",
       fetchImpl: async (url, init) => {
         requestedUrl = String(url);

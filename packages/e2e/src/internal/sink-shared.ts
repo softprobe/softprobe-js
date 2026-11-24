@@ -115,9 +115,9 @@ export function buildCapturedHttpPayload(input: {
   };
 }
 
-export function formatAuthHeader(token: string | undefined): Record<string, string> {
-  if (!token) return {};
-  const trimmed = token.trim();
+export function formatAuthHeader(softprobeApiKey: string | undefined): Record<string, string> {
+  if (!softprobeApiKey) return {};
+  const trimmed = softprobeApiKey.trim();
   if (!trimmed) return {};
   const value = /^Bearer\s+/i.test(trimmed) ? trimmed : `Bearer ${trimmed}`;
   return { Authorization: value };

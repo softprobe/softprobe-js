@@ -1318,7 +1318,7 @@ export function extractSessionBundleFromSpans(
 export interface FetchSessionSpansOptions {
   readonly endpoint: string;
   readonly sessionId: string;
-  readonly token?: string;
+  readonly softprobeApiKey?: string;
   readonly workspaceId?: string;
   readonly from?: string;
   readonly to?: string;
@@ -1393,7 +1393,7 @@ export async function fetchSessionSpansFromBlackbox(
   const fetchFn = options.fetchImpl ?? fetch;
   const headers: Record<string, string> = {
     Accept: "application/json",
-    ...formatAuthHeader(options.token),
+    ...formatAuthHeader(options.softprobeApiKey),
     ...(options.workspaceId ? { "X-Workspace-Id": options.workspaceId } : {}),
   };
 
