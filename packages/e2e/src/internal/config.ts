@@ -272,8 +272,7 @@ export function resolveSinkConfig(
       const token =
         nonEmptyTrimmed(options.sink.token) ??
         nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
-        nonEmptyTrimmed(env.SP_TOKEN) ??
-        nonEmptyTrimmed(env.SOFTPROBE_TOKEN);
+        nonEmptyTrimmed(env.SP_TOKEN);
       const tenantId =
         nonEmptyTrimmed(options.sink.tenantId) ??
         nonEmptyTrimmed(env.SP_TENANT_ID);
@@ -337,8 +336,7 @@ export function resolveSinkConfig(
     const token =
       nonEmptyTrimmed(options.token) ??
       nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
-      nonEmptyTrimmed(env.SP_TOKEN) ??
-      nonEmptyTrimmed(env.SOFTPROBE_TOKEN);
+      nonEmptyTrimmed(env.SP_TOKEN);
     const tenantId =
       nonEmptyTrimmed(options.tenantId) ?? nonEmptyTrimmed(env.SP_TENANT_ID);
     const explorerUrl = deriveExplorerBaseUrl(options.explorerUrl, endpoint, env);
