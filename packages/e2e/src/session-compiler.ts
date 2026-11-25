@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import type { DefinedTool } from "@e2e-dev/core/agent";
 import { AgentError, type AgentConfig, type ModelInstance } from "e2e";
 import { z } from "zod";
 import { parseBlackboxTracePayload } from "./internal/blackbox-sink.js";
@@ -394,8 +395,15 @@ export interface CompiledSessionStep {
   readonly backendTraces: readonly CompiledBackendTrace[];
 }
 
+export type SessionPlatform = "web" | "ios" | "android";
+export type MobileSessionPlatform = "ios" | "android";
+export type SessionCaptureSource = "web_sdk" | "host_agent" | "otel_sdk";
+
 export interface CompiledSessionBundle {
   readonly sessionId: string;
+  readonly platform: SessionPlatform;
+  readonly captureSource?: SessionCaptureSource;
+  readonly appBundleId?: string;
   readonly baseOrigin?: string;
   readonly steps: readonly CompiledSessionStep[];
   readonly secretSlots: readonly string[];
@@ -407,6 +415,8 @@ export interface ExtractSessionBundleOptions {
   readonly baseOrigin?: string;
   readonly explorerUrl?: string;
   readonly tracesByTraceId?: Readonly<Record<string, unknown>>;
+  readonly platform?: SessionPlatform;
+  readonly appBundleId?: string;
 }
 
 const rawKeyValueSchema = z.object({
@@ -1017,6 +1027,9 @@ export function extractSessionBundleFromSpans(
     "recorded-session";
 
   const uiActionServiceNames = new Set<string>();
+  const explicitBundleIds = new Set<string>();
+  const spanPlatforms = new Set<SessionPlatform>();
+  const spanCaptureSources = new Set<SessionCaptureSource>();
   const uiActionEntries: Array<{
     action: RecordedSemanticAction;
     readonly summary: string;
@@ -1029,7 +1042,54 @@ export function extractSessionBundleFromSpans(
     span.attributes["service_name"]?.trim() ||
     undefined;
 
+  const parsePlatformCandidate = (raw: string | undefined): SessionPlatform | undefined => {
+    const clean = raw?.trim().toLowerCase();
+    if (clean === "web" || clean === "ios" || clean === "android") return clean;
+    return undefined;
+  };
+
+  const parseCaptureSourceCandidate = (
+    raw: string | undefined,
+  ): SessionCaptureSource | undefined => {
+    const clean = raw?.trim().toLowerCase();
+    if (clean === "web_sdk" || clean === "host_agent" || clean === "otel_sdk") return clean;
+    return undefined;
+  };
+
+  const readExplicitBundleId = (span: NormalizedRawSpan): string | undefined => {
+    const keys = [
+      "app.bundle_id",
+      "sp.app.bundle_id",
+      "ios.app.bundle_id",
+      "android.app.package",
+      "bundle_id",
+    ];
+    for (const key of keys) {
+      const fromAttr = span.attributes[key]?.trim();
+      if (fromAttr) return fromAttr;
+      const fromRes = span.resourceAttributes[key]?.trim();
+      if (fromRes) return fromRes;
+    }
+    return undefined;
+  };
+
   for (const span of normalizedSpans) {
+    const bundleCandidate = readExplicitBundleId(span);
+    if (bundleCandidate) explicitBundleIds.add(bundleCandidate);
+
+    const platCandidate =
+      parsePlatformCandidate(span.attributes["sp.ui.action.platform"]) ??
+      parsePlatformCandidate(span.attributes["sp.platform"]) ??
+      parsePlatformCandidate(span.resourceAttributes["sp.platform"]) ??
+      parsePlatformCandidate(span.resourceAttributes["os.name"]);
+    if (platCandidate) spanPlatforms.add(platCandidate);
+
+    const srcCandidate =
+      parseCaptureSourceCandidate(span.attributes["sp.ui.action.capture_source"]) ??
+      parseCaptureSourceCandidate(span.attributes["sp.capture.source"]) ??
+      parseCaptureSourceCandidate(span.resourceAttributes["sp.capture.source"]);
+    if (srcCandidate) spanCaptureSources.add(srcCandidate);
+
     const isUiAction =
       span.name === "softprobe.ui.action" ||
       span.attributes["sp.observation.type"] === "ui_action";
@@ -1414,8 +1474,59 @@ export function extractSessionBundleFromSpans(
     };
   });
 
+  const inferredActionPlatform = foldedUiActionEntries.find(
+    (entry) => entry.action.platform !== undefined,
+  )?.action.platform;
+  const resolvedPlatform: SessionPlatform =
+    options.platform ??
+    inferredActionPlatform ??
+    [...spanPlatforms][0] ??
+    "web";
+
+  const resolvedCaptureSource: SessionCaptureSource | undefined =
+    foldedUiActionEntries.find((entry) => entry.action.captureSource !== undefined)?.action
+      .captureSource ?? [...spanCaptureSources][0];
+
+  const extractReverseDnsFromPath = (rawPath: string | undefined): string | undefined => {
+    if (!rawPath) return undefined;
+    const match = /^\/?([A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+){2,})(?:\s*\/.*)?$/.exec(
+      rawPath.trim(),
+    );
+    return match ? match[1] : undefined;
+  };
+
+  const pathDerivedBundleId =
+    resolvedPlatform === "ios" || resolvedPlatform === "android"
+      ? foldedUiActionEntries
+          .map(
+            (entry) =>
+              extractReverseDnsFromPath(entry.action.startPath) ??
+              extractReverseDnsFromPath(entry.action.endPath),
+          )
+          .find((val): val is string => val !== undefined)
+      : undefined;
+
+  const mobileServiceBundleId =
+    resolvedPlatform === "ios" || resolvedPlatform === "android"
+      ? [...uiActionServiceNames].find(
+          (svc) => svc !== "softprobe-mobile-host" && svc !== "unknown_service",
+        )
+      : [...uiActionServiceNames].find((svc) =>
+          /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+){2,}$/.test(svc),
+        );
+
+  const resolvedAppBundleId =
+    options.appBundleId?.trim() ||
+    [...explicitBundleIds][0] ||
+    pathDerivedBundleId ||
+    mobileServiceBundleId ||
+    undefined;
+
   return {
     sessionId: resolvedSessionId,
+    platform: resolvedPlatform,
+    ...(resolvedCaptureSource ? { captureSource: resolvedCaptureSource } : {}),
+    ...(resolvedAppBundleId ? { appBundleId: resolvedAppBundleId } : {}),
     ...(inferredOrigin ? { baseOrigin: inferredOrigin } : {}),
     steps,
     secretSlots: [...secretSlots].sort(),
@@ -1437,6 +1548,7 @@ export interface FetchSessionSpansOptions {
 export interface FetchedSessionPayload {
   readonly sessionId: string;
   readonly spans: readonly unknown[];
+  readonly rawSessionBody?: unknown;
   readonly tracesByTraceId: Readonly<Record<string, unknown>>;
 }
 
@@ -1546,15 +1658,39 @@ export async function fetchSessionSpansFromBlackbox(
     );
   }
 
-  const spans: unknown[] = Array.isArray(rawSessionBody)
-    ? rawSessionBody
-    : typeof rawSessionBody === "object" && rawSessionBody !== null
-      ? "spans" in rawSessionBody && Array.isArray(rawSessionBody.spans)
-        ? rawSessionBody.spans
-        : "observations" in rawSessionBody && Array.isArray(rawSessionBody.observations)
-          ? rawSessionBody.observations
-          : []
-      : [];
+  const extractFlattenedSpansFromEnvelope = (body: unknown): unknown[] => {
+    if (Array.isArray(body)) return body;
+    if (typeof body !== "object" || body === null) return [];
+    if ("spans" in body && Array.isArray(body.spans)) return body.spans;
+    if ("observations" in body && Array.isArray(body.observations)) return body.observations;
+    const parsedEnv = rawSessionInputEnvelopeSchema.safeParse(body);
+    if (!parsedEnv.success) return [];
+    const flattened: unknown[] = [];
+    for (const rs of [
+      ...(parsedEnv.data.trace?.resourceSpans ?? []),
+      ...(parsedEnv.data.batches ?? []),
+      ...(parsedEnv.data.resourceSpans ?? []),
+    ]) {
+      const resAttrs = normalizeAttributes(rs.resource?.attributes);
+      for (const scope of [
+        ...(rs.scopeSpans ?? []),
+        ...(rs.instrumentationLibrarySpans ?? []),
+      ]) {
+        for (const sp of scope.spans ?? []) {
+          flattened.push({
+            ...sp,
+            resource_attributes: {
+              ...resAttrs,
+              ...normalizeAttributes(sp.resource_attributes),
+            },
+          });
+        }
+      }
+    }
+    return flattened;
+  };
+
+  const spans: unknown[] = extractFlattenedSpansFromEnvelope(rawSessionBody);
 
   const preliminaryInput =
     spans.length > 0 ? { sessionId: options.sessionId, spans } : rawSessionBody;
@@ -1626,6 +1762,7 @@ export async function fetchSessionSpansFromBlackbox(
   return {
     sessionId: options.sessionId,
     spans,
+    rawSessionBody,
     tracesByTraceId,
   };
 }
@@ -2340,6 +2477,8 @@ export interface E2ECacheKeyInput {
   readonly projectId: string;
   readonly testId: string;
   readonly targetId: string;
+  readonly platform?: SessionPlatform;
+  readonly engineName?: "web" | "mobile";
   readonly appIdentity: string;
   readonly appEnvironment: "test" | "staging" | "production";
   readonly instruction: string;
@@ -2358,8 +2497,8 @@ export interface E2ECacheKeyResult {
     readonly cacheSchema: "trace-1";
     readonly policyVersion: "conservative/6";
     readonly project: string;
-    readonly platform: "web";
-    readonly engineName: "web";
+    readonly platform: SessionPlatform;
+    readonly engineName: "web" | "mobile";
     readonly engineSpiVersion: 1;
     readonly appIdentity: string;
     readonly agentContextDigest: string;
@@ -2387,6 +2526,8 @@ export function buildE2ECacheKeyAndHash(input: E2ECacheKeyInput): E2ECacheKeyRes
   });
   const agentName = input.agentName ?? "default";
   const agentContextDigest = sha256Hex(input.agentContext ?? "");
+  const resolvedPlatform: SessionPlatform = input.platform ?? "web";
+  const resolvedEngineName: "web" | "mobile" = input.engineName ?? "web";
 
   const fullKey = {
     specVersion: "0.1",
@@ -2394,8 +2535,8 @@ export function buildE2ECacheKeyAndHash(input: E2ECacheKeyInput): E2ECacheKeyRes
     project: projectHash,
     testId: input.testId,
     targetId: input.targetId,
-    platform: "web" as const,
-    engineName: "web" as const,
+    platform: resolvedPlatform,
+    engineName: resolvedEngineName,
     engineSpiVersion: E2E_ENGINE_SPI_VERSION,
     kind: "act" as const,
     callIndex: input.callIndex,
@@ -2416,8 +2557,8 @@ export function buildE2ECacheKeyAndHash(input: E2ECacheKeyInput): E2ECacheKeyRes
       cacheSchema: E2E_TRACE_SCHEMA_VERSION,
       policyVersion: E2E_REPLAY_POLICY_VERSION,
       project: projectHash,
-      platform: "web",
-      engineName: "web",
+      platform: resolvedPlatform,
+      engineName: resolvedEngineName,
       engineSpiVersion: E2E_ENGINE_SPI_VERSION,
       appIdentity: appIdentityHash,
       agentContextDigest,
@@ -2532,10 +2673,18 @@ function toE2EAnchorDescriptor(target: SemanticTarget): E2ETraceTargetDescriptor
     target.inputPurpose && VALID_E2E_INPUT_PURPOSES.has(target.inputPurpose)
       ? target.inputPurpose
       : undefined;
-  const value =
+  const explicitValue =
     inputPurpose === "password" || role === "checkbox" || role === "radio"
       ? undefined
       : boundStr(target.value, 300);
+  const value =
+    explicitValue !== undefined
+      ? explicitValue
+      : inputPurpose !== "password" &&
+          (role === "textbox" || role === "searchbox" || role === "combobox") &&
+          text !== undefined
+        ? text
+        : undefined;
   const states =
     target.states && target.states.length > 0
       ? [...new Set(target.states)].sort()
@@ -2906,6 +3055,22 @@ interface LogicalE2EStepGroup {
   readonly settleMs: number;
 }
 
+function isGoneDescriptorSubsumedByEnd(
+  gone: E2ETraceTargetDescriptor,
+  end: E2ETraceTargetDescriptor,
+): boolean {
+  if (gone.role !== undefined && gone.role !== end.role) return false;
+  if (gone.name !== undefined && gone.name !== end.name) return false;
+  if (gone.text !== undefined && gone.text !== end.text) return false;
+  if (gone.testId !== undefined && gone.testId !== end.testId) return false;
+  if (gone.placeholder !== undefined && gone.placeholder !== end.placeholder) return false;
+  if (gone.inputPurpose !== undefined && gone.inputPurpose !== end.inputPurpose) return false;
+  if (gone.value !== undefined && gone.value !== end.value) return false;
+  const goneStates = gone.states ? gone.states.join(",") : "";
+  const endStates = end.states ? end.states.join(",") : "";
+  return goneStates === endStates;
+}
+
 function foldGroupAnchors(steps: readonly CompiledSessionStep[]): {
   readonly endAnchors: readonly E2ETraceTargetDescriptor[];
   readonly goneAnchors: readonly E2ETraceTargetDescriptor[];
@@ -2936,6 +3101,11 @@ function foldGroupAnchors(steps: readonly CompiledSessionStep[]): {
     }
   }
 
+  const endValues = [...appeared.values()];
+  const nonSubsumedVanished = [...vanished.values()].filter(
+    (gone) => !endValues.some((end) => isGoneDescriptorSubsumedByEnd(gone, end)),
+  );
+
   const orderAnchors = (items: Iterable<E2ETraceTargetDescriptor>): E2ETraceTargetDescriptor[] => {
     const announcements: E2ETraceTargetDescriptor[] = [];
     const rest: E2ETraceTargetDescriptor[] = [];
@@ -2954,8 +3124,8 @@ function foldGroupAnchors(steps: readonly CompiledSessionStep[]): {
   };
 
   return {
-    endAnchors: orderAnchors(appeared.values()),
-    goneAnchors: orderAnchors(vanished.values()),
+    endAnchors: orderAnchors(endValues),
+    goneAnchors: orderAnchors(nonSubsumedVanished),
   };
 }
 
@@ -3371,10 +3541,890 @@ export function compileSessionToE2E(
   };
 }
 
+export interface CompileMobileE2EOptions {
+  readonly platform?: MobileSessionPlatform;
+  readonly bundleId?: string;
+  readonly projectId?: string;
+  readonly targetName?: string;
+  readonly targetUrl?: string;
+  readonly appIdentity?: string;
+  readonly appEnvironment?: "test" | "staging" | "production";
+  readonly testFile?: string;
+  readonly includeConfig?: boolean;
+  readonly sinkEndpoint?: string;
+  readonly workspaceId?: string;
+  readonly appId?: string;
+  readonly store?: "auto" | "blackbox" | "arex";
+  readonly correlationMode?: "proxy" | "session";
+  readonly createdAt?: string;
+}
+
+export interface CompiledMobileE2ESuite {
+  readonly runner: "e2e-mobile";
+  readonly platform: MobileSessionPlatform;
+  readonly bundleId: string;
+  readonly sessionId: string;
+  readonly projectId: string;
+  readonly targetName: string;
+  readonly appIdentity: string;
+  readonly testId: string;
+  readonly actionCount: number;
+  readonly outboundAssertionCount: number;
+  readonly files: readonly GeneratedFileArtifact[];
+  readonly cacheFiles: readonly GeneratedFileArtifact[];
+}
+
+const MOBILE_VOLATILE_ANCHOR_PATTERNS = [
+  /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}(?::?\d{2})?)?/,
+  /\b\d{4}-\d{2}-\d{2}\b/,
+  /\b\d{1,2}:\d{2}(?::\d{2})?(?:\s*[ap]\.?m\.?)?\b/i,
+  /\b\d+(?:\.\d+)?\s*ms\b/i,
+  /\b\d+\s*(?:s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?|d|days?)\s+ago\b/i,
+  /^\d{1,3}%$/,
+  /\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{16,}\b/,
+];
+
+function isVolatileMobileAnchorText(raw: string): boolean {
+  const clean = raw.replace(/\s+/g, " ").trim();
+  if (clean === "") return true;
+  return MOBILE_VOLATILE_ANCHOR_PATTERNS.some((re) => re.test(clean));
+}
+
+function normalizeMobileCacheLocation(
+  rawPath: string | undefined,
+  bundleId: string,
+): { readonly path: string; readonly matchesNativeScreenLocation: boolean } {
+  const trimmed = (rawPath ?? "").trim();
+  if (trimmed === "") {
+    return { path: bundleId, matchesNativeScreenLocation: false };
+  }
+  const withoutLeadingSlash = trimmed.startsWith("/") ? trimmed.slice(1).trim() : trimmed;
+  if (
+    withoutLeadingSlash === bundleId ||
+    withoutLeadingSlash.startsWith(`${bundleId} / `)
+  ) {
+    return { path: withoutLeadingSlash, matchesNativeScreenLocation: true };
+  }
+  if (!trimmed.startsWith("/") && !/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed)) {
+    return { path: trimmed, matchesNativeScreenLocation: true };
+  }
+  return { path: trimmed, matchesNativeScreenLocation: false };
+}
+
+function collectInputTargetNamesAndIds(steps: readonly CompiledSessionStep[]): {
+  readonly testIds: ReadonlySet<string>;
+  readonly typedLiterals: ReadonlySet<string>;
+} {
+  const testIds = new Set<string>();
+  const typedLiterals = new Set<string>();
+  for (const step of steps) {
+    if (step.action.verb.name === "fill") {
+      const t = step.action.verb.target;
+      if (t.testId) testIds.add(t.testId);
+      if (t.accessibilityId) testIds.add(t.accessibilityId);
+      if (step.action.verb.value.kind === "literal") {
+        const val = step.action.verb.value.value.trim();
+        if (val !== "") typedLiterals.add(val);
+      }
+    }
+  }
+  return { testIds, typedLiterals };
+}
+
+function selectMobileScreenAssertionLine(group: LogicalE2EStepGroup): string | undefined {
+  const { testIds: inputTestIds, typedLiterals } = collectInputTargetNamesAndIds(group.steps);
+  const priorityRoles = new Set(["alert", "alertdialog", "status", "heading", "dialog"]);
+
+  const isInputEcho = (target: {
+    readonly testId?: string;
+    readonly accessibilityId?: string;
+    readonly name?: string;
+    readonly text?: string;
+  }): boolean => {
+    const id = target.testId ?? target.accessibilityId;
+    if (id && inputTestIds.has(id)) return true;
+    const label = (target.text ?? target.name ?? "").trim();
+    if (label !== "" && typedLiterals.has(label)) return true;
+    return false;
+  };
+
+  for (const raw of group.rawEndTargets) {
+    if (isInputEcho(raw)) continue;
+    const label = boundStr(raw.text ?? raw.name, 300);
+    if (raw.role && priorityRoles.has(raw.role) && label && !isVolatileMobileAnchorText(label)) {
+      return `    await expect(screen.getByText(${JSON.stringify(label)})).toBeVisible();`;
+    }
+  }
+
+  for (const raw of group.rawEndTargets) {
+    if (isInputEcho(raw)) continue;
+    const label = boundStr(raw.text ?? raw.name, 300);
+    if (label && !isVolatileMobileAnchorText(label)) {
+      return `    await expect(screen.getByText(${JSON.stringify(label)})).toBeVisible();`;
+    }
+  }
+
+  for (const anc of group.endAnchors) {
+    if (isInputEcho(anc)) continue;
+    const label = boundStr(anc.text ?? anc.name, 300);
+    if (label && !isVolatileMobileAnchorText(label)) {
+      return `    await expect(screen.getByText(${JSON.stringify(label)})).toBeVisible();`;
+    }
+    if (anc.testId && !isMintedTestId(anc.testId)) {
+      return `    await expect(screen.getByTestId(${JSON.stringify(anc.testId)})).toBeVisible();`;
+    }
+  }
+
+  return undefined;
+}
+
+type MobileExecutionUnit =
+  | { readonly kind: "openLink"; readonly step: CompiledSessionStep; readonly url: string }
+  | { readonly kind: "actGroup"; readonly group: LogicalE2EStepGroup };
+
+function partitionMobileExecutionUnits(
+  steps: readonly CompiledSessionStep[],
+): MobileExecutionUnit[] {
+  const units: MobileExecutionUnit[] = [];
+  let pending: CompiledSessionStep[] = [];
+
+  const flushPending = () => {
+    if (pending.length === 0) return;
+    for (const group of groupStepsForE2E(pending)) {
+      units.push({ kind: "actGroup", group });
+    }
+    pending = [];
+  };
+
+  for (let idx = 0; idx < steps.length; idx += 1) {
+    const step = steps[idx]!;
+    if (idx === 0 && step.action.verb.name === "navigate" && step.action.verb.trigger === "load") {
+      continue;
+    }
+    if (step.action.verb.name === "openLink") {
+      flushPending();
+      units.push({ kind: "openLink", step, url: step.action.verb.url });
+      continue;
+    }
+    pending.push(step);
+  }
+  flushPending();
+  return units;
+}
+
+function emitBackendTraceAssertions(
+  backendTraces: readonly CompiledBackendTrace[],
+  unitPrefix: string,
+  userLiterals: ReadonlySet<string>,
+  targetLines: string[],
+): void {
+  for (let tIdx = 0; tIdx < backendTraces.length; tIdx += 1) {
+    const bt = backendTraces[tIdx]!;
+    for (let cIdx = 0; cIdx < bt.outboundCalls.length; cIdx += 1) {
+      const call = bt.outboundCalls[cIdx]!;
+      const varName = `outbound_${unitPrefix}_${tIdx}_${cIdx}`;
+      targetLines.push(
+        `    const ${varName} = await trace.outboundHttp({`,
+        `      triggeredBy: { method: ${JSON.stringify(bt.triggerMethod)}, path: ${formatTriggerPathMatcherCode(bt.triggerPathMatcher)} },`,
+        `      method: ${JSON.stringify(call.method)},`,
+        `      url: ${formatOutboundUrlMatcherCode(call.url)},`,
+        ...(call.status > 0 ? [`      status: ${call.status},`] : []),
+        `    });`,
+      );
+      if (call.status > 0) {
+        targetLines.push(`    expect(${varName}.status).toBe(${call.status});`);
+      }
+      const expectedAst = buildOutboundAssertionAst(call.request.json, userLiterals);
+      if (expectedAst?.kind === "object") {
+        targetLines.push(
+          `    expect(${varName}.request.json).toMatchObject(${formatOutboundAssertionCode(expectedAst)});`,
+        );
+      }
+    }
+  }
+}
+
+export function compileSessionToMobileE2E(
+  bundle: CompiledSessionBundle,
+  options: CompileMobileE2EOptions = {},
+): CompiledMobileE2ESuite {
+  const platform: MobileSessionPlatform =
+    options.platform ??
+    (bundle.platform === "ios" || bundle.platform === "android" ? bundle.platform : "android");
+  const bundleId =
+    options.bundleId?.trim() ||
+    bundle.appBundleId?.trim() ||
+    options.appIdentity?.trim() ||
+    "com.example.app";
+  const projectId = options.projectId?.trim() || "softprobe-compiled-e2e-mobile";
+  const targetName = options.targetName?.trim() || platform;
+  const appIdentity = options.appIdentity?.trim() || bundleId;
+  const appEnvironment = options.appEnvironment ?? "test";
+  const testRelPath = (options.testFile ?? "tests/recorded-session.e2e.ts")
+    .replace(/\\/g, "/")
+    .replace(/^\.\//, "");
+  const createdAt = options.createdAt ?? new Date().toISOString();
+
+  const captureSource =
+    bundle.captureSource ??
+    bundle.steps.find((s) => s.action.captureSource !== undefined)?.action.captureSource;
+  const correlationMode: "proxy" | "session" =
+    options.correlationMode ?? (captureSource === "otel_sdk" ? "session" : "proxy");
+  const defaultUpstreamOrigin =
+    options.targetUrl ?? bundle.baseOrigin ?? "http://127.0.0.1:3000";
+
+  const suiteTitle = "Recorded mobile session replay";
+  const testTitle = `replays session ${bundle.sessionId}`;
+  const fullTestId = formatE2ETestId(testRelPath, [suiteTitle, testTitle]);
+
+  const units = partitionMobileExecutionUnits(bundle.steps);
+  const extraFixtureFiles: GeneratedFileArtifact[] = [];
+  const cacheFiles: GeneratedFileArtifact[] = [];
+  const callCounts = new Map<string, number>();
+  const userLiterals = collectBundleUserLiterals(bundle);
+
+  const needsSecretsImport = bundle.secretSlots.length > 0;
+  const needsDeviceFixture = units.some((u) => u.kind === "openLink");
+
+  const testLines: string[] = [
+    `import {`,
+    `  describe,`,
+    `  expect,`,
+    ...(needsSecretsImport ? [`  secrets,`] : []),
+    `  test,`,
+    `} from "@softprobe/e2e/mobile";`,
+    ``,
+    `describe(${JSON.stringify(suiteTitle)}, () => {`,
+    `  test(${JSON.stringify(testTitle)}, async ({ app, agent, screen, trace${needsDeviceFixture ? ", device" : ""} }) => {`,
+    `    await app.open();`,
+  ];
+
+  let actGroupCounter = 0;
+  for (let uIdx = 0; uIdx < units.length; uIdx += 1) {
+    const unit = units[uIdx]!;
+    if (unit.kind === "openLink") {
+      testLines.push(`    await device.openLink(${JSON.stringify(unit.url)});`);
+      const singleStepGroup = groupStepsForE2E([unit.step])[0];
+      if (singleStepGroup) {
+        const screenLine = selectMobileScreenAssertionLine(singleStepGroup);
+        if (screenLine) testLines.push(screenLine);
+      }
+      emitBackendTraceAssertions(unit.step.backendTraces, `link_${uIdx}`, userLiterals, testLines);
+      continue;
+    }
+
+    const rawGroup = unit.group;
+    actGroupCounter += 1;
+    const actionProseList = rawGroup.steps
+      .filter((s) => s.action.verb.name !== "dialog")
+      .map((s) => s.summary);
+    const joinedProse = actionProseList.join(", then ");
+    const instruction =
+      joinedProse.length <= 240
+        ? `Step ${actGroupCounter}: ${joinedProse}`
+        : `Step ${actGroupCounter}: ${joinedProse.slice(0, 237)}...`;
+    const group: LogicalE2EStepGroup = { ...rawGroup, instruction };
+
+    const recordedActions = group.steps
+      .map((s) => convertSemanticStepToE2ERecordedAction(s, extraFixtureFiles))
+      .filter((item): item is E2ERecordedActionEntry => item !== null);
+    if (recordedActions.length === 0) continue;
+
+    const sigProbeKey = `${group.instruction}\u0000${group.secretSlots.join(",")}`;
+    const callIndex = callCounts.get(sigProbeKey) ?? 0;
+    callCounts.set(sigProbeKey, callIndex + 1);
+
+    const keyInfo = buildE2ECacheKeyAndHash({
+      projectId,
+      testId: fullTestId,
+      targetId: targetName,
+      platform,
+      engineName: "mobile",
+      appIdentity,
+      appEnvironment,
+      instruction: group.instruction,
+      secretSlots: group.secretSlots,
+      callIndex,
+    });
+
+    const normStart = normalizeMobileCacheLocation(group.startPath, bundleId);
+    const normEnd = normalizeMobileCacheLocation(group.endPath, bundleId);
+    const hasVerifiableDelta =
+      group.endAnchors.length > 0 ||
+      group.goneAnchors.length > 0 ||
+      normStart.path !== normEnd.path;
+    const requiresExecutorHandoff =
+      captureSource === "otel_sdk" ||
+      !normStart.matchesNativeScreenLocation ||
+      !normEnd.matchesNativeScreenLocation ||
+      !hasVerifiableDelta ||
+      !isRecordedActionListRelocatable(recordedActions);
+
+    const endWaitMs = Math.min(120_000, Math.max(10_000, Math.round(group.settleMs + 10_000)));
+    const traceEntryDoc = {
+      schemaVersion: E2E_TRACE_SCHEMA_VERSION,
+      createdAt,
+      payload: {
+        actions: recordedActions,
+        executor: {
+          name: "softprobe-session-compiler",
+          version: "0.1.0",
+        },
+        recordedFor: {
+          testId: fullTestId,
+          targetId: targetName,
+          instructionDigest: keyInfo.instructionDigest,
+          paramsDigest: keyInfo.paramsDigest,
+          callIndex,
+          agent: "default",
+        },
+        summary: group.instruction.slice(0, 300),
+        startPath: normStart.path,
+        endPath: normEnd.path,
+        ...(group.endAnchors.length > 0 ? { endAnchors: group.endAnchors } : {}),
+        ...(group.goneAnchors.length > 0 ? { goneAnchors: group.goneAnchors } : {}),
+        endWaitMs,
+        ...(requiresExecutorHandoff ? { truncated: true } : {}),
+        keyedBy: keyInfo.keyedBy,
+      },
+    };
+
+    cacheFiles.push({
+      relativePath: `.e2e/cache/${keyInfo.keyHash}.json`,
+      content: `${JSON.stringify(traceEntryDoc, null, 2)}\n`,
+    });
+
+    if (group.secretSlots.length > 0) {
+      const paramKeyBySlot = allocateE2ESecretParamKeys(group.secretSlots);
+      const paramEntries = group.secretSlots.map((slot) => {
+        const paramKey = paramKeyBySlot.get(slot)!;
+        return `${JSON.stringify(paramKey)}: secrets.get(${JSON.stringify(slot)})`;
+      });
+      testLines.push(
+        `    await agent.act(${JSON.stringify(group.instruction)}, {`,
+        `      params: { ${paramEntries.join(", ")} },`,
+        `    });`,
+      );
+    } else {
+      testLines.push(`    await agent.act(${JSON.stringify(group.instruction)});`);
+    }
+
+    const screenLine = selectMobileScreenAssertionLine(group);
+    if (screenLine) {
+      testLines.push(screenLine);
+    }
+
+    emitBackendTraceAssertions(group.backendTraces, String(uIdx), userLiterals, testLines);
+  }
+
+  testLines.push(`  });`, `});`, ``);
+
+  const files: GeneratedFileArtifact[] = [
+    ...extraFixtureFiles,
+    {
+      relativePath: testRelPath,
+      content: testLines.join("\n"),
+    },
+  ];
+
+  if (options.includeConfig !== false) {
+    const deviceEnvExpr =
+      platform === "android"
+        ? `process.env.SP_ANDROID_ADB_TARGET || process.env.E2E_MOBILE_DEVICE || undefined`
+        : `process.env.SP_IOS_DEVICE || process.env.E2E_MOBILE_DEVICE || process.env.SP_ANDROID_ADB_TARGET || undefined`;
+
+    const correlationLines =
+      correlationMode === "session"
+        ? [
+            `  correlation: {`,
+            `    mode: "session",`,
+            `  },`,
+          ]
+        : [
+            `  correlation: {`,
+            `    mode: "proxy",`,
+            `    upstreamOrigin: process.env.API_UPSTREAM_ORIGIN ?? ${JSON.stringify(defaultUpstreamOrigin)},`,
+            `  },`,
+          ];
+
+    const configLines: string[] = [
+      `import type { E2EConfig } from "e2e";`,
+      `import {`,
+      `  mobileTools,`,
+      `  softprobeCachedAgent,`,
+      `  softprobeMobile,`,
+      `  softprobeReporter,`,
+      `} from "@softprobe/e2e/mobile";`,
+      ``,
+    ];
+
+    if (bundle.secretSlots.length > 0) {
+      configLines.push(
+        `function requireSecretEnv(primaryEnv: string, fallbackEnv: string): string {`,
+        `  const value = process.env[primaryEnv] ?? process.env[fallbackEnv];`,
+        `  if (!value || value.trim() === "") {`,
+        `    throw new Error(\`Missing required secret environment variable: \${primaryEnv}\`);`,
+        `  }`,
+        `  return value;`,
+        `}`,
+        ``,
+      );
+    }
+
+    configLines.push(
+      `const mobileEngine = softprobeMobile({`,
+      `  platform: ${JSON.stringify(platform)},`,
+      `  device: ${deviceEnvExpr},`,
+      ...(options.sinkEndpoint
+        ? [`  endpoint: process.env.SOFTPROBE_SINK_ENDPOINT ?? ${JSON.stringify(options.sinkEndpoint)},`]
+        : []),
+      ...(options.workspaceId
+        ? [`  workspaceId: process.env.SOFTPROBE_WORKSPACE_ID ?? ${JSON.stringify(options.workspaceId)},`]
+        : []),
+      ...(options.appId
+        ? [`  appId: process.env.SOFTPROBE_APP_ID ?? ${JSON.stringify(options.appId)},`]
+        : []),
+      ...(options.store ? [`  store: ${JSON.stringify(options.store)},`] : []),
+      ...correlationLines,
+      `});`,
+      ``,
+      `export default {`,
+      `  projectId: ${JSON.stringify(projectId)},`,
+      `  workers: 1,`,
+      `  retries: 0,`,
+      `  tests: "tests/**/*.e2e.ts",`,
+      `  cache: {`,
+      `    dir: ".e2e/cache",`,
+      `    mode: "read-only",`,
+      `  },`,
+      `  agents: {`,
+      `    default: softprobeCachedAgent({`,
+      `      tools: mobileTools(mobileEngine),`,
+      `    }),`,
+      `  },`,
+      ...(bundle.secretSlots.length > 0
+        ? [
+            `  secrets: {`,
+            ...bundle.secretSlots.map(
+              (slot) =>
+                `    ${JSON.stringify(slot)}: () => requireSecretEnv(${JSON.stringify(`SP_SECRET_${slot}`)}, ${JSON.stringify(`E2E_SECRET_${slot}`)}),`,
+            ),
+            `  },`,
+          ]
+        : []),
+      `  targets: [`,
+      `    {`,
+      `      name: ${JSON.stringify(targetName)},`,
+      `      engine: mobileEngine,`,
+      `      app: {`,
+      `        bundleId: ${JSON.stringify(bundleId)},`,
+      ...(appIdentity !== bundleId ? [`        identity: ${JSON.stringify(appIdentity)},`] : []),
+      ...(appEnvironment !== "test"
+        ? [`        environment: ${JSON.stringify(appEnvironment)},`]
+        : []),
+      `      },`,
+      `    },`,
+      `  ],`,
+      `  reporters: [softprobeReporter()],`,
+      `} satisfies E2EConfig;`,
+      ``,
+    );
+
+    files.push({
+      relativePath: "e2e.config.ts",
+      content: configLines.join("\n"),
+    });
+  }
+
+  return {
+    runner: "e2e-mobile",
+    platform,
+    bundleId,
+    sessionId: bundle.sessionId,
+    projectId,
+    targetName,
+    appIdentity,
+    testId: fullTestId,
+    actionCount: bundle.steps.length,
+    outboundAssertionCount: bundle.outboundAssertionCount,
+    files,
+    cacheFiles,
+  };
+}
+
+export interface CompileMaestroOptions {
+  readonly bundleId?: string;
+  readonly platform?: MobileSessionPlatform;
+  readonly flowFile?: string;
+  readonly clearState?: boolean;
+  readonly targetUrl?: string;
+  readonly launchArguments?: Readonly<Record<string, string | number | boolean>>;
+}
+
+export interface CompiledMaestroSuite {
+  readonly runner: "maestro";
+  readonly platform: MobileSessionPlatform;
+  readonly bundleId: string;
+  readonly sessionId: string;
+  readonly actionCount: number;
+  readonly outboundAssertionCount: number;
+  readonly files: readonly GeneratedFileArtifact[];
+}
+
+type MaestroSelectorSpec =
+  | { readonly kind: "id"; readonly id: string; readonly index?: number }
+  | { readonly kind: "text"; readonly text: string; readonly index?: number }
+  | { readonly kind: "point"; readonly point: string };
+
+function isResourceIdCompatible(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (trimmed === "" || isMintedTestId(trimmed)) return false;
+  return /^[A-Za-z0-9._:/-]+$/.test(trimmed);
+}
+
+function resolveMaestroSelector(
+  target: SemanticTarget,
+  fallbackPoint?: { readonly x: number; readonly y: number },
+  viewport?: { readonly width: number; readonly height: number },
+): MaestroSelectorSpec | undefined {
+  const index =
+    target.position && target.position.of >= 2 ? target.position.index : undefined;
+  const candidateId = target.accessibilityId ?? target.testId;
+  if (candidateId && isResourceIdCompatible(candidateId)) {
+    return {
+      kind: "id",
+      id: candidateId.trim(),
+      ...(index !== undefined ? { index } : {}),
+    };
+  }
+
+  const candidateText = boundStr(
+    target.name ??
+      target.label ??
+      target.text ??
+      target.placeholder ??
+      target.nearbyLabel,
+    300,
+  );
+  if (candidateText) {
+    return {
+      kind: "text",
+      text: candidateText,
+      ...(index !== undefined ? { index } : {}),
+    };
+  }
+
+  if (fallbackPoint && viewport && viewport.width > 0 && viewport.height > 0) {
+    const pctX = Math.min(100, Math.max(0, Math.round((fallbackPoint.x / viewport.width) * 100)));
+    const pctY = Math.min(100, Math.max(0, Math.round((fallbackPoint.y / viewport.height) * 100)));
+    return { kind: "point", point: `${pctX}%,${pctY}%` };
+  }
+
+  return undefined;
+}
+
+function formatYamlScalar(value: string | number | boolean): string {
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+function emitMaestroSelectorCommand(
+  commandName: string,
+  selector: MaestroSelectorSpec,
+  lines: string[],
+): void {
+  if (selector.kind === "text" && selector.index === undefined) {
+    lines.push(`- ${commandName}: ${formatYamlScalar(selector.text)}`);
+    return;
+  }
+  lines.push(`- ${commandName}:`);
+  if (selector.kind === "id") {
+    lines.push(`    id: ${formatYamlScalar(selector.id)}`);
+    if (selector.index !== undefined) {
+      lines.push(`    index: ${selector.index}`);
+    }
+    return;
+  }
+  if (selector.kind === "text") {
+    lines.push(`    text: ${formatYamlScalar(selector.text)}`);
+    if (selector.index !== undefined) {
+      lines.push(`    index: ${selector.index}`);
+    }
+    return;
+  }
+  lines.push(`    point: ${formatYamlScalar(selector.point)}`);
+}
+
+function selectMaestroEndAssertions(step: CompiledSessionStep): MaestroSelectorSpec[] {
+  const { testIds: inputTestIds, typedLiterals } = collectInputTargetNamesAndIds([step]);
+  const priorityRoles = new Set(["alert", "alertdialog", "status", "heading", "dialog", "text"]);
+  const ordered = [
+    ...step.action.endAnchors.filter((a) => a.role !== undefined && priorityRoles.has(a.role)),
+    ...step.action.endAnchors.filter((a) => a.role === undefined || !priorityRoles.has(a.role)),
+  ];
+
+  const results: MaestroSelectorSpec[] = [];
+  const seen = new Set<string>();
+
+  for (const anchor of ordered) {
+    const rawId = anchor.accessibilityId ?? anchor.testId;
+    if (rawId && inputTestIds.has(rawId)) continue;
+
+    const textLabel = boundStr(anchor.text ?? anchor.name ?? anchor.label, 300);
+    if (textLabel) {
+      if (typedLiterals.has(textLabel) || isVolatileMobileAnchorText(textLabel)) continue;
+      const key = `text:${textLabel}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push({ kind: "text", text: textLabel });
+      }
+    } else if (rawId && isResourceIdCompatible(rawId)) {
+      const key = `id:${rawId.trim()}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push({ kind: "id", id: rawId.trim() });
+      }
+    }
+
+    if (results.length >= 2) break;
+  }
+
+  return results;
+}
+
+export function compileSessionToMaestro(
+  bundle: CompiledSessionBundle,
+  options: CompileMaestroOptions = {},
+): CompiledMaestroSuite {
+  const platform: MobileSessionPlatform =
+    options.platform ??
+    (bundle.platform === "ios" || bundle.platform === "android" ? bundle.platform : "android");
+  const bundleId =
+    options.bundleId?.trim() || bundle.appBundleId?.trim() || "com.example.app";
+  const flowRelPath = (options.flowFile ?? ".maestro/recorded-session.yaml")
+    .replace(/\\/g, "/")
+    .replace(/^\.\//, "");
+  const clearState = options.clearState ?? true;
+
+  const captureSource =
+    bundle.captureSource ??
+    bundle.steps.find((s) => s.action.captureSource !== undefined)?.action.captureSource;
+  const defaultLaunchArgs: Record<string, string | number | boolean> = {};
+  if (options.launchArguments) {
+    Object.assign(defaultLaunchArgs, options.launchArguments);
+  } else if (options.targetUrl?.trim()) {
+    const key = platform === "ios" ? "API_BASE_URL" : "api_base_url";
+    defaultLaunchArgs[key] = options.targetUrl.trim();
+  } else if (captureSource === "host_agent" && bundle.baseOrigin?.trim()) {
+    const key = platform === "ios" ? "API_BASE_URL" : "api_base_url";
+    defaultLaunchArgs[key] = bundle.baseOrigin.trim();
+  }
+
+  const lines: string[] = [
+    `appId: ${/^[A-Za-z0-9._-]+$/.test(bundleId) ? bundleId : formatYamlScalar(bundleId)}`,
+    `---`,
+  ];
+
+  const argEntries = Object.entries(defaultLaunchArgs);
+  if (!clearState && argEntries.length === 0) {
+    lines.push(`- launchApp`);
+  } else {
+    lines.push(`- launchApp:`);
+    if (clearState) {
+      lines.push(`    clearState: true`);
+    }
+    if (argEntries.length > 0) {
+      lines.push(`    arguments:`);
+      for (const [key, val] of argEntries) {
+        const safeKey = /^[A-Za-z0-9_.-]+$/.test(key) ? key : formatYamlScalar(key);
+        lines.push(`      ${safeKey}: ${formatYamlScalar(val)}`);
+      }
+    }
+  }
+
+  for (let idx = 0; idx < bundle.steps.length; idx += 1) {
+    const step = bundle.steps[idx]!;
+    const verb = step.action.verb;
+    const viewport = step.action.viewport;
+
+    switch (verb.name) {
+      case "navigate": {
+        if (idx === 0 && verb.trigger === "load") {
+          break;
+        }
+        if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(verb.url)) {
+          lines.push(`- openLink: ${formatYamlScalar(verb.url)}`);
+        }
+        break;
+      }
+      case "click": {
+        const sel = resolveMaestroSelector(verb.target, verb.point, viewport);
+        if (sel) emitMaestroSelectorCommand("tapOn", sel, lines);
+        break;
+      }
+      case "dblclick": {
+        const sel = resolveMaestroSelector(verb.target, verb.point, viewport);
+        if (sel) emitMaestroSelectorCommand("doubleTapOn", sel, lines);
+        break;
+      }
+      case "contextmenu":
+      case "longPress": {
+        const pt = "point" in verb ? verb.point : undefined;
+        const sel = resolveMaestroSelector(verb.target, pt, viewport);
+        if (sel) emitMaestroSelectorCommand("longPressOn", sel, lines);
+        break;
+      }
+      case "hover":
+      case "resize":
+      case "upload":
+        break;
+      case "fill": {
+        const sel = resolveMaestroSelector(verb.target, undefined, viewport);
+        if (sel) {
+          emitMaestroSelectorCommand("tapOn", sel, lines);
+        }
+        if (verb.value.kind === "secret") {
+          lines.push(`- inputText: ${formatYamlScalar(`\${SP_SECRET_${verb.value.slot}}`)}`);
+        } else if (verb.value.kind === "literal") {
+          lines.push(`- inputText: ${formatYamlScalar(verb.value.value)}`);
+        } else {
+          throw new Error(
+            `Cannot compile redacted input at actionIndex=${step.action.actionIndex}; enable inputCapture: "secrets-only" when recording`,
+          );
+        }
+        if (bundle.steps[idx + 1]?.action.verb.name !== "dismissKeyboard") {
+          lines.push(`- hideKeyboard`);
+        }
+        break;
+      }
+      case "select": {
+        const sel = resolveMaestroSelector(verb.target, undefined, viewport);
+        if (sel) emitMaestroSelectorCommand("tapOn", sel, lines);
+        const optionText =
+          verb.optionLabel ??
+          (verb.value.kind === "literal"
+            ? verb.value.value
+            : verb.value.kind === "secret"
+              ? `\${SP_SECRET_${verb.value.slot}}`
+              : undefined);
+        if (!optionText) {
+          throw new Error(
+            `Cannot compile redacted select at actionIndex=${step.action.actionIndex}; enable inputCapture: "secrets-only" when recording`,
+          );
+        }
+        lines.push(`- tapOn: ${formatYamlScalar(optionText)}`);
+        break;
+      }
+      case "check": {
+        const sel = resolveMaestroSelector(verb.target, undefined, viewport);
+        if (sel) emitMaestroSelectorCommand("tapOn", sel, lines);
+        break;
+      }
+      case "press": {
+        if (verb.target) {
+          const sel = resolveMaestroSelector(verb.target, undefined, viewport);
+          if (sel) emitMaestroSelectorCommand("tapOn", sel, lines);
+        }
+        if (verb.key === "Backspace") {
+          lines.push(`- eraseText: 1`);
+        } else {
+          lines.push(`- pressKey: ${formatYamlScalar(verb.key)}`);
+        }
+        break;
+      }
+      case "drag": {
+        const src = resolveMaestroSelector(verb.source, undefined, viewport);
+        if (src) emitMaestroSelectorCommand("longPressOn", src, lines);
+        break;
+      }
+      case "scroll": {
+        if (verb.direction === "down" && !verb.target) {
+          for (let r = 0; r < verb.times; r += 1) {
+            lines.push(`- scroll`);
+          }
+        } else {
+          const swipeDir =
+            verb.direction === "down"
+              ? "UP"
+              : verb.direction === "up"
+                ? "DOWN"
+                : verb.direction === "right"
+                  ? "LEFT"
+                  : "RIGHT";
+          for (let r = 0; r < verb.times; r += 1) {
+            lines.push(`- swipe:`);
+            lines.push(`    direction: ${swipeDir}`);
+          }
+        }
+        break;
+      }
+      case "swipe": {
+        const targetSel = verb.target
+          ? resolveMaestroSelector(verb.target, undefined, viewport)
+          : undefined;
+        lines.push(`- swipe:`);
+        if (targetSel && targetSel.kind === "id") {
+          lines.push(`    from:`);
+          lines.push(`      id: ${formatYamlScalar(targetSel.id)}`);
+        } else if (targetSel && targetSel.kind === "text") {
+          lines.push(`    from:`);
+          lines.push(`      text: ${formatYamlScalar(targetSel.text)}`);
+        }
+        lines.push(`    direction: ${verb.direction.toUpperCase()}`);
+        break;
+      }
+      case "dialog": {
+        const fallbackLabel = verb.accepted ? "OK" : "Cancel";
+        lines.push(`- tapOn:`);
+        lines.push(`    text: ${formatYamlScalar(fallbackLabel)}`);
+        lines.push(`    optional: true`);
+        break;
+      }
+      case "back":
+        lines.push(`- back`);
+        break;
+      case "dismissKeyboard":
+        lines.push(`- hideKeyboard`);
+        break;
+      case "openLink":
+        lines.push(`- openLink: ${formatYamlScalar(verb.url)}`);
+        break;
+      default: {
+        const _exhaustive: never = verb;
+        return _exhaustive;
+      }
+    }
+
+    for (const assertionSel of selectMaestroEndAssertions(step)) {
+      emitMaestroSelectorCommand("assertVisible", assertionSel, lines);
+    }
+  }
+
+  lines.push(``);
+
+  return {
+    runner: "maestro",
+    platform,
+    bundleId,
+    sessionId: bundle.sessionId,
+    actionCount: bundle.steps.length,
+    outboundAssertionCount: bundle.outboundAssertionCount,
+    files: [
+      {
+        relativePath: flowRelPath,
+        content: lines.join("\n"),
+      },
+    ],
+  };
+}
+
 export interface SoftprobeCachedAgentOptions {
   readonly model?: ModelInstance;
   readonly judge?: ModelInstance;
   readonly context?: string;
+  readonly tools?: Readonly<Record<string, DefinedTool>>;
   readonly cacheDir?: string;
 }
 
@@ -3661,7 +4711,9 @@ function projectObservedCandidates(
       !(role !== undefined && CONTENT_NAMED_ANCHOR_ROLES.has(role) && name !== undefined)
         ? rawText
         : undefined;
-    const testId = boundStr(testIdByNodeId.get(node.id), 300);
+    const rawNodeTestId =
+      "testId" in node && typeof node.testId === "string" ? node.testId : undefined;
+    const testId = boundStr(rawNodeTestId ?? testIdByNodeId.get(node.id), 300);
     const placeholder = boundStr(node.attributes?.["placeholder"], 300);
     const inputPurpose =
       node.inputPurpose && VALID_E2E_INPUT_PURPOSES.has(node.inputPurpose)
@@ -3686,6 +4738,17 @@ function projectObservedCandidates(
       ...(activeStates.length > 0 ? { states: activeStates } : {}),
     };
   });
+}
+
+function testIdsMatchAcrossMobileAndWeb(
+  candidateTestId: string | undefined,
+  expectedTestId: string,
+): boolean {
+  if (candidateTestId === undefined) return false;
+  if (candidateTestId === expectedTestId) return true;
+  if (candidateTestId.endsWith(`:id/${expectedTestId}`)) return true;
+  if (expectedTestId.endsWith(`:id/${candidateTestId}`)) return true;
+  return false;
 }
 
 function matchTargetInObservedCandidates(
@@ -3734,7 +4797,12 @@ function matchTargetInObservedCandidates(
     const matches = scoped.filter((cand) => {
       if (tier.role !== undefined && cand.role !== tier.role) return false;
       if (tier.name !== undefined && cand.name !== tier.name) return false;
-      if (tier.testId !== undefined && cand.testId !== tier.testId) return false;
+      if (
+        tier.testId !== undefined &&
+        !testIdsMatchAcrossMobileAndWeb(cand.testId, tier.testId)
+      ) {
+        return false;
+      }
       if (tier.placeholder !== undefined && cand.placeholder !== tier.placeholder) return false;
       if (tier.inputPurpose !== undefined && cand.inputPurpose !== tier.inputPurpose) return false;
       if (includeText && tier.text !== undefined && cand.text !== tier.text) return false;
@@ -3761,10 +4829,25 @@ function anchorHoldsOnCandidates(
 ): boolean {
   const expectedStates = anchor.states ? anchor.states.join(",") : "";
   return candidates.some((cand) => {
-    if (anchor.role !== undefined && cand.role !== anchor.role) return false;
+    const roleMatches =
+      anchor.role === undefined ||
+      cand.role === anchor.role ||
+      (anchor.role === "status" && cand.role === "text");
+    if (!roleMatches) return false;
     if (anchor.name !== undefined && cand.name !== anchor.name) return false;
-    if (anchor.text !== undefined && cand.text !== anchor.text) return false;
-    if (anchor.testId !== undefined && cand.testId !== anchor.testId) return false;
+    if (
+      anchor.text !== undefined &&
+      cand.text !== anchor.text &&
+      cand.name !== anchor.text
+    ) {
+      return false;
+    }
+    if (
+      anchor.testId !== undefined &&
+      !testIdsMatchAcrossMobileAndWeb(cand.testId, anchor.testId)
+    ) {
+      return false;
+    }
     if (anchor.placeholder !== undefined && cand.placeholder !== anchor.placeholder) return false;
     if (anchor.inputPurpose !== undefined && cand.inputPurpose !== anchor.inputPurpose) return false;
     if (anchor.value !== undefined && cand.value !== anchor.value) return false;
@@ -3799,8 +4882,18 @@ function normalizeRoutePathnameForReplay(rawPath: string): string {
   return `/${normalizedSegments.join("/")}`;
 }
 
+function isOpaqueDeviceLocation(raw: string): boolean {
+  return !raw.startsWith("/") && !/^https?:\/\//i.test(raw);
+}
+
 function sameRoutePathname(actualPath: string | undefined, expectedPath: string): boolean {
   if (!actualPath) return false;
+  if (isOpaqueDeviceLocation(actualPath) && isOpaqueDeviceLocation(expectedPath)) {
+    return actualPath.trim() === expectedPath.trim();
+  }
+  if (isOpaqueDeviceLocation(actualPath) && expectedPath.startsWith("/")) {
+    return true;
+  }
   return (
     normalizeRoutePathnameForReplay(actualPath) ===
     normalizeRoutePathnameForReplay(expectedPath)
@@ -3906,6 +4999,7 @@ export function softprobeCachedAgent(
       model: options.model,
       ...(options.judge !== undefined ? { judge: options.judge } : {}),
       ...(options.context !== undefined ? { context: options.context } : {}),
+      ...(options.tools !== undefined ? { tools: options.tools } : {}),
     };
   }
   return {

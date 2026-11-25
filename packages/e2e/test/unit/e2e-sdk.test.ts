@@ -65,7 +65,7 @@ describe("@softprobe/e2e public contract and branded types", () => {
     expect(isAgentError).toBe(upstreamIsAgentError);
   });
 
-  it("exposes root, playwright, and mobile subpaths in package.json exports", () => {
+  it("exposes root, playwright, mobile, session-compiler, and compile-session CLI subpaths in package.json exports", () => {
     const pkgDir = path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
       "../..",
@@ -87,6 +87,8 @@ describe("@softprobe/e2e public contract and branded types", () => {
         ".",
         "./playwright",
         "./mobile",
+        "./session-compiler",
+        "./bin/compile-session.js",
       ]);
     }
   });

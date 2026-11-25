@@ -245,7 +245,12 @@ function collectKnownSecrets(
 
   for (const [key, val] of Object.entries(env ?? {})) {
     if (typeof val !== "string" || val.length === 0) continue;
-    if (key.startsWith("E2E_SECRET_") && key.length > "E2E_SECRET_".length) {
+    if (key.startsWith("SP_SECRET_") && key.length > "SP_SECRET_".length) {
+      const slot = key.slice("SP_SECRET_".length);
+      if (!valueToSlot.has(val)) {
+        valueToSlot.set(val, slot);
+      }
+    } else if (key.startsWith("E2E_SECRET_") && key.length > "E2E_SECRET_".length) {
       const slot = key.slice("E2E_SECRET_".length);
       if (!valueToSlot.has(val)) {
         valueToSlot.set(val, slot);
@@ -538,6 +543,7 @@ function projectEngineSnapshot(
       ...(fullTarget.role !== undefined ? { role: fullTarget.role } : {}),
       ...(fullTarget.name !== undefined ? { name: fullTarget.name } : {}),
       ...(fullTarget.text !== undefined ? { text: fullTarget.text } : {}),
+      ...(fullTarget.value !== undefined ? { value: fullTarget.value } : {}),
       ...(fullTarget.states !== undefined ? { states: fullTarget.states } : {}),
     };
     const key = JSON.stringify([
@@ -545,6 +551,7 @@ function projectEngineSnapshot(
       anchorTarget.testId ?? "",
       anchorTarget.name ?? "",
       anchorTarget.text ?? "",
+      anchorTarget.value ?? "",
       anchorTarget.states?.join(",") ?? "",
     ]);
     if (!seenAnchorKeys.has(key)) {
@@ -560,6 +567,30 @@ function projectEngineSnapshot(
     focusedNode,
     allEntries,
   };
+}
+
+function anchorSubsumedByTarget(
+  candidateGone: SemanticTarget,
+  afterTarget: SemanticTarget,
+): boolean {
+  if (candidateGone.role !== undefined && candidateGone.role !== afterTarget.role) {
+    return false;
+  }
+  if (candidateGone.testId !== undefined && candidateGone.testId !== afterTarget.testId) {
+    return false;
+  }
+  if (candidateGone.name !== undefined && candidateGone.name !== afterTarget.name) {
+    return false;
+  }
+  if (candidateGone.text !== undefined && candidateGone.text !== afterTarget.text) {
+    return false;
+  }
+  if (candidateGone.value !== undefined && candidateGone.value !== afterTarget.value) {
+    return false;
+  }
+  const goneStates = candidateGone.states?.join(",") ?? "";
+  const afterStates = afterTarget.states?.join(",") ?? "";
+  return goneStates === afterStates;
 }
 
 function computeAnchorDiff(
@@ -582,7 +613,10 @@ function computeAnchorDiff(
 
   const goneAnchors: SemanticTarget[] = [];
   for (const item of before) {
-    if (!afterKeys.has(item.key)) {
+    if (
+      !afterKeys.has(item.key) &&
+      !after.some((afterItem) => anchorSubsumedByTarget(item.target, afterItem.target))
+    ) {
       goneAnchors.push(item.target);
       if (goneAnchors.length >= MAX_ANCHORS) break;
     }

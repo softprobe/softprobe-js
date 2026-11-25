@@ -52,7 +52,12 @@ import {
   type AdbReverseHandle,
   type MobileProxyHandle,
 } from "./internal/mobile-proxy.js";
-import { stageVerifiedTraceRecord } from "./internal/reporter.js";
+import {
+  softprobeReporter,
+  stageVerifiedTraceRecord,
+  type SoftprobeTracesReport,
+  type VerifiedTraceSummaryEntry,
+} from "./internal/reporter.js";
 import type { TraceSink } from "./internal/sink-shared.js";
 import {
   createBlackboxSessionTriggerSource,
@@ -74,8 +79,11 @@ export {
   expect,
   secrets,
   softprobeCachedAgent,
+  softprobeReporter,
   unique,
   type SoftprobeCachedAgentOptions,
+  type SoftprobeTracesReport,
+  type VerifiedTraceSummaryEntry,
 };
 export type {
   Device,
