@@ -11,7 +11,7 @@ import {
   createBlackboxSessionTriggerSource,
   extractSessionTriggersFromPayload,
 } from "../../e2e/dist/internal/trigger-source.js";
-import { extractSessionBundleFromSpans } from "../../e2e/dist/session-compiler.js";
+import { recordedSemanticActionSchema } from "../../e2e/dist/internal/ui-action-schema.js";
 import {
   createReactNativeActionRecorder,
   initSoftprobeReactNative,
@@ -31,6 +31,53 @@ function decodeActionPayload(raw: unknown): RecordedSemanticAction {
   const str = String(raw);
   expect(str.startsWith("sp.json:")).toBe(true);
   return JSON.parse(str.slice("sp.json:".length)) as RecordedSemanticAction;
+}
+
+function extractValidatedUiActionsFromOtlp(
+  resourceSpans: readonly unknown[],
+  expectedSessionId: string,
+) {
+  const actions: ReturnType<typeof recordedSemanticActionSchema.parse>[] = [];
+  for (const rs of resourceSpans) {
+    const scopeSpans =
+      (
+        rs as {
+          readonly scopeSpans?: ReadonlyArray<{
+            readonly spans?: ReadonlyArray<{
+              readonly name?: string;
+              readonly attributes?: ReadonlyArray<{
+                readonly key?: string;
+                readonly value?: {
+                  readonly stringValue?: string;
+                  readonly intValue?: string | number;
+                };
+              }>;
+            }>;
+          }>;
+        }
+      ).scopeSpans ?? [];
+    for (const ss of scopeSpans) {
+      for (const sp of ss.spans ?? []) {
+        if (sp.name !== "softprobe.ui.action") continue;
+        const attrs = Object.fromEntries(
+          (sp.attributes ?? []).map((kv) => [
+            kv.key ?? "",
+            kv.value?.stringValue ?? String(kv.value?.intValue ?? ""),
+          ]),
+        );
+        expect(attrs["sp.session.id"]).toBe(expectedSessionId);
+        expect(attrs["sp.ui.action.schema"]).toBe("sp-ui-action-1");
+        const rawPayload = attrs["sp.ui.action.payload"] ?? "";
+        expect(rawPayload.startsWith("sp.json:")).toBe(true);
+        actions.push(
+          recordedSemanticActionSchema.parse(
+            JSON.parse(rawPayload.slice("sp.json:".length)),
+          ),
+        );
+      }
+    }
+  }
+  return actions.sort((a, b) => a.actionIndex - b.actionIndex);
 }
 
 describe("@softprobe/react-native OpenTelemetry extensions", () => {
@@ -416,7 +463,7 @@ describe("@softprobe/react-native OpenTelemetry extensions", () => {
     await rn.shutdown();
   });
 
-  it("records mobile gestures and navigation transitions and feeds cleanly into @softprobe/e2e session TriggerSource + compiler", async () => {
+  it("records mobile gestures and navigation transitions and feeds cleanly into @softprobe/e2e session TriggerSource and ui-action-schema", async () => {
     const otlpBatches: unknown[] = [];
 
     const rn = initSoftprobeReactNative({
@@ -621,15 +668,21 @@ describe("@softprobe/react-native OpenTelemetry extensions", () => {
     });
     expect(outbound.request.json).toEqual({ to: "ada@acme.com" });
 
-    const compiledBundle = extractSessionBundleFromSpans(sessionEnvelope, {
-      sessionId: "sp-rn-e2e-compat-1",
-      tracesByTraceId: { [inviteTraceId]: backendTraceEnvelope },
-    });
-
-    expect(compiledBundle.sessionId).toBe("sp-rn-e2e-compat-1");
-    expect(compiledBundle.secretSlots).toEqual(["INVITE_PASSWORD"]);
-    expect(compiledBundle.outboundAssertionCount).toBe(1);
-    expect(compiledBundle.steps.map((s) => s.action.verb.name)).toEqual([
+    const validatedActions = extractValidatedUiActionsFromOtlp(
+      mergedResourceSpans,
+      "sp-rn-e2e-compat-1",
+    );
+    const secretSlots = [
+      ...new Set(
+        validatedActions.flatMap((action) =>
+          action.verb.name === "fill" && action.verb.value.kind === "secret"
+            ? [action.verb.value.slot]
+            : [],
+        ),
+      ),
+    ];
+    expect(secretSlots).toEqual(["INVITE_PASSWORD"]);
+    expect(validatedActions.map((a) => a.verb.name)).toEqual([
       "navigate",
       "fill",
       "fill",
@@ -641,14 +694,18 @@ describe("@softprobe/react-native OpenTelemetry extensions", () => {
       "back",
     ]);
 
-    const clickStep = compiledBundle.steps.find((s) => s.action.verb.name === "click");
-    expect(clickStep?.action.endPath).toBe("/InviteSuccess");
-    expect(clickStep?.action.captureSource).toBe("otel_sdk");
-    expect(clickStep?.action.platform).toBe("android");
-    expect(clickStep?.backendTraces).toHaveLength(1);
-    expect(clickStep?.backendTraces[0]?.outboundCalls[0]?.request.json).toEqual({
-      to: "ada@acme.com",
-    });
+    const clickAction = validatedActions.find((a) => a.verb.name === "click");
+    expect(clickAction?.endPath).toBe("/InviteSuccess");
+    expect(clickAction?.captureSource).toBe("otel_sdk");
+    expect(clickAction?.platform).toBe("android");
+    expect(clickAction?.causedTraces).toEqual([
+      expect.objectContaining({
+        traceId: inviteTraceId,
+        method: "POST",
+        url: "https://api.acme.test/api/invites",
+        status: 200,
+      }),
+    ]);
 
     abortController.abort();
     await rn.shutdown();

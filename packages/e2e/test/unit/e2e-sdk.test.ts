@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,6 +11,8 @@ import {
   unique as upstreamUnique,
 } from "e2e";
 import { describe, expect, it } from "vitest";
+import * as e2eIndex from "../../src/index.js";
+import * as e2eMobile from "../../src/mobile.js";
 import {
   AgentError,
   credentials,
@@ -21,6 +23,7 @@ import {
   isTraceId,
   isTraceInstrumentationError,
   secrets,
+  softprobeCachedAgent,
   softprobeWeb,
   TraceAssertionError,
   TraceInstrumentationError,
@@ -65,31 +68,48 @@ describe("@softprobe/e2e public contract and branded types", () => {
     expect(isAgentError).toBe(upstreamIsAgentError);
   });
 
-  it("exposes root, playwright, mobile, session-compiler, and compile-session CLI subpaths in package.json exports", () => {
+  it("locks package.json exports to runtime entrypoints and forbids static session compilers", () => {
     const pkgDir = path.resolve(
       path.dirname(fileURLToPath(import.meta.url)),
       "../..",
     );
-    const rawPkg: unknown = JSON.parse(
+    const packageJson = JSON.parse(
       readFileSync(path.join(pkgDir, "package.json"), "utf8"),
-    );
-    expect(typeof rawPkg === "object" && rawPkg !== null && "exports" in rawPkg).toBe(
-      true,
-    );
-    if (
-      typeof rawPkg === "object" &&
-      rawPkg !== null &&
-      "exports" in rawPkg &&
-      typeof rawPkg.exports === "object" &&
-      rawPkg.exports !== null
-    ) {
-      expect(Object.keys(rawPkg.exports)).toEqual([
-        ".",
-        "./playwright",
-        "./mobile",
-        "./session-compiler",
-        "./bin/compile-session.js",
-      ]);
+    ) as {
+      readonly bin?: unknown;
+      readonly exports?: Record<string, unknown>;
+    };
+
+    const remediation =
+      "Static session compilation was removed; generate web and mobile tests through Blackbox MCP get_session_semantic_actions + get_trace.";
+
+    expect(packageJson.bin, remediation).toBeUndefined();
+    expect(Object.keys(packageJson.exports ?? {}), remediation).toEqual([
+      ".",
+      "./playwright",
+      "./mobile",
+    ]);
+
+    const forbiddenPaths = [
+      "src/bin/compile-session.ts",
+      "src/session-compiler.ts",
+    ];
+    for (const relPath of forbiddenPaths) {
+      expect(
+        existsSync(path.join(pkgDir, relPath)),
+        `${relPath} must not exist. ${remediation}`,
+      ).toBe(false);
+    }
+
+    expect(typeof softprobeCachedAgent).toBe("function");
+    for (const exportedKey of [
+      ...Object.keys(e2eIndex),
+      ...Object.keys(e2eMobile),
+    ]) {
+      expect(
+        exportedKey.startsWith("compile"),
+        `Unexpected static compiler export "${exportedKey}". ${remediation}`,
+      ).toBe(false);
     }
   });
 

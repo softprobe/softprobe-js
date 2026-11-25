@@ -31,7 +31,7 @@ import {
   unique,
   wrapMobileEngine,
 } from "../../src/mobile.js";
-import { recordedSemanticActionSchema } from "../../src/session-compiler.js";
+import { recordedSemanticActionSchema } from "../../src/internal/ui-action-schema.js";
 
 const PACKAGE_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),

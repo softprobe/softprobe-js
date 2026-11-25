@@ -67,7 +67,7 @@ import {
 import {
   softprobeCachedAgent,
   type SoftprobeCachedAgentOptions,
-} from "./session-compiler.js";
+} from "./internal/cached-agent.js";
 import type {
   SoftprobeSinkConfig,
   SoftprobeStoreMode,

@@ -26,7 +26,7 @@ import {
   type SemanticModifierKey,
   type SemanticTarget,
   type SemanticVerb,
-} from "../session-compiler.js";
+} from "./ui-action-schema.js";
 import type { BrowserAttemptLedger } from "./correlator.js";
 import { mintSpanId, mintTraceId } from "./correlator.js";
 import { formatAuthHeader } from "./sink-shared.js";

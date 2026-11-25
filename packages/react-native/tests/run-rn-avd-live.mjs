@@ -10,9 +10,12 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { build as esbuildBuild } from "esbuild";
 import { createTraceScope } from "../../e2e/dist/fixtures.js";
-import { BlackboxSink } from "../../e2e/dist/internal/blackbox-sink.js";
+import {
+  BlackboxSink,
+  parseBlackboxTracePayload,
+} from "../../e2e/dist/internal/blackbox-sink.js";
 import { createBlackboxSessionTriggerSource } from "../../e2e/dist/internal/trigger-source.js";
-import { extractSessionBundleFromSpans } from "../../e2e/dist/session-compiler.js";
+import { recordedSemanticActionSchema } from "../../e2e/dist/internal/ui-action-schema.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const pkgRoot = path.resolve(scriptDir, "..");
@@ -1304,7 +1307,7 @@ async function main() {
   ).trim();
   const videoOutPath = path.resolve(
     (process.env.SP_AVD_VIDEO_OUT ?? "").trim() ||
-      path.join(pkgRoot, ".audit", "videos", "phase3-path2-rn-session.mp4"),
+      path.join(pkgRoot, ".audit", "videos", "react-native-avd-session.mp4"),
   );
   fs.mkdirSync(path.dirname(videoOutPath), { recursive: true });
 
@@ -1512,16 +1515,24 @@ async function main() {
     const traceRes = await fetch(`${stack.sinkBaseUrl}/api/traces/${traceId}`);
     const traceEnvelope = await traceRes.json();
 
-    const bundle = extractSessionBundleFromSpans(sessionEnvelope, {
-      sessionId: targetSessionId,
-      tracesByTraceId: { [traceId]: traceEnvelope },
-    });
+    assert.equal(sessionEnvelope.session_id, targetSessionId);
+    const parsedTrace = parseBlackboxTracePayload(traceId, traceEnvelope, undefined);
+    assert.equal(parsedTrace.state, "ingested");
+    assert.ok(parsedTrace.outboundHttp.length >= 1);
 
-    assert.equal(bundle.sessionId, targetSessionId);
-    assert.deepEqual(bundle.secretSlots, ["INVITE_PASSWORD"]);
-    assert.ok(bundle.outboundAssertionCount >= 1);
+    const actions = (sessionEnvelope.spans ?? [])
+      .filter((sp) => sp.name === "softprobe.ui.action")
+      .map((sp) => {
+        const attrs = decodeAttrMap(sp.attributes);
+        assert.equal(attrs["sp.ui.action.schema"], "sp-ui-action-1");
+        const rawPayload = String(attrs["sp.ui.action.payload"] ?? "");
+        assert.ok(rawPayload.startsWith("sp.json:"));
+        return recordedSemanticActionSchema.parse(
+          JSON.parse(rawPayload.slice("sp.json:".length)),
+        );
+      })
+      .sort((a, b) => a.actionIndex - b.actionIndex);
 
-    const actions = bundle.steps.map((s) => s.action);
     for (const act of actions) {
       assert.equal(act.captureSource, "otel_sdk");
       assert.equal(act.platform, "android");
@@ -1530,7 +1541,7 @@ async function main() {
     const secretFill = actions.find(
       (a) => a.verb.name === "fill" && a.verb.value.kind === "secret",
     );
-    assert.ok(secretFill, "Expected redacted secret fill action in session bundle");
+    assert.ok(secretFill, "Expected redacted secret fill action in session spans");
     assert.deepEqual(secretFill.verb.value, {
       kind: "secret",
       slot: "INVITE_PASSWORD",

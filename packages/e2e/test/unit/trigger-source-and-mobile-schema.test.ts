@@ -1,7 +1,6 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { z } from "zod";
 import { createTraceScope } from "../../src/fixtures.js";
 import {
   isTraceAssertionError,
@@ -10,18 +9,17 @@ import {
   TraceInstrumentationError,
 } from "../../src/index.js";
 import { BlackboxSink } from "../../src/internal/blackbox-sink.js";
+import { formatHostSemanticActionSummary } from "../../src/internal/host-action-exporter.js";
 import type { VerifiedTraceEvent } from "../../src/internal/poller.js";
 import {
   createBlackboxSessionTriggerSource,
   extractSessionTriggersFromPayload,
 } from "../../src/internal/trigger-source.js";
 import {
-  compileSessionToE2E,
-  compileSessionToPlaywright,
-  extractSessionBundleFromSpans,
+  recordedSemanticActionSchema,
   UI_ACTION_SCHEMA_VERSION,
   type RecordedSemanticAction,
-} from "../../src/session-compiler.js";
+} from "../../src/internal/ui-action-schema.js";
 
 function listenLocal(server: Server): Promise<{ readonly origin: string }> {
   return new Promise((resolve, reject) => {
@@ -496,8 +494,8 @@ describe("Blackbox session TriggerSource and createTraceScope", () => {
   });
 });
 
-describe("Mobile sp-ui-action-1 contract in session-compiler", () => {
-  it("parses, summarizes, correlates, and compiles all 5 mobile SemanticVerb variants plus platform and captureSource metadata", () => {
+describe("Mobile sp-ui-action-1 schema contract", () => {
+  it("validates all 5 mobile SemanticVerb variants, platform, captureSource, and accessibilityId", () => {
     expect(UI_ACTION_SCHEMA_VERSION).toBe("sp-ui-action-1");
 
     const holdFareTraceId = "abcdef0123456789abcdef0123456789";
@@ -564,7 +562,15 @@ describe("Mobile sp-ui-action-1 contract in session-compiler", () => {
           point: { x: 196, y: 640 },
           durationMs: 750,
         },
-        causedTraces: [],
+        causedTraces: [
+          {
+            traceId: holdFareTraceId,
+            spanId: "1234567812345678",
+            method: "POST",
+            url: "http://10.0.2.2:8080/api/holds",
+            status: 200,
+          },
+        ],
         endAnchors: [
           {
             accessibilityId: "hold-confirmed-banner",
@@ -612,134 +618,44 @@ describe("Mobile sp-ui-action-1 contract in session-compiler", () => {
       },
     ];
 
-    const spans = [
-      ...mobileActions.map((act, index) => ({
-        trace_id: `0000000000000000000000000000001${index}`,
-        span_id: `000000000000001${index}`,
-        session_id: "sess_mobile_verbs",
-        name: "softprobe.ui.action",
-        service_name: "mobile-travel-app",
-        start_time: new Date(act.timestampMs).toISOString(),
-        attributes: {
-          "sp.observation.type": "ui_action",
-          "sp.ui.action.schema": "sp-ui-action-1",
-          "sp.ui.action.index": act.actionIndex,
-          "sp.ui.action.verb": act.verb.name,
-          "sp.ui.action.payload": `sp.json:${JSON.stringify(act)}`,
-        },
-      })),
-      {
-        trace_id: holdFareTraceId,
-        span_id: "1234567812345678",
-        session_id: "sess_mobile_verbs",
-        name: "POST",
-        service_name: "mobile-travel-app",
-        start_time: new Date(1700000102030).toISOString(),
-        attributes: {
-          "http.request.method": "POST",
-          "url.full": "http://10.0.2.2:8080/api/holds",
-          "http.response.status_code": 200,
-        },
-      },
-      {
-        trace_id: holdFareTraceId,
-        span_id: "8765432187654321",
-        parent_span_id: "1234567812345678",
-        session_id: "sess_mobile_verbs",
-        name: "POST /api/holds",
-        kind: "SERVER",
-        service_name: "ota-backend",
-        start_time: new Date(1700000102035).toISOString(),
-        end_time: new Date(1700000102090).toISOString(),
-        attributes: {
-          "http.request.method": "POST",
-          "url.path": "/api/holds",
-          "http.response.status_code": 200,
-        },
-      },
-      {
-        trace_id: holdFareTraceId,
-        span_id: "fedcba9876543210",
-        parent_span_id: "8765432187654321",
-        session_id: "sess_mobile_verbs",
-        name: "POST",
-        kind: "CLIENT",
-        service_name: "ota-backend",
-        start_time: new Date(1700000102045).toISOString(),
-        end_time: new Date(1700000102080).toISOString(),
-        attributes: {
-          "http.request.method": "POST",
-          "url.full": "https://gds.internal/v1/pnr/hold",
-          "http.response.status_code": 201,
-        },
-      },
-    ];
+    const parsed = mobileActions.map((act) =>
+      recordedSemanticActionSchema.parse(JSON.parse(JSON.stringify(act))),
+    );
 
-    const bundle = extractSessionBundleFromSpans({
-      session_id: "sess_mobile_verbs",
-      spans,
-    });
-
-    expect(bundle.steps).toHaveLength(5);
-    expect(bundle.steps.map((s) => s.summary)).toEqual([
+    expect(parsed).toEqual(mobileActions);
+    expect(parsed.map((act) => formatHostSemanticActionSummary(act.verb))).toEqual([
       'swipe up on list "Flight results"',
       "dismiss keyboard",
       'long-press button "Nonstop SFO to NRT"',
       "navigate back",
       "open link softprobe://booking/42",
     ]);
-    expect(bundle.steps[0]?.action.platform).toBe("ios");
-    expect(bundle.steps[0]?.action.captureSource).toBe("host_agent");
-    expect(bundle.steps[2]?.action.platform).toBe("android");
-    expect(bundle.steps[2]?.action.captureSource).toBe("otel_sdk");
-    expect(bundle.steps[2]?.backendTraces).toHaveLength(1);
-    expect(bundle.outboundAssertionCount).toBe(1);
+    expect(parsed[0]?.platform).toBe("ios");
+    expect(parsed[0]?.captureSource).toBe("host_agent");
+    expect(
+      parsed[0]?.verb.name === "swipe" ? parsed[0].verb.target?.accessibilityId : undefined,
+    ).toBe("flight-results-list");
+    expect(parsed[2]?.platform).toBe("android");
+    expect(parsed[2]?.captureSource).toBe("otel_sdk");
+    expect(parsed[2]?.causedTraces[0]?.traceId).toBe(holdFareTraceId);
 
-    const pwSuite = compileSessionToPlaywright(bundle, { includeConfig: false });
-    const pwSpec = pwSuite.files[0]?.content ?? "";
-    expect(pwSpec).toContain(`await page.mouse.wheel(0, 260);`);
-    expect(pwSpec).toContain(`await page.keyboard.press("Escape");`);
-    expect(pwSpec).toContain(`await page.getByTestId("hold-fare-btn").click({ delay: 750 });`);
-    expect(pwSpec).toContain(`await page.goBack();`);
-    expect(pwSpec).toContain(`await page.goto("softprobe://booking/42");`);
-
-    const e2eSuite = compileSessionToE2E(bundle, { includeConfig: false });
-    expect(e2eSuite.cacheFiles.length).toBe(3);
-    const cacheActionsSchema = z.object({
-      payload: z.object({
-        actions: z.array(
-          z.object({
-            name: z.string(),
-            target: z.object({ testId: z.string().optional() }).optional(),
-            spans: z.number().optional(),
-            url: z.string().optional(),
-          }),
-        ),
-      }),
-    });
-
-    const firstGroup = cacheActionsSchema.parse(
-      JSON.parse(e2eSuite.cacheFiles[0]!.content),
-    );
-    expect(firstGroup.payload.actions.map((a) => a.name)).toEqual([
-      "scroll",
-      "dismissKeyboard",
-      "longPress",
-    ]);
-    expect(firstGroup.payload.actions[0]?.spans).toBe(0.65);
-    expect(firstGroup.payload.actions[2]?.target?.testId).toBe("hold-fare-btn");
-
-    const secondGroup = cacheActionsSchema.parse(
-      JSON.parse(e2eSuite.cacheFiles[1]!.content),
-    );
-    expect(secondGroup.payload.actions[0]?.name).toBe("back");
-
-    const thirdGroup = cacheActionsSchema.parse(
-      JSON.parse(e2eSuite.cacheFiles[2]!.content),
-    );
-    expect(thirdGroup.payload.actions[0]).toMatchObject({
-      name: "navigate",
-      url: "softprobe://booking/42",
-    });
+    expect(
+      recordedSemanticActionSchema.safeParse({
+        ...mobileActions[0],
+        schemaVersion: "sp-ui-action-0",
+      }).success,
+    ).toBe(false);
+    expect(
+      recordedSemanticActionSchema.safeParse({
+        ...mobileActions[0],
+        platform: "desktop",
+      }).success,
+    ).toBe(false);
+    expect(
+      recordedSemanticActionSchema.safeParse({
+        ...mobileActions[4],
+        verb: { name: "openLink", url: "" },
+      }).success,
+    ).toBe(false);
   });
 });

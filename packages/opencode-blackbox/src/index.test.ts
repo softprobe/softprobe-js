@@ -102,6 +102,11 @@ describe("@softprobe/opencode-blackbox", () => {
       BLACKBOX_SYSTEM_PROMPT,
     ]);
     expect(BLACKBOX_SYSTEM_PROMPT).toContain("get_session_semantic_actions");
+    expect(BLACKBOX_SYSTEM_PROMPT).toContain("get_trace");
+    expect(BLACKBOX_SYSTEM_PROMPT).toContain("@playwright/test");
+    expect(BLACKBOX_SYSTEM_PROMPT).toContain("@softprobe/e2e/playwright");
+    expect(BLACKBOX_SYSTEM_PROMPT).toContain("@softprobe/e2e/mobile");
+    expect(BLACKBOX_SYSTEM_PROMPT).toContain("Maestro (`.yaml`)");
     expect(BLACKBOX_SYSTEM_PROMPT).toContain("bootstrap_project");
   });
 });
