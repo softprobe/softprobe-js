@@ -57,6 +57,7 @@ jobs:
           npm pkg set "version=$VERSION" --prefix packages/tracing
           npm pkg set "version=$VERSION" --prefix packages/opencode-blackbox
           npm pkg set "version=$VERSION" --prefix packages/blackbox
+          npm pkg set "version=$VERSION" --prefix packages/react-native
           for dir in \
             packages/langchain \
             packages/vercel-ai-sdk \
@@ -85,6 +86,7 @@ jobs:
             packages/opencode-plugin \
             packages/opencode-blackbox \
             packages/blackbox \
+            packages/react-native \
             packages/web-record \
             packages/e2e
           do
@@ -106,6 +108,7 @@ jobs:
             packages/opencode-plugin/package.json \
             packages/opencode-blackbox/package.json \
             packages/blackbox/package.json \
+            packages/react-native/package.json \
             packages/web-record/package.json \
             packages/e2e/package.json
 
@@ -119,6 +122,7 @@ jobs:
             packages/opencode-plugin \
             packages/opencode-blackbox \
             packages/blackbox \
+            packages/react-native \
             packages/web-record \
             packages/e2e
           do
@@ -140,6 +144,7 @@ jobs:
             packages/opencode-plugin/package.json \
             packages/opencode-blackbox/package.json \
             packages/blackbox/package.json \
+            packages/react-native/package.json \
             packages/web-record/package.json \
             packages/e2e/package.json
           then
@@ -154,6 +159,7 @@ jobs:
             packages/opencode-plugin/package.json \
             packages/opencode-blackbox/package.json \
             packages/blackbox/package.json \
+            packages/react-native/package.json \
             packages/web-record/package.json \
             packages/e2e/package.json
           git commit -m "chore: sync package versions to ${VERSION}"

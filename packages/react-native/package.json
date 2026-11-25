@@ -1,6 +1,6 @@
 {
   "name": "@softprobe/react-native",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "OpenTelemetry JS extensions for React Native and Expo semantic action capture and W3C session propagation",
   "type": "module",
   "main": "./dist/index.js",
