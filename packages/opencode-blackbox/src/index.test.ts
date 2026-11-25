@@ -101,5 +101,7 @@ describe("@softprobe/opencode-blackbox", () => {
       "base system prompt",
       BLACKBOX_SYSTEM_PROMPT,
     ]);
+    expect(BLACKBOX_SYSTEM_PROMPT).toContain("get_session_semantic_actions");
+    expect(BLACKBOX_SYSTEM_PROMPT).toContain("bootstrap_project");
   });
 });
