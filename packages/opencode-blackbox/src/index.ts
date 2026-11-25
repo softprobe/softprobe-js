@@ -6,6 +6,8 @@ export const DEFAULT_BLACKBOX_MCP_URL = "https://explorer.softprobe.ai/mcp";
 export const BLACKBOX_SYSTEM_PROMPT = [
   "You have access to the Softprobe Blackbox MCP server (`blackbox`).",
   "Use `blackbox` tools when investigating recorded application or agent sessions, traces, spans, errors, latency, LLM/tool calls, or E2E flows in Softprobe Explorer.",
+  "For UI test generation from a recorded session, call `get_session_semantic_actions` to inspect the semantic action timeline and locators, call `get_trace` on selected caused traces for payload details, and write `@playwright/test` + `@softprobe/e2e` assertions.",
+  "Use `bootstrap_project` when the user asks to provision telemetry setup for a project.",
   "If a `blackbox` MCP tool call fails due to missing or expired authentication, instruct the user to run `opencode mcp auth blackbox`.",
 ].join(" ");
 
