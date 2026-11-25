@@ -1,7 +1,7 @@
 import {
   TraceAssertionError,
   TraceInstrumentationError,
-  type BrowserTriggerFilter,
+  type ClientTriggerFilter,
   type ExpectNoOutboundHttpQuery,
   type OutboundHttpCall,
   type OutboundHttpQuery,
@@ -9,19 +9,16 @@ import {
   type TraceId,
 } from "../types.js";
 import type { SoftprobePollingDefaults } from "./config.js";
-import {
-  selectLatestMatchingTrigger,
-  type RecordedBrowserTrigger,
-  type TriggerLedgerView,
-} from "./correlator.js";
+import { selectLatestMatchingTrigger } from "./correlator.js";
 import { SinkHttpError, type TracePollSnapshot, type TraceSink } from "./sink-shared.js";
+import type { RecordedClientTrigger, TriggerSource } from "./trigger-source.js";
 
 export interface VerifiedTraceEvent {
   readonly traceId: TraceId;
   readonly sinkKind: "blackbox" | "arex";
   readonly sinkUrl: string;
   readonly mode: "outboundHttp" | "expectNoOutboundHttp";
-  readonly trigger: RecordedBrowserTrigger;
+  readonly trigger: RecordedClientTrigger;
   readonly matchedCall?: OutboundHttpCall;
   readonly explorerTraceUrl?: string;
 }
@@ -105,8 +102,8 @@ export function matchesOutboundCall(
   return true;
 }
 
-function formatTriggerDescription(filter: BrowserTriggerFilter | undefined): string {
-  if (!filter) return "any browser API request";
+function formatTriggerDescription(filter: ClientTriggerFilter | undefined): string {
+  if (!filter) return "any client API request";
   const method = filter.method ? `${filter.method.toUpperCase()} ` : "";
   const pathText = filter.path instanceof RegExp ? filter.path.toString() : filter.path;
   const originText = filter.origin ? ` on ${filter.origin}` : "";
@@ -147,28 +144,83 @@ function formatCallCriteria(criteria: {
 }
 
 async function waitForMatchingTrigger(
-  ledgerView: TriggerLedgerView,
-  filter: BrowserTriggerFilter | undefined,
+  triggerSource: TriggerSource,
+  filter: ClientTriggerFilter | undefined,
   deadlineMs: number,
+  intervalMs: number,
   signal?: AbortSignal,
-): Promise<RecordedBrowserTrigger> {
-  const triggerWaitCapMs = Math.min(deadlineMs, Date.now() + 1_500);
-  for (;;) {
-    const entries = ledgerView();
-    const match = selectLatestMatchingTrigger(entries, filter);
-    if (match !== undefined) {
-      return match;
+): Promise<RecordedClientTrigger> {
+  switch (triggerSource.kind) {
+    case "ledger": {
+      // In-memory route interception records requests before fetch resolves, so cap trigger wait at 1,500ms to fail fast on route mismatches.
+      const triggerWaitCapMs = Math.min(deadlineMs, Date.now() + 1_500);
+      for (;;) {
+        const entries = triggerSource.readTriggers();
+        const match = selectLatestMatchingTrigger(entries, filter);
+        if (match !== undefined) {
+          return match;
+        }
+        if (Date.now() >= triggerWaitCapMs) {
+          const recordedSummary =
+            entries.length === 0
+              ? "none"
+              : entries.map((e) => `${e.method} ${e.pathname}`).join(", ");
+          throw new TraceAssertionError({
+            message: `No browser API request in the active TraceScope matched triggeredBy (${formatTriggerDescription(filter)}). Recorded triggers: ${recordedSummary}.`,
+          });
+        }
+        await sleep(Math.min(25, Math.max(1, triggerWaitCapMs - Date.now())), signal);
+      }
     }
-    if (Date.now() >= triggerWaitCapMs) {
-      const recordedSummary =
-        entries.length === 0
-          ? "none"
-          : entries.map((e) => `${e.method} ${e.pathname}`).join(", ");
-      throw new TraceAssertionError({
-        message: `No browser API request in the active TraceScope matched triggeredBy (${formatTriggerDescription(filter)}). Recorded triggers: ${recordedSummary}.`,
-      });
+    case "session": {
+      // OTLP session spans flush asynchronously over HTTP to TheLake, so poll up to the full deadlineMs without the in-memory ledger cap.
+      let lastEntries: readonly RecordedClientTrigger[] = [];
+      let lastTransientError: string | undefined;
+      for (;;) {
+        const remainingMs = deadlineMs - Date.now();
+        const perCallTimeoutMs = Math.max(250, Math.min(Math.max(1, remainingMs), 5_000));
+        const timeoutSignal = AbortSignal.timeout(perCallTimeoutMs);
+        const combinedSignal = signal
+          ? AbortSignal.any([signal, timeoutSignal])
+          : timeoutSignal;
+
+        try {
+          const entries = await triggerSource.fetchSessionTriggers(combinedSignal);
+          lastEntries = entries;
+          lastTransientError = undefined;
+          const match = selectLatestMatchingTrigger(entries, filter);
+          if (match !== undefined) {
+            return match;
+          }
+        } catch (error) {
+          if (signal?.aborted) {
+            throw error;
+          }
+          if (error instanceof SinkHttpError && !error.retryable) {
+            throw error;
+          }
+          lastTransientError = error instanceof Error ? error.message : String(error);
+        }
+
+        if (Date.now() >= deadlineMs) {
+          const recordedSummary =
+            lastEntries.length === 0
+              ? "none"
+              : lastEntries.map((e) => `${e.method} ${e.pathname}`).join(", ");
+          const errorSuffix = lastTransientError
+            ? ` Last session query error was ${lastTransientError}.`
+            : "";
+          throw new TraceAssertionError({
+            message: `No session HTTP span in session ${triggerSource.sessionId} matched triggeredBy (${formatTriggerDescription(filter)}). Recorded triggers: ${recordedSummary}.${errorSuffix}`,
+          });
+        }
+        await sleep(Math.min(intervalMs, Math.max(1, deadlineMs - Date.now())), signal);
+      }
     }
-    await sleep(Math.min(25, Math.max(1, triggerWaitCapMs - Date.now())), signal);
+    default: {
+      const _exhaustive: never = triggerSource;
+      return _exhaustive;
+    }
   }
 }
 
@@ -203,7 +255,7 @@ async function pollSingleSnapshot(
 }
 
 export interface PollerContext {
-  readonly ledgerView: TriggerLedgerView;
+  readonly triggerSource: TriggerSource;
   readonly sink: TraceSink;
   readonly defaults: SoftprobePollingDefaults;
   readonly signal?: AbortSignal;
@@ -221,9 +273,10 @@ export async function pollOutboundHttp(
   const deadlineMs = startedMs + timeoutMs;
 
   const trigger = await waitForMatchingTrigger(
-    ctx.ledgerView,
+    ctx.triggerSource,
     query.triggeredBy,
     deadlineMs,
+    intervalMs,
     ctx.signal,
   );
   const explorerTraceUrl = ctx.sink.buildExplorerTraceUrl(trigger.traceId);
@@ -302,9 +355,10 @@ export async function pollExpectNoOutboundHttp(
   const deadlineMs = startedMs + timeoutMs;
 
   const trigger = await waitForMatchingTrigger(
-    ctx.ledgerView,
+    ctx.triggerSource,
     query.triggeredBy,
     deadlineMs,
+    intervalMs,
     ctx.signal,
   );
   const explorerTraceUrl = ctx.sink.buildExplorerTraceUrl(trigger.traceId);

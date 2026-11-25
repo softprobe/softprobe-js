@@ -22,6 +22,7 @@ export {
   TraceInstrumentationError,
   type BrowserTriggerFilter,
   type CapturedHttpPayload,
+  type ClientTriggerFilter,
   type ExpectNoOutboundHttpQuery,
   type JsonValue,
   type OutboundHttpCall,

@@ -3,7 +3,11 @@ import { context, propagation, trace } from "@opentelemetry/api";
 import { InMemorySpanExporter } from "@opentelemetry/sdk-trace";
 import { record as rrwebRecord } from "rrweb";
 import { createBrowserRuntime, type BrowserRuntime } from "../src/browser-runtime.js";
-import { createSemanticActionRecorder, type SemanticActionRecorder } from "../src/semantic-actions.js";
+import {
+  createSemanticActionRecorder,
+  formatSemanticActionSummary,
+  type SemanticActionRecorder,
+} from "../src/semantic-actions.js";
 import { createWebSessionState } from "../src/session-state.js";
 import { RecordSdk } from "../src/sdk.js";
 import type { RecordedSemanticAction } from "../src/types.js";
@@ -580,5 +584,31 @@ describe("Semantic action recorder (sp-ui-action-1)", () => {
         interactive: false,
       },
     });
+  });
+
+  it("summarizes mobile semantic verbs and accessibilityId targets", () => {
+    expect(formatSemanticActionSummary({ name: "back" })).toBe("navigate back");
+    expect(formatSemanticActionSummary({ name: "dismissKeyboard" })).toBe("dismiss keyboard");
+    expect(
+      formatSemanticActionSummary({
+        name: "openLink",
+        url: "softprobe://booking/42",
+      }),
+    ).toBe('open link "softprobe://booking/42"');
+    expect(
+      formatSemanticActionSummary({
+        name: "swipe",
+        direction: "up",
+        target: { role: "list", accessibilityId: "flights-list" },
+        distanceRatio: 0.6,
+      }),
+    ).toBe('swipe up on list "flights-list"');
+    expect(
+      formatSemanticActionSummary({
+        name: "longPress",
+        target: { role: "button", accessibilityId: "hold-fare" },
+        durationMs: 700,
+      }),
+    ).toBe('long-press button "hold-fare"');
   });
 });

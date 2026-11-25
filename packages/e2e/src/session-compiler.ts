@@ -36,9 +36,12 @@ export type SemanticModifierKey = "Alt" | "Control" | "Meta" | "Shift";
 
 export interface SemanticTarget {
   readonly testId?: string;
+  readonly accessibilityId?: string;
   readonly role?: string;
   readonly name?: string;
   readonly label?: string;
+  readonly nearbyLabel?: string;
+  readonly interactive?: boolean;
   readonly placeholder?: string;
   readonly text?: string;
   readonly inputPurpose?: string;
@@ -129,6 +132,28 @@ export type SemanticVerb =
   | {
       readonly name: "resize";
       readonly viewport: { readonly width: number; readonly height: number };
+    }
+  | {
+      readonly name: "back";
+    }
+  | {
+      readonly name: "dismissKeyboard";
+    }
+  | {
+      readonly name: "openLink";
+      readonly url: string;
+    }
+  | {
+      readonly name: "swipe";
+      readonly direction: "up" | "down" | "left" | "right";
+      readonly target?: SemanticTarget;
+      readonly distanceRatio?: number;
+    }
+  | {
+      readonly name: "longPress";
+      readonly target: SemanticTarget;
+      readonly point?: { readonly x: number; readonly y: number };
+      readonly durationMs?: number;
     };
 
 export interface RecordedSemanticAction {
@@ -143,6 +168,8 @@ export interface RecordedSemanticAction {
   readonly endAnchors: readonly SemanticTarget[];
   readonly goneAnchors: readonly SemanticTarget[];
   readonly settleMs: number;
+  readonly platform?: "web" | "ios" | "android";
+  readonly captureSource?: "web_sdk" | "host_agent" | "otel_sdk";
 }
 
 const capturedInputValueSchema: z.ZodType<CapturedInputValue> = z.discriminatedUnion(
@@ -159,9 +186,12 @@ const anchorStateSchema = z.enum(["checked", "expanded", "pressed", "selected"])
 
 export const semanticTargetSchema: z.ZodType<SemanticTarget> = z.object({
   testId: z.string().optional(),
+  accessibilityId: z.string().optional(),
   role: z.string().optional(),
   name: z.string().optional(),
   label: z.string().optional(),
+  nearbyLabel: z.string().optional(),
+  interactive: z.boolean().optional(),
   placeholder: z.string().optional(),
   text: z.string().optional(),
   inputPurpose: z.string().optional(),
@@ -286,6 +316,28 @@ export const semanticVerbSchema: z.ZodType<SemanticVerb> = z.discriminatedUnion(
       height: z.number().int().positive(),
     }),
   }),
+  z.object({
+    name: z.literal("back"),
+  }),
+  z.object({
+    name: z.literal("dismissKeyboard"),
+  }),
+  z.object({
+    name: z.literal("openLink"),
+    url: z.string().min(1),
+  }),
+  z.object({
+    name: z.literal("swipe"),
+    direction: z.enum(["up", "down", "left", "right"]),
+    target: semanticTargetSchema.optional(),
+    distanceRatio: z.number().positive().optional(),
+  }),
+  z.object({
+    name: z.literal("longPress"),
+    target: semanticTargetSchema,
+    point: z.object({ x: z.number(), y: z.number() }).optional(),
+    durationMs: z.number().nonnegative().optional(),
+  }),
 ]);
 
 export const recordedSemanticActionSchema: z.ZodType<RecordedSemanticAction> = z.object({
@@ -303,6 +355,8 @@ export const recordedSemanticActionSchema: z.ZodType<RecordedSemanticAction> = z
   endAnchors: z.array(semanticTargetSchema),
   goneAnchors: z.array(semanticTargetSchema),
   settleMs: z.number().nonnegative(),
+  platform: z.enum(["web", "ios", "android"]).optional(),
+  captureSource: z.enum(["web_sdk", "host_agent", "otel_sdk"]).optional(),
 });
 
 export interface CompiledDynamicTextMatch {
@@ -796,20 +850,61 @@ function extractVerbPrimaryTarget(verb: SemanticVerb): SemanticTarget | undefine
     case "select":
     case "check":
     case "upload":
+    case "longPress":
       return verb.target;
     case "press":
     case "scroll":
+    case "swipe":
       return verb.target;
     case "drag":
       return verb.source;
     case "navigate":
     case "dialog":
     case "resize":
+    case "back":
+    case "dismissKeyboard":
+    case "openLink":
       return undefined;
     default: {
       const _exhaustive: never = verb;
       return _exhaustive;
     }
+  }
+}
+
+function formatSummaryTargetLabel(target: SemanticTarget | undefined): string {
+  if (!target) return "the screen";
+  const label =
+    target.name ??
+    target.label ??
+    target.nearbyLabel ??
+    target.text ??
+    target.placeholder ??
+    target.testId ??
+    target.accessibilityId ??
+    "";
+  const trimmed = label.replace(/\s+/g, " ").trim();
+  const bounded = trimmed.length <= 40 ? trimmed : trimmed.slice(0, 40);
+  const role = target.role?.trim() || "element";
+  return bounded === "" ? role : `${role} ${JSON.stringify(bounded)}`;
+}
+
+function summarizeSemanticVerb(verb: SemanticVerb): string {
+  switch (verb.name) {
+    case "back":
+      return "navigate back";
+    case "dismissKeyboard":
+      return "dismiss keyboard";
+    case "openLink":
+      return `open link ${verb.url}`;
+    case "swipe":
+      return verb.target
+        ? `swipe ${verb.direction} on ${formatSummaryTargetLabel(verb.target)}`
+        : `swipe ${verb.direction}`;
+    case "longPress":
+      return `long-press ${formatSummaryTargetLabel(verb.target)}`;
+    default:
+      return verb.name;
   }
 }
 
@@ -965,7 +1060,7 @@ export function extractSessionBundleFromSpans(
     }
     const summary =
       span.attributes["sp.ui.action.summary"]?.trim() ||
-      validated.data.verb.name;
+      summarizeSemanticVerb(validated.data.verb);
     uiActionEntries.push({ action: validated.data, summary });
   }
 
@@ -982,8 +1077,17 @@ export function extractSessionBundleFromSpans(
     "press",
     "select",
     "check",
+    "longPress",
+    "back",
+    "openLink",
   ]);
-  const passiveTrailingVerbs = new Set(["dialog", "scroll", "hover", "resize"]);
+  const passiveTrailingVerbs = new Set([
+    "dialog",
+    "scroll",
+    "hover",
+    "resize",
+    "dismissKeyboard",
+  ]);
   const foldedUiActionEntries: typeof uiActionEntries = [];
   for (const entry of uiActionEntries) {
     if (
@@ -1075,7 +1179,11 @@ export function extractSessionBundleFromSpans(
 
   const eligibleActionIndices = foldedUiActionEntries
     .map((entry, idx) =>
-      entry.action.verb.name !== "resize" && entry.action.verb.name !== "dialog" ? idx : -1,
+      entry.action.verb.name !== "resize" &&
+      entry.action.verb.name !== "dialog" &&
+      entry.action.verb.name !== "dismissKeyboard"
+        ? idx
+        : -1,
     )
     .filter((idx) => idx >= 0);
 
@@ -1669,13 +1777,14 @@ function buildPlaywrightLocatorExpr(
     ? `page.locator("tr, li, article, [role='row'], [role='listitem'], [role='dialog'], [role='region'], fieldset, section").filter({ hasText: ${JSON.stringify(target.within)} }).first()`
     : "page";
   const playwrightRole = toPlaywrightRole(target.role);
+  const effectiveTestId = target.testId ?? target.accessibilityId;
 
   let expr: string;
   let usesTwinPosition = true;
   if (dynamicName && playwrightRole) {
     expr = `${scopePrefix}.getByRole(${JSON.stringify(playwrightRole)}, { name: new RegExp(${JSON.stringify(dynamicName.patternSource)}) })`;
-  } else if (target.testId && !isMintedTestId(target.testId)) {
-    expr = `${scopePrefix}.getByTestId(${JSON.stringify(target.testId)})`;
+  } else if (effectiveTestId && !isMintedTestId(effectiveTestId)) {
+    expr = `${scopePrefix}.getByTestId(${JSON.stringify(effectiveTestId)})`;
   } else if (playwrightRole && target.name) {
     expr = `${scopePrefix}.getByRole(${JSON.stringify(playwrightRole)}, { name: new RegExp(${JSON.stringify(buildGlyphTolerantExactNameRegexSource(target.name))}, "u") })`;
   } else if (target.label) {
@@ -2015,6 +2124,36 @@ export function compileSessionToPlaywright(
           `await page.setViewportSize({ width: ${verb.viewport.width}, height: ${verb.viewport.height} });`,
         );
         break;
+      case "back":
+        emitActionLine(`await page.goBack();`);
+        break;
+      case "dismissKeyboard":
+        emitActionLine(`await page.keyboard.press("Escape");`);
+        break;
+      case "openLink":
+        emitActionLine(`await page.goto(${JSON.stringify(verb.url)});`);
+        break;
+      case "swipe": {
+        const distance = Math.round(400 * (verb.distanceRatio ?? 1));
+        const dy = verb.direction === "up" ? distance : verb.direction === "down" ? -distance : 0;
+        const dx = verb.direction === "left" ? distance : verb.direction === "right" ? -distance : 0;
+        emitActionLine(`await page.mouse.wheel(${dx}, ${dy});`);
+        break;
+      }
+      case "longPress": {
+        const loc = buildPlaywrightLocatorExpr(
+          verb.target,
+          step.dynamicNamePattern,
+          step.dynamicTextPattern,
+        );
+        const delayMs = Math.max(500, Math.round(verb.durationMs ?? 600));
+        emitActionLine(`await ${loc}.click({ delay: ${delayMs} });`);
+        break;
+      }
+      default: {
+        const _exhaustive: never = verb;
+        return _exhaustive;
+      }
     }
 
     if (verb.name !== "navigate" && step.action.endPath !== step.action.startPath) {
@@ -2333,7 +2472,7 @@ function toE2ETargetDescriptor(target: SemanticTarget): E2ETraceTargetDescriptor
     !(role !== undefined && CONTENT_NAMED_ANCHOR_ROLES.has(role) && name !== undefined)
       ? rawText
       : undefined;
-  const testId = boundStr(target.testId, 300);
+  const testId = boundStr(target.testId ?? target.accessibilityId, 300);
   const placeholder = boundStr(target.placeholder, 300);
   const selector = boundStr(target.cssSelector, 300);
   const inputPurpose =
@@ -2387,7 +2526,7 @@ function toE2EAnchorDescriptor(target: SemanticTarget): E2ETraceTargetDescriptor
     !(role !== undefined && CONTENT_NAMED_ANCHOR_ROLES.has(role) && name !== undefined)
       ? rawText
       : undefined;
-  const testId = boundStr(target.testId, 300);
+  const testId = boundStr(target.testId ?? target.accessibilityId, 300);
   const placeholder = boundStr(target.placeholder, 300);
   const inputPurpose =
     target.inputPurpose && VALID_E2E_INPUT_PURPOSES.has(target.inputPurpose)
@@ -2691,6 +2830,40 @@ function convertSemanticStepToE2ERecordedAction(
           height: Math.min(4320, Math.max(200, verb.viewport.height)),
         },
       };
+    case "back":
+      return {
+        name: "back",
+        summary,
+      };
+    case "dismissKeyboard":
+      return {
+        name: "dismissKeyboard",
+        summary,
+      };
+    case "openLink":
+      return {
+        name: "navigate",
+        summary,
+        url: verb.url,
+      };
+    case "swipe":
+      return {
+        name: "scroll",
+        summary,
+        direction: verb.direction,
+        ...(verb.target ? { target: toE2ETargetDescriptor(verb.target) } : {}),
+        ...(verb.distanceRatio !== undefined &&
+        verb.distanceRatio >= 0 &&
+        verb.distanceRatio <= 1
+          ? { spans: verb.distanceRatio }
+          : {}),
+      };
+    case "longPress":
+      return {
+        name: "longPress",
+        summary,
+        target: toE2ETargetDescriptor(verb.target),
+      };
     default: {
       const _exhaustive: never = verb;
       return _exhaustive;
@@ -2708,6 +2881,8 @@ function isPreparatoryStep(step: CompiledSessionStep): boolean {
     case "upload":
     case "hover":
     case "scroll":
+    case "swipe":
+    case "dismissKeyboard":
     case "resize":
       return true;
     case "press":
@@ -3232,6 +3407,11 @@ const cachedRecordedActionSchema = z.discriminatedUnion("name", [
     modifiers: z.array(cachedModifierSchema).optional(),
   }),
   z.object({
+    name: z.literal("longPress"),
+    summary: z.string(),
+    target: cachedTargetDescriptorSchema,
+  }),
+  z.object({
     name: z.literal("hover"),
     summary: z.string(),
     target: cachedTargetDescriptorSchema,
@@ -3295,6 +3475,14 @@ const cachedRecordedActionSchema = z.discriminatedUnion("name", [
     name: z.literal("navigate"),
     summary: z.string(),
     url: z.string(),
+  }),
+  z.object({
+    name: z.literal("back"),
+    summary: z.string(),
+  }),
+  z.object({
+    name: z.literal("dismissKeyboard"),
+    summary: z.string(),
   }),
   z.object({
     name: z.literal("resize"),
@@ -3767,6 +3955,12 @@ export function softprobeCachedAgent(
             case "navigate":
               await context.actions.navigate(action.url);
               break;
+            case "back":
+              await context.actions.back();
+              break;
+            case "dismissKeyboard":
+              await context.actions.dismissKeyboard();
+              break;
             case "pressKey":
               await context.actions.pressKey(action.key);
               break;
@@ -3811,6 +4005,11 @@ export function softprobeCachedAgent(
                   ? { modifiers: action.modifiers }
                   : undefined,
               );
+              break;
+            }
+            case "longPress": {
+              const id = await relocateInExecutorWithBackoff(context, action.target);
+              await context.actions.longPress({ id });
               break;
             }
             case "secondaryTap": {

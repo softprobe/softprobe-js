@@ -49,6 +49,7 @@ import {
 } from "../../src/internal/poller.js";
 import { stageVerifiedTraceRecord } from "../../src/internal/reporter.js";
 import type { TracePollSnapshot, TraceSink } from "../../src/internal/sink-shared.js";
+import { createLedgerTriggerSource } from "../../src/internal/trigger-source.js";
 
 const VALID_TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";
 const VALID_SPAN_ID = "00f067aa0ba902b7";
@@ -548,10 +549,11 @@ describe("Two-phase SERVER-anchor poller", () => {
     };
 
     const defaults = { pollTimeoutMs: 120, pollIntervalMs: 30, settleMs: 20 };
+    const triggerSource = createLedgerTriggerSource(ledger);
 
     await expect(
       pollOutboundHttp(
-        { ledgerView: ledger.rootView, sink: brokenSink, defaults },
+        { triggerSource, sink: brokenSink, defaults },
         {
           triggeredBy: { method: "POST", path: "/api/workspaces/:id/invites" },
           url: /emailengine/,
@@ -568,7 +570,7 @@ describe("Two-phase SERVER-anchor poller", () => {
 
     await expect(
       pollExpectNoOutboundHttp(
-        { ledgerView: ledger.rootView, sink: brokenSink, defaults },
+        { triggerSource, sink: brokenSink, defaults },
         {
           triggeredBy: { method: "POST", path: "/api/workspaces/:id/invites" },
           url: /emailengine/,
@@ -648,9 +650,10 @@ describe("Two-phase SERVER-anchor poller", () => {
       },
     };
 
+    const triggerSource = createLedgerTriggerSource(ledger);
     const resolved = await pollOutboundHttp(
       {
-        ledgerView: ledger.rootView,
+        triggerSource,
         sink: stagedSink,
         defaults: { pollTimeoutMs: 500, pollIntervalMs: 20, settleMs: 20 },
       },
@@ -667,7 +670,7 @@ describe("Two-phase SERVER-anchor poller", () => {
     await expect(
       pollOutboundHttp(
         {
-          ledgerView: ledger.rootView,
+          triggerSource,
           sink: stagedSink,
           defaults: { pollTimeoutMs: 100, pollIntervalMs: 25, settleMs: 20 },
         },

@@ -75,6 +75,7 @@ export type SemanticModifierKey = "Alt" | "Control" | "Meta" | "Shift";
 
 export interface SemanticTarget {
   readonly testId?: string;
+  readonly accessibilityId?: string;
   readonly role?: string;
   readonly name?: string;
   readonly label?: string;
@@ -130,7 +131,22 @@ export type SemanticVerb =
       readonly accepted: boolean;
       readonly promptText?: CapturedInputValue;
     }
-  | { readonly name: "resize"; readonly viewport: { readonly width: number; readonly height: number } };
+  | { readonly name: "resize"; readonly viewport: { readonly width: number; readonly height: number } }
+  | { readonly name: "back" }
+  | { readonly name: "dismissKeyboard" }
+  | { readonly name: "openLink"; readonly url: string }
+  | {
+      readonly name: "swipe";
+      readonly direction: "up" | "down" | "left" | "right";
+      readonly target?: SemanticTarget;
+      readonly distanceRatio?: number;
+    }
+  | {
+      readonly name: "longPress";
+      readonly target: SemanticTarget;
+      readonly point?: { readonly x: number; readonly y: number };
+      readonly durationMs?: number;
+    };
 
 export interface RecordedSemanticAction {
   readonly schemaVersion: "sp-ui-action-1";
@@ -144,6 +160,8 @@ export interface RecordedSemanticAction {
   readonly endAnchors: readonly SemanticTarget[];
   readonly goneAnchors: readonly SemanticTarget[];
   readonly settleMs: number;
+  readonly platform?: "web" | "ios" | "android";
+  readonly captureSource?: "web_sdk" | "host_agent" | "otel_sdk";
 }
 
 export type WebRecordInitOptions = WebRecordCredentials & {

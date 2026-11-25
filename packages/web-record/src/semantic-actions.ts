@@ -1250,7 +1250,14 @@ export function computeAnchorDelta(
 
 function formatTargetSummaryLabel(target: SemanticTarget | undefined): string {
   if (!target) return "the screen";
-  const label = target.name ?? target.nearbyLabel ?? target.text ?? target.placeholder ?? target.testId ?? "";
+  const label =
+    target.name ??
+    target.nearbyLabel ??
+    target.text ??
+    target.placeholder ??
+    target.testId ??
+    target.accessibilityId ??
+    "";
   const role = target.role ?? "element";
   const base = label === "" ? role : `${role} ${JSON.stringify(boundText(label, 40))}`;
   const withWithin = target.within !== undefined
@@ -1314,6 +1321,18 @@ export function formatSemanticActionSummary(verb: SemanticVerb): string {
         return `${verb.accepted ? "accept" : "dismiss"} ${verb.dialogType} dialog`;
       case "resize":
         return `resize the viewport to ${verb.viewport.width}x${verb.viewport.height}`;
+      case "back":
+        return "navigate back";
+      case "dismissKeyboard":
+        return "dismiss keyboard";
+      case "openLink":
+        return `open link ${quoteShort(verb.url)}`;
+      case "swipe":
+        return verb.target
+          ? `swipe ${verb.direction} on ${formatTargetSummaryLabel(verb.target)}`
+          : `swipe ${verb.direction}`;
+      case "longPress":
+        return `long-press ${formatTargetSummaryLabel(verb.target)}`;
       default: {
         const _exhaustive: never = verb;
         return String(_exhaustive);
@@ -1408,15 +1427,20 @@ function primaryRrwebNodeId(verb: SemanticVerb): number | undefined {
     case "select":
     case "check":
     case "upload":
+    case "longPress":
       return verb.target.rrwebNodeId;
     case "press":
     case "scroll":
+    case "swipe":
       return verb.target?.rrwebNodeId;
     case "drag":
       return verb.source.rrwebNodeId;
     case "navigate":
     case "dialog":
     case "resize":
+    case "back":
+    case "dismissKeyboard":
+    case "openLink":
       return undefined;
     default: {
       const _exhaustive: never = verb;

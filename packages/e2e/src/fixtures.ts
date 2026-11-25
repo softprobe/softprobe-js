@@ -26,7 +26,6 @@ import {
 import {
   BrowserAttemptLedger,
   buildApiRoutePatterns,
-  type TriggerLedgerView,
 } from "./internal/correlator.js";
 import {
   pollExpectNoOutboundHttp,
@@ -35,6 +34,10 @@ import {
 } from "./internal/poller.js";
 import { stageVerifiedTraceRecord } from "./internal/reporter.js";
 import type { TraceSink } from "./internal/sink-shared.js";
+import {
+  createLedgerTriggerSource,
+  type TriggerSource,
+} from "./internal/trigger-source.js";
 import type {
   ExpectNoOutboundHttpQuery,
   OutboundHttpCall,
@@ -194,8 +197,7 @@ export function buildSinkFromResolved(
 }
 
 export function createTraceScope(options: {
-  readonly ledger: BrowserAttemptLedger;
-  readonly ledgerView: TriggerLedgerView;
+  readonly triggerSource: TriggerSource;
   readonly resolveSink: () => TraceSink;
   readonly onVerifiedTrace?: (event: VerifiedTraceEvent) => void;
   readonly pollingDefaults: {
@@ -207,10 +209,10 @@ export function createTraceScope(options: {
 }): TraceScope {
   return {
     async window(fn: () => Promise<void>): Promise<TraceScope> {
-      const childView = await options.ledger.captureWindow(fn);
+      const childSource = await options.triggerSource.captureWindow(fn);
       return createTraceScope({
         ...options,
-        ledgerView: childView,
+        triggerSource: childSource,
       });
     },
 
@@ -218,7 +220,7 @@ export function createTraceScope(options: {
       const sink = options.resolveSink();
       return pollOutboundHttp(
         {
-          ledgerView: options.ledgerView,
+          triggerSource: options.triggerSource,
           sink,
           defaults: options.pollingDefaults,
           signal: options.signal,
@@ -232,7 +234,7 @@ export function createTraceScope(options: {
       const sink = options.resolveSink();
       return pollExpectNoOutboundHttp(
         {
-          ledgerView: options.ledgerView,
+          triggerSource: options.triggerSource,
           sink,
           defaults: options.pollingDefaults,
           signal: options.signal,
@@ -269,8 +271,7 @@ export const test = webTest.extend<SoftprobeTestFixtures>({
 
       const abortController = new AbortController();
       const scope = createTraceScope({
-        ledger,
-        ledgerView: ledger.rootView,
+        triggerSource: createLedgerTriggerSource(ledger),
         resolveSink,
         pollingDefaults: current.metadata.polling,
         signal: abortController.signal,
