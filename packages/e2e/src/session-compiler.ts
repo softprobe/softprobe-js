@@ -1318,7 +1318,7 @@ export function extractSessionBundleFromSpans(
 export interface FetchSessionSpansOptions {
   readonly endpoint: string;
   readonly sessionId: string;
-  readonly token?: string;
+  readonly softprobeApiKey?: string;
   readonly workspaceId?: string;
   readonly from?: string;
   readonly to?: string;
@@ -1393,7 +1393,7 @@ export async function fetchSessionSpansFromBlackbox(
   const fetchFn = options.fetchImpl ?? fetch;
   const headers: Record<string, string> = {
     Accept: "application/json",
-    ...formatAuthHeader(options.token),
+    ...formatAuthHeader(options.softprobeApiKey),
     ...(options.workspaceId ? { "X-Workspace-Id": options.workspaceId } : {}),
   };
 
@@ -1535,6 +1535,16 @@ export interface CompilePlaywrightOptions {
   readonly workspaceId?: string;
   readonly appId?: string;
   readonly store?: "auto" | "blackbox" | "arex";
+}
+
+function workspaceIdExpressionForStore(
+  store: "auto" | "blackbox" | "arex" | undefined,
+  workspaceId: string,
+): string {
+  const expression = JSON.stringify(workspaceId);
+  return store === "arex"
+    ? `process.env.SOFTPROBE_WORKSPACE_ID ?? ${expression}`
+    : expression;
 }
 
 export interface CompiledPlaywrightSuite {
@@ -2080,7 +2090,9 @@ export function compileSessionToPlaywright(
               ? [`      endpoint: process.env.SOFTPROBE_SINK_ENDPOINT ?? ${JSON.stringify(options.sinkEndpoint)},`]
               : []),
             ...(options.workspaceId
-              ? [`      workspaceId: process.env.SOFTPROBE_WORKSPACE_ID ?? ${JSON.stringify(options.workspaceId)},`]
+              ? [
+                  `      workspaceId: ${workspaceIdExpressionForStore(options.store, options.workspaceId)},`,
+                ]
               : []),
             ...(options.appId
               ? [`      appId: process.env.SOFTPROBE_APP_ID ?? ${JSON.stringify(options.appId)},`]
@@ -3141,7 +3153,9 @@ export function compileSessionToE2E(
         ? [`        endpoint: process.env.SOFTPROBE_SINK_ENDPOINT ?? ${JSON.stringify(options.sinkEndpoint)},`]
         : []),
       ...(options.workspaceId
-        ? [`        workspaceId: process.env.SOFTPROBE_WORKSPACE_ID ?? ${JSON.stringify(options.workspaceId)},`]
+        ? [
+            `        workspaceId: ${workspaceIdExpressionForStore(options.store, options.workspaceId)},`,
+          ]
         : []),
       ...(options.appId
         ? [`        appId: process.env.SOFTPROBE_APP_ID ?? ${JSON.stringify(options.appId)},`]

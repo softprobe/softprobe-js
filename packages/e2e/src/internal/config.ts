@@ -15,6 +15,7 @@ const SOFTPROBE_OPTION_KEYS = new Set<string>([
   "sink",
   "endpoint",
   "token",
+  "softprobeApiKey",
   "workspaceId",
   "tenantId",
   "appId",
@@ -250,21 +251,16 @@ export function resolveSinkConfig(
   if (options.sink !== undefined) {
     if (options.sink.kind === "blackbox") {
       const endpoint = normalizeEndpointUrl(options.sink.endpoint, "blackbox");
-      const token =
-        nonEmptyTrimmed(options.sink.token) ??
-        nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
-        nonEmptyTrimmed(env.SOFTPROBE_TOKEN) ??
-        nonEmptyTrimmed(env.SP_TOKEN) ??
-        nonEmptyTrimmed(env.INGESTION_KEY);
+      const softprobeApiKey =
+        nonEmptyTrimmed(options.sink.softprobeApiKey) ??
+        nonEmptyTrimmed(env.SOFTPROBE_API_KEY);
       const workspaceId =
-        nonEmptyTrimmed(options.sink.workspaceId) ??
-        nonEmptyTrimmed(env.SOFTPROBE_WORKSPACE_ID) ??
-        nonEmptyTrimmed(env.SP_WORKSPACE_ID);
+        nonEmptyTrimmed(options.sink.workspaceId);
       const explorerUrl = deriveExplorerBaseUrl(options.sink.explorerUrl, endpoint, env);
       return {
         kind: "blackbox",
         endpoint,
-        ...(token ? { token } : {}),
+        ...(softprobeApiKey ? { softprobeApiKey } : {}),
         ...(workspaceId ? { workspaceId } : {}),
         ...(explorerUrl ? { explorerUrl } : {}),
       };
@@ -303,9 +299,7 @@ export function resolveSinkConfig(
     nonEmptyTrimmed(env.SOFTPROBE_APP_ID) ??
     nonEmptyTrimmed(env.SP_APP_ID);
   const workspaceId =
-    nonEmptyTrimmed(options.workspaceId) ??
-    nonEmptyTrimmed(env.SOFTPROBE_WORKSPACE_ID) ??
-    nonEmptyTrimmed(env.SP_WORKSPACE_ID);
+    nonEmptyTrimmed(options.workspaceId);
 
   const effectiveKind: "blackbox" | "arex" =
     store === "arex"
@@ -364,18 +358,15 @@ export function resolveSinkConfig(
     nonEmptyTrimmed(env.THELAKE_URL) ??
     DEFAULT_BLACKBOX_ENDPOINT;
   const endpoint = normalizeEndpointUrl(rawEndpoint, "blackbox");
-  const token =
-    nonEmptyTrimmed(options.token) ??
-    nonEmptyTrimmed(env.SOFTPROBE_API_KEY) ??
-    nonEmptyTrimmed(env.SOFTPROBE_TOKEN) ??
-    nonEmptyTrimmed(env.SP_TOKEN) ??
-    nonEmptyTrimmed(env.INGESTION_KEY);
+  const softprobeApiKey =
+    nonEmptyTrimmed(options.softprobeApiKey) ??
+    nonEmptyTrimmed(env.SOFTPROBE_API_KEY);
   const explorerUrl = deriveExplorerBaseUrl(options.explorerUrl, endpoint, env);
 
   return {
     kind: "blackbox",
     endpoint,
-    ...(token ? { token } : {}),
+    ...(softprobeApiKey ? { softprobeApiKey } : {}),
     ...(workspaceId ? { workspaceId } : {}),
     ...(explorerUrl ? { explorerUrl } : {}),
   };

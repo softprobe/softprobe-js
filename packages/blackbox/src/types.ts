@@ -1,5 +1,5 @@
 export const DEFAULT_EXPLORER_URL = "https://explorer.softprobe.ai";
-export const INGESTION_KEY_ENV_VAR = "SOFTPROBE_INGESTION_KEY";
+export const INGESTION_KEY_ENV_VAR = "INGESTION_KEY";
 
 export type ExplorerUrl = string & { readonly __brand: "ExplorerUrl" };
 export type IngestionKey = string & { readonly __brand: "IngestionKey" };

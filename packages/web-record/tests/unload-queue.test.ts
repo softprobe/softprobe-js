@@ -79,13 +79,29 @@ describe("UnloadSpillQueue", () => {
     const queue = new UnloadSpillQueue(KEY);
     expect(queue.enqueueSync(new Uint8Array([1, 2, 3]))).toBe(true);
 
-    const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
+    const backingStorage = sessionStorage;
+    const storage: Storage = {
+      get length() {
+        return backingStorage.length;
+      },
+      clear: () => backingStorage.clear(),
+      getItem: (key) => backingStorage.getItem(key),
+      key: (index) => backingStorage.key(index),
+      removeItem: (key) => backingStorage.removeItem(key),
+      setItem: vi.fn((key, value) => backingStorage.setItem(key, value)),
+    };
+    vi.stubGlobal("sessionStorage", storage);
+    const setItemSpy = vi.spyOn(storage, "setItem");
     setItemSpy.mockImplementationOnce(() => {
       throw new DOMException("Quota exceeded", "QuotaExceededError");
     });
 
-    expect(queue.enqueueSync(new Uint8Array([4, 5, 6]))).toBe(true);
-    expect(queue.size()).toBe(1);
+    try {
+      expect(queue.enqueueSync(new Uint8Array([4, 5, 6]))).toBe(true);
+      expect(queue.size()).toBe(1);
+    } finally {
+      vi.stubGlobal("sessionStorage", backingStorage);
+    }
   });
 
   it("keeps entry in sessionStorage while send is in flight so rapid page navigation does not drop it", async () => {

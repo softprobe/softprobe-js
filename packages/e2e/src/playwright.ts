@@ -28,6 +28,7 @@ export interface SoftprobePlaywrightOptions {
   readonly sink?: SoftprobeSinkConfig;
   readonly endpoint?: string;
   readonly token?: string;
+  readonly softprobeApiKey?: string;
   readonly workspaceId?: string;
   readonly tenantId?: string;
   readonly appId?: string;

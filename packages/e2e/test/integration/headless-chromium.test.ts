@@ -729,7 +729,7 @@ export default {
       name: "blackbox-web",
       engine: softprobeWeb({
         endpoint: ${JSON.stringify(blackboxOrigin)},
-        token: "bb_int_token",
+        softprobeApiKey: "bb_int_token",
         workspaceId: "ws_int_001",
         explorerUrl: "http://127.0.0.1:59999",
         pollTimeoutMs: 5000,

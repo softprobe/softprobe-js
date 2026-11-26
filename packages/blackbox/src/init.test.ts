@@ -45,7 +45,7 @@ describe("runInit", () => {
       envAction: "updated",
     });
     await expect(readFile(path.join(dir, ".env"), "utf8")).resolves.toBe(
-      "PORT=8080\nSOFTPROBE_INGESTION_KEY=spk_direct_key\n",
+      "PORT=8080\nINGESTION_KEY=spk_direct_key\n",
     );
   });
 
@@ -86,7 +86,7 @@ describe("runInit", () => {
                     workspaceId: "ws-first",
                     agentId: "travel-ota",
                     ingestionKey: "spk_from_bootstrap",
-                    envVar: "SOFTPROBE_INGESTION_KEY",
+                    envVar: "INGESTION_KEY",
                     otlpEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
                   }),
                 },
@@ -134,7 +134,7 @@ describe("runInit", () => {
       otlpEndpoint: "https://explorer-staging.softprobe.ai/api/thelake/v1/traces",
     });
     await expect(readFile(path.join(dir, ".env"), "utf8")).resolves.toBe(
-      "SOFTPROBE_INGESTION_KEY=spk_from_bootstrap\n",
+      "INGESTION_KEY=spk_from_bootstrap\n",
     );
   });
 });

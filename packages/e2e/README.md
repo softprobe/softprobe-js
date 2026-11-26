@@ -16,8 +16,7 @@ export default {
       name: "web",
       engine: softprobeWeb({
         endpoint: process.env.SOFTPROBE_URL,
-        token: process.env.SOFTPROBE_TOKEN,
-        workspaceId: process.env.SOFTPROBE_WORKSPACE_ID,
+        softprobeApiKey: process.env.SOFTPROBE_API_KEY,
       }),
       app: {
         url: process.env.E2E_BASE_URL ?? "http://127.0.0.1:3000",

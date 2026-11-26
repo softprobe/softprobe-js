@@ -122,12 +122,12 @@ describe("@softprobe/e2e public contract and branded types", () => {
         endpoint: "https://explorer-staging.softprobe.ai",
         workspaceId: "a0528065-36ad-4650-a184-1e745c7c695d",
       },
-      { SOFTPROBE_TOKEN: "tok_test" },
+      { SOFTPROBE_API_KEY: "api_key_test" },
     );
     expect(resolvedBlackbox).toEqual({
       kind: "blackbox",
       endpoint: "https://explorer-staging.softprobe.ai/api/thelake",
-      token: "tok_test",
+      softprobeApiKey: "api_key_test",
       workspaceId: "a0528065-36ad-4650-a184-1e745c7c695d",
       explorerUrl: "https://explorer-staging.softprobe.ai",
     });
@@ -427,7 +427,7 @@ describe("BlackboxSink and ArexSink boundary parsers", () => {
     const seenHeaders: Headers[] = [];
     const sink = new BlackboxSink({
       endpoint: "https://explorer.softprobe.ai/api/thelake",
-      token: "bb_secret",
+      softprobeApiKey: "bb_secret",
       workspaceId: "ws_uuid",
       explorerUrl: "https://explorer.softprobe.ai",
       fetchImpl: async (_url, init) => {

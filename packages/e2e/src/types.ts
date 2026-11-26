@@ -32,7 +32,7 @@ export type SoftprobeSinkConfig =
   | {
       readonly kind: "blackbox";
       readonly endpoint: string;
-      readonly token?: string;
+      readonly softprobeApiKey?: string;
       readonly workspaceId?: string;
       readonly explorerUrl?: string;
     }
@@ -49,6 +49,7 @@ export interface SoftprobeWebOptions extends WebOptions {
   readonly sink?: SoftprobeSinkConfig;
   readonly endpoint?: string;
   readonly token?: string;
+  readonly softprobeApiKey?: string;
   readonly workspaceId?: string;
   readonly tenantId?: string;
   readonly appId?: string;
