@@ -1,14 +1,14 @@
 # SDK release feature map
 
 This repository has one release workflow. A published GitHub Release publishes
-all six workspaces; `@softprobe/web-record` is included in that release, not
-released independently.
+all nine workspaces together; no package in the release set is released
+independently.
 
 | User-visible result | Implementation | Evidence to check |
 | --- | --- | --- |
 | A published GitHub Release starts the release | `.github/workflows/release.yml` trigger: `release.published` | Workflow run is associated with the requested release tag |
 | The tag sets a consistent version | `Validate and extract version` and `Set package versions` in `release.yml` | Tag is `vX.Y.Z`; the publish logs show that version for every package |
-| These six packages are published | `packages/tracing`, `packages/langchain`, `packages/vercel-ai-sdk`, `packages/opencode-plugin`, `packages/opencode-blackbox`, `packages/web-record` in `release.yml` | Each package has the release version in npm |
+| These nine packages are published | `packages/tracing`, `packages/langchain`, `packages/vercel-ai-sdk`, `packages/opencode-plugin`, `packages/opencode-blackbox`, `packages/blackbox`, `packages/react-native`, `packages/web-record`, and `packages/e2e` in `release.yml` | Each package has the release version in npm |
 | Dependent SDKs install the matching core SDK | `Set package versions` pins `@softprobe/tracing` to the release version; publish order starts with tracing | Published package metadata declares the same `@softprobe/tracing` version |
 | The browser session recorder ships as one package | `packages/web-record/package.json`; there is no `packages/web` workspace | `@softprobe/web-record` tarball and npm metadata exist; no `@softprobe/web` publish step exists |
 | Production browser setup omits the OTLP URL and origin list | shared OTLP config in `packages/web-record/src/sdk.ts`; `resolveEffectiveOrigins` in `packages/web-record/src/http-body-capture.ts` | An init without `otlp.tracesEndpoint` posts to `https://explorer.softprobe.ai/api/thelake/v1/traces`; an init without `apiOrigins` traces `window.location.origin` plus any origin declared on `httpBodyCapture.routes` |
@@ -16,7 +16,7 @@ released independently.
 | Pre-bundled browser script auto-initializes from `<script data-ingestion-key="...">` | `autoInitFromScript` in `packages/web-record/src/browser.ts`; `dist/browser.js` in `packages/web-record/package.json` | `dist/browser.js` is built into the package and calls `RecordSdk.init` when loaded from a `<script data-ingestion-key="...">` element |
 | Vercel AI integration maps operation spans to `agent`, automatically extracts incoming HTTP `traceparent` and `session.id`, propagates outgoing `traceparent` to downstream services while excluding OTLP collector endpoints, omits `gen_ai.conversation.id` when no session ID exists, and supports one-call init | `createSoftprobeObservationAttributes`, `installIncomingHttpContextPropagation`, and `initVercelAiTelemetry` in `packages/vercel-ai-sdk/src/integration.ts`; `SoftprobeClient` in `packages/tracing/src/client.ts` | Top-level operation spans emit `sp.observation.type="agent"` and set `session.id` / `sp.session.id` / `gen_ai.conversation.id` only when an explicit or propagated session ID is present (never falling back to `traceId` in `gen_ai.conversation.id`); outgoing Node `fetch` and `http`/`https` client calls inherit active `traceparent` without tagging Softprobe OTLP trace uploads |
 | npm verifies the GitHub workflow identity | `permissions.id-token: write`; npm Trusted Publishing; no `NODE_AUTH_TOKEN` or `setup-node` `registry-url` | Successful publish logs show npm provenance; no token is added to the job |
-| `main` records the released versions | `Sync package versions to main` in `release.yml` | A workflow commit sets all six package versions and restores dependency ranges to `*` |
+| `main` records the released versions | `Sync package versions to main` in `release.yml` | A workflow commit sets all nine package versions and restores `@softprobe/tracing` dependency ranges to `*` where configured |
 
 ## Package set
 
@@ -27,7 +27,10 @@ released independently.
 | `packages/vercel-ai-sdk` | `@softprobe/vercel-ai-sdk` | Yes |
 | `packages/opencode-plugin` | `@softprobe/opencode-plugin` | Yes |
 | `packages/opencode-blackbox` | `@softprobe/opencode-blackbox` | Yes |
-| `packages/web-record` | `@softprobe/web-record` | Yes; last |
+| `packages/blackbox` | `@softprobe/blackbox` | Yes |
+| `packages/react-native` | `@softprobe/react-native` | Yes |
+| `packages/web-record` | `@softprobe/web-record` | Yes |
+| `packages/e2e` | `@softprobe/e2e` | Yes; last |
 
 The former `packages/web` workspace was removed in PR #17. Do not restore it
 to the publish loop: the v0.1.8 workflow published the five-package set that

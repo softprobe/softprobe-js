@@ -15,7 +15,7 @@ TAG="v$VERSION"
 - [ ] The release commit is on `main`; its required checks passed.
 - [ ] The requested version is absent from GitHub tags/releases and from every
       package in the release set.
-- [ ] `.github/workflows/release.yml` still lists the six packages in the
+- [ ] `.github/workflows/release.yml` still lists the nine packages in the
       feature map and has no extra publish target.
 - [ ] The intended merged `main` commit has been recorded as the tag target.
 
@@ -26,7 +26,7 @@ publishing:
 git ls-remote --tags origin "refs/tags/$TAG"
 git fetch origin main
 git log -1 --oneline origin/main
-for package in @softprobe/tracing @softprobe/langchain @softprobe/vercel-ai-sdk @softprobe/opencode-plugin @softprobe/opencode-blackbox @softprobe/web-record; do npm view "$package" versions --json; done
+for package in @softprobe/tracing @softprobe/langchain @softprobe/vercel-ai-sdk @softprobe/opencode-plugin @softprobe/opencode-blackbox @softprobe/blackbox @softprobe/react-native @softprobe/web-record @softprobe/e2e; do npm view "$package" versions --json; done
 ```
 
 The first command must print no tag ref. Review each package's version list
@@ -36,14 +36,14 @@ and confirm `VERSION` is unused before creating the release.
 
 - [ ] The workflow run for the tag completed successfully.
 - [ ] The GitHub Release tag points to the intended merged `main` commit.
-- [ ] npm reports the new version for each package in the feature map.
+- [ ] npm reports the new version for each of the nine packages in the feature map.
 - [ ] Published dependent package metadata pins
       `@softprobe/tracing` to the same release version.
 - [ ] The `@softprobe/web-record` tarball is available from npm and contains
       the package built from that tag.
 - [ ] The release workflow's version-sync commit is present on `main`, with all
-      five manifests at the release version and their tracing dependencies set
-      back to `*`.
+      nine manifests at the release version and the configured tracing
+      dependencies set back to `*`.
 
 Check the run and registry after it completes:
 
@@ -52,7 +52,7 @@ gh release view "$TAG" --json tagName,isDraft,isPrerelease,targetCommitish
 git fetch origin --tags
 git rev-parse "$TAG^{commit}"
 gh run list --workflow release.yml --branch "$TAG" --limit 5
-for package in @softprobe/tracing @softprobe/langchain @softprobe/vercel-ai-sdk @softprobe/opencode-plugin @softprobe/opencode-blackbox @softprobe/web-record; do npm view "$package@$VERSION" version; done
+for package in @softprobe/tracing @softprobe/langchain @softprobe/vercel-ai-sdk @softprobe/opencode-plugin @softprobe/opencode-blackbox @softprobe/blackbox @softprobe/react-native @softprobe/web-record @softprobe/e2e; do npm view "$package@$VERSION" version; done
 npm view "@softprobe/web-record@$VERSION" dist.tarball dist.integrity dependencies --json
 ```
 
