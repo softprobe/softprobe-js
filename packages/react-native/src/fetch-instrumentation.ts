@@ -31,6 +31,9 @@ const SENSITIVE_HEADER_NAMES = new Set([
   "apikey",
   "api-key",
   "x-api-key",
+  "x-auth-token",
+  "x-csrf-token",
+  "x-session-token",
 ]);
 
 const BUILTIN_SENSITIVE_JSON_KEYS = new Set([
@@ -90,7 +93,7 @@ function parseJsonPathSegments(rawPath: string): PathSegment[] | null {
       continue;
     }
 
-    const bracketMatch = /^\[['"]([^'"]+)['"]\]/.exec(cursor);
+    const bracketMatch = /^\[['"]?([^'"\]]+)['"]?\]/.exec(cursor);
     if (bracketMatch?.[1]) {
       segments.push({ kind: "prop", name: bracketMatch[1] });
       cursor = cursor.slice(bracketMatch[0].length);

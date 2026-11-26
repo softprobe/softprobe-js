@@ -122,7 +122,7 @@ describe("Blackbox session TriggerSource and createTraceScope", () => {
 
       const sink = new BlackboxSink({
         endpoint: origin,
-        token: "tok_mobile_test",
+        softprobeApiKey: "tok_mobile_test",
         workspaceId: "ws_mobile_01",
         explorerUrl: origin,
       });

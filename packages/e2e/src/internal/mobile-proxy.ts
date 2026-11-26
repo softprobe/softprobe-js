@@ -262,7 +262,20 @@ export async function startMobileProxy(
             status: statusCode,
           });
         }
-        res.writeHead(statusCode, upstreamRes.headers);
+        const responseHeaders = { ...upstreamRes.headers };
+        if (
+          statusCode >= 300 &&
+          statusCode < 400 &&
+          typeof responseHeaders.location === "string" &&
+          responseHeaders.location.startsWith(normalizedOrigin) &&
+          typeof req.headers.host === "string" &&
+          req.headers.host.trim() !== ""
+        ) {
+          responseHeaders.location =
+            `http://${req.headers.host}` +
+            responseHeaders.location.slice(normalizedOrigin.length);
+        }
+        res.writeHead(statusCode, responseHeaders);
         upstreamRes.pipe(res);
       },
     );

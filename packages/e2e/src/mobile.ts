@@ -118,7 +118,7 @@ export type SoftprobeMobileCorrelationConfig =
 export interface SoftprobeMobileOptions extends MobileOptions {
   readonly sink?: SoftprobeSinkConfig | undefined;
   readonly endpoint?: string | undefined;
-  readonly token?: string | undefined;
+  readonly softprobeApiKey?: string | undefined;
   readonly workspaceId?: string | undefined;
   readonly tenantId?: string | undefined;
   readonly appId?: string | undefined;
@@ -380,7 +380,7 @@ function splitSoftprobeMobileOptions(options: SoftprobeMobileOptions): {
   const { metadata } = splitSoftprobeWebOptions({
     ...(options.sink !== undefined ? { sink: options.sink } : {}),
     ...(options.endpoint !== undefined ? { endpoint: options.endpoint } : {}),
-    ...(options.token !== undefined ? { token: options.token } : {}),
+    ...(options.softprobeApiKey !== undefined ? { softprobeApiKey: options.softprobeApiKey } : {}),
     ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
     ...(options.tenantId !== undefined ? { tenantId: options.tenantId } : {}),
     ...(options.appId !== undefined ? { appId: options.appId } : {}),
@@ -400,7 +400,7 @@ function splitSoftprobeMobileOptions(options: SoftprobeMobileOptions): {
   const {
     sink: _sink,
     endpoint: _endpoint,
-    token: _token,
+    softprobeApiKey: _softprobeApiKey,
     workspaceId: _workspaceId,
     tenantId: _tenantId,
     appId: _appId,
@@ -459,7 +459,7 @@ function resolveActionExportDestination(
       {
         ...(options.sink !== undefined ? { sink: options.sink } : {}),
         ...(options.endpoint !== undefined ? { endpoint: options.endpoint } : {}),
-        ...(options.token !== undefined ? { token: options.token } : {}),
+        ...(options.softprobeApiKey !== undefined ? { softprobeApiKey: options.softprobeApiKey } : {}),
         ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
         ...(options.tenantId !== undefined ? { tenantId: options.tenantId } : {}),
         ...(options.appId !== undefined ? { appId: options.appId } : {}),
@@ -473,7 +473,7 @@ function resolveActionExportDestination(
     }
     return {
       endpoint: resolved.endpoint,
-      token: resolved.token,
+      token: (resolved.softprobeApiKey ?? env.INGESTION_KEY?.trim()) || undefined,
       workspaceId: resolved.workspaceId,
       serviceName: options.serviceName,
     };
@@ -848,8 +848,9 @@ export const test = mobileBaseTest.extend<SoftprobeTestFixtures>({
         return createBlackboxSessionTriggerSource({
           endpoint: sinkConfig.endpoint,
           sessionId: runtime.sessionId,
-          token: sinkConfig.token,
+          token: sinkConfig.softprobeApiKey,
           workspaceId: sinkConfig.workspaceId,
+          clockSkewPadMs: 10_000,
           fetchImpl: runtime.fetchImpl,
         });
       };

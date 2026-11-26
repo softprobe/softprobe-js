@@ -21,7 +21,7 @@ import {
 import { createReactNativeActionRecorder } from "./ui-instrumentation.js";
 
 const TRACER_SCOPE_NAME = "@softprobe/react-native";
-const TRACER_SCOPE_VERSION = "0.2.7";
+const TRACER_SCOPE_VERSION = "0.2.8";
 
 export function installSoftprobeReactNative(
   options: InstallSoftprobeReactNativeOptions,

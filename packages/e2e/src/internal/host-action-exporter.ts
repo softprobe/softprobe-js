@@ -194,13 +194,21 @@ function isVolatileText(text: string): boolean {
   return VOLATILE_TEXT_PATTERNS.some((pattern) => pattern.test(clean));
 }
 
+const SECRET_FIELD_NAME_RE =
+  /\b(password|passcode|passphrase|secret|token|cvv|cvc|otp|pin|api[-_]?key)\b/i;
+
 function isSecureNode(node: SemanticNode | undefined): boolean {
   if (!node) return false;
   if (node.states?.secure === true) return true;
-  return (
+  if (
     node.inputPurpose === "password" ||
     node.inputPurpose === "one-time-code" ||
     node.inputPurpose === "generic-secret"
+  ) {
+    return true;
+  }
+  return [node.testId, node.name, extractPlaceholder(node)].some(
+    (candidate) => typeof candidate === "string" && SECRET_FIELD_NAME_RE.test(candidate),
   );
 }
 
@@ -371,7 +379,10 @@ function buildSemanticTargetFromEntry(
     !secure && node.text?.trim()
       ? boundText(scrubSecretsInString(node.text, valueToSlot), MAX_DESCRIPTOR_CHARS)
       : undefined;
-  const placeholder = extractPlaceholder(node);
+  const placeholderRaw = extractPlaceholder(node);
+  const placeholder = placeholderRaw
+    ? boundText(scrubSecretsInString(placeholderRaw, valueToSlot), MAX_DESCRIPTOR_CHARS)
+    : undefined;
   const inputPurpose =
     node.inputPurpose && node.inputPurpose !== "none" ? node.inputPurpose : undefined;
   const states = extractAnchorStates(node.states);
@@ -995,8 +1006,6 @@ export function wrapEngineWithHostActionCapture<Fixtures extends object>(
     }
 
     const batch = [...unexportedActions];
-    unexportedActions = [];
-
     const cleanEndpoint = binding.sink.endpoint.trim().replace(/\/+$/, "");
     const tracesUrl = cleanEndpoint.endsWith("/v1/traces")
       ? cleanEndpoint
@@ -1028,6 +1037,9 @@ export function wrapEngineWithHostActionCapture<Fixtures extends object>(
         signal: combinedSignal,
       });
       await res.arrayBuffer().catch(() => undefined);
+      if (res.ok || (res.status >= 400 && res.status < 500 && res.status !== 429)) {
+        unexportedActions.splice(0, batch.length);
+      }
     } catch {
       return;
     }
@@ -1131,6 +1143,15 @@ export function wrapEngineWithHostActionCapture<Fixtures extends object>(
           ...(modifiers !== undefined ? { modifiers } : {}),
         };
       }
+      case "multiTap": {
+        const modifiers = normalizeModifiers(action.modifiers);
+        return {
+          name: action.count === 2 ? "dblclick" : "click",
+          target,
+          point,
+          ...(modifiers !== undefined ? { modifiers } : {}),
+        };
+      }
       case "secondaryTap": {
         const modifiers = normalizeModifiers(action.modifiers);
         return {
@@ -1178,7 +1199,7 @@ export function wrapEngineWithHostActionCapture<Fixtures extends object>(
           target,
           value: resolveCapturedInputValue({
             rawValue: "",
-            sensitive: false,
+            sensitive: isSecureNode(entry?.node),
             entry,
             valueToSlot: pre.valueToSlot,
             secretSlots: pre.secretSlots,
@@ -1264,8 +1285,16 @@ export function wrapEngineWithHostActionCapture<Fixtures extends object>(
         };
       }
       case "focus":
+      case "blur":
       case "scrollIntoView":
         return undefined;
+      case "setInputFilePayloads":
+        return {
+          name: "upload",
+          target,
+          fileNames: action.files.map((file) => file.name.split(/[\\/]/).pop() ?? file.name),
+          mimeTypes: action.files.map((file) => file.mimeType),
+        };
       default: {
         const _exhaustive: never = action;
         return _exhaustive;

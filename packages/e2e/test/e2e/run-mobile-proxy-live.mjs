@@ -949,7 +949,7 @@ export default {
         platform: "android",
         device: deviceSerial,
         endpoint: ${JSON.stringify(blackboxOrigin)},
-        token: ${JSON.stringify(token)},
+        softprobeApiKey: ${JSON.stringify(token)},
         workspaceId: ${JSON.stringify(workspaceId)},
         correlation: {
           mode: "proxy",

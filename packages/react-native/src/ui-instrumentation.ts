@@ -180,11 +180,17 @@ function classifyFillValue(
 
   const purpose = (target.inputPurpose ?? "").trim().toLowerCase();
   const isOtpPurpose = purpose === "one-time-code" || purpose === "otp";
+  const secretFieldRe =
+    /\b(password|passcode|passphrase|secret|token|cvv|cvc|otp|pin|api[-_]?key)\b/i;
+  const hasSecretFieldName = [target.testId, target.name, target.placeholder].some(
+    (candidate) => typeof candidate === "string" && secretFieldRe.test(candidate),
+  );
   const isPasswordPurpose =
     options?.secureTextEntry === true ||
     purpose === "password" ||
     purpose === "current-password" ||
-    purpose === "new-password";
+    purpose === "new-password" ||
+    hasSecretFieldName;
 
   if (isOtpPurpose) {
     return { kind: "secret", slot: "OTP" };
@@ -584,7 +590,9 @@ export function createReactNativeActionRecorder(
       const sanitized = sanitizeTargetForExport(
         target,
         Boolean(matchConfiguredSecretSlot(target, options.secretSlots)) ||
-          (target.inputPurpose ?? "").toLowerCase() === "password",
+          ["password", "current-password", "new-password", "one-time-code", "otp"].includes(
+            (target.inputPurpose ?? "").toLowerCase(),
+          ),
       );
       const point = inferTapPoint(sanitized, tapOpts?.point);
       beginAction(
