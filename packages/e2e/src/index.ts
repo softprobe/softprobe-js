@@ -22,6 +22,7 @@ export {
   TraceInstrumentationError,
   type BrowserTriggerFilter,
   type CapturedHttpPayload,
+  type ClientTriggerFilter,
   type ExpectNoOutboundHttpQuery,
   type JsonValue,
   type OutboundHttpCall,
@@ -37,7 +38,7 @@ export {
 export {
   softprobeCachedAgent,
   type SoftprobeCachedAgentOptions,
-} from "./session-compiler.js";
+} from "./internal/cached-agent.js";
 export {
   AgentError,
   credentials,

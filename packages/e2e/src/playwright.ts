@@ -18,6 +18,7 @@ import {
   buildApiRoutePatterns,
 } from "./internal/correlator.js";
 import type { TraceSink } from "./internal/sink-shared.js";
+import { createLedgerTriggerSource } from "./internal/trigger-source.js";
 import type {
   SoftprobeSinkConfig,
   SoftprobeStoreMode,
@@ -97,8 +98,7 @@ export async function createPlaywrightTraceScope(
 
   const abortController = new AbortController();
   const trace = createTraceScope({
-    ledger,
-    ledgerView: ledger.rootView,
+    triggerSource: createLedgerTriggerSource(ledger),
     resolveSink,
     pollingDefaults: metadata.polling,
     signal: abortController.signal,

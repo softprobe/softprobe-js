@@ -1,4 +1,5 @@
-import type { Config, Hooks, Plugin, PluginOptions } from "@opencode-ai/plugin";
+import { Plugin } from "@opencode/plugin";
+import type { PluginOptions } from "@opencode/plugin";
 
 export const BLACKBOX_MCP_NAME = "blackbox";
 export const DEFAULT_BLACKBOX_MCP_URL = "https://explorer.softprobe.ai/mcp";
@@ -6,7 +7,7 @@ export const DEFAULT_BLACKBOX_MCP_URL = "https://explorer.softprobe.ai/mcp";
 export const BLACKBOX_SYSTEM_PROMPT = [
   "You have access to the Softprobe Blackbox MCP server (`blackbox`).",
   "Use `blackbox` tools when investigating recorded application or agent sessions, traces, spans, errors, latency, LLM/tool calls, or E2E flows in Softprobe Explorer.",
-  "For UI test generation from a recorded session, call `get_session_semantic_actions` to inspect the semantic action timeline and locators, call `get_trace` on selected caused traces for payload details, and write `@playwright/test` + `@softprobe/e2e` assertions.",
+  "For UI test generation from a recorded web or mobile session, call `get_session_semantic_actions` to inspect the semantic action timeline and locators, call `get_trace` on selected caused traces for payload details, and write deterministic `@playwright/test` + `@softprobe/e2e/playwright` tests for web or `@softprobe/e2e/mobile` (`{ app, screen, device, trace }`) or Maestro (`.yaml`) tests for iOS and Android.",
   "Use `bootstrap_project` when the user asks to provision telemetry setup for a project.",
   "If a `blackbox` MCP tool call fails due to missing or expired authentication, instruct the user to run `opencode mcp auth blackbox`.",
 ].join(" ");
@@ -32,35 +33,27 @@ export function resolveBlackboxMcpUrl(
  * OpenCode plugin that registers the `blackbox` remote HTTP MCP server and
  * injects Blackbox usage guidance into the chat system prompt.
  */
-export const BlackboxPlugin: Plugin = async (_input, options) => {
-  const url = resolveBlackboxMcpUrl(options);
-
-  const hooks: Hooks = {
-    config: async (config: Config) => {
-      config.mcp ??= {};
-      if (!config.mcp[BLACKBOX_MCP_NAME]) {
-        config.mcp[BLACKBOX_MCP_NAME] = {
-          type: "remote",
-          url,
-          enabled: true,
-        };
-      }
-    },
-    "experimental.chat.system.transform": async (_input, output) => {
-      if (!output.system.includes(BLACKBOX_SYSTEM_PROMPT)) {
-        output.system.push(BLACKBOX_SYSTEM_PROMPT);
-      }
-    },
-  };
-
-  return hooks;
-};
-
-/**
- * OpenCode V1 plugin shape (`{ id, server }`).
- * Required so file:// installs do not fall through to legacy export scanning.
- */
-export default {
+export const BlackboxPlugin: Plugin.Plugin = Plugin.define({
   id: "softprobe-blackbox",
-  server: BlackboxPlugin,
-};
+  async setup(context) {
+    const url = resolveBlackboxMcpUrl(context.options);
+
+    await context.mcp.transform((editor) => {
+      if (!editor.get(BLACKBOX_MCP_NAME)) {
+        editor.set(BLACKBOX_MCP_NAME, { type: "remote", url });
+      }
+    });
+
+    await context.session.hook("context", (event) => {
+      if (
+        !event.system.some(
+          (part) => part.type === "text" && part.text === BLACKBOX_SYSTEM_PROMPT,
+        )
+      ) {
+        event.system.push({ type: "text", text: BLACKBOX_SYSTEM_PROMPT });
+      }
+    });
+  },
+});
+
+export default BlackboxPlugin;

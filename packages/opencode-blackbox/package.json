@@ -1,6 +1,6 @@
 {
   "name": "@softprobe/opencode-blackbox",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "description": "OpenCode plugin that registers the Softprobe Blackbox remote MCP server and prompt guidance",
   "license": "MIT",
   "author": "SoftProbe, Inc. <support@softprobe.ai>",
@@ -27,16 +27,10 @@
     "test": "vitest run",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
-  "peerDependencies": {
-    "@opencode-ai/plugin": ">=1.15.0"
-  },
-  "peerDependenciesMeta": {
-    "@opencode-ai/plugin": {
-      "optional": true
-    }
+  "dependencies": {
+    "@opencode/plugin": "^2.4.2"
   },
   "devDependencies": {
-    "@opencode-ai/plugin": "^1.15.13",
     "@types/node": "^22.13.10",
     "typescript": "^5.8.2",
     "vitest": "^3.0.8"

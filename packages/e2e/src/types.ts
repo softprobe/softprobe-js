@@ -62,16 +62,18 @@ export interface SoftprobeWebOptions extends WebOptions {
   readonly settleMs?: number;
 }
 
-export interface BrowserTriggerFilter {
+export interface ClientTriggerFilter {
   readonly method?: string;
   readonly path: string | RegExp;
   readonly origin?: string;
 }
 
+export type BrowserTriggerFilter = ClientTriggerFilter;
+
 export type StatusMatcher = number | readonly [number, number];
 
 export interface OutboundHttpQuery {
-  readonly triggeredBy: BrowserTriggerFilter;
+  readonly triggeredBy: ClientTriggerFilter;
   readonly method?: string;
   readonly url: string | RegExp;
   readonly status?: StatusMatcher;
@@ -82,7 +84,7 @@ export interface OutboundHttpQuery {
 }
 
 export interface ExpectNoOutboundHttpQuery {
-  readonly triggeredBy?: BrowserTriggerFilter;
+  readonly triggeredBy?: ClientTriggerFilter;
   readonly method?: string;
   readonly url?: string | RegExp;
   readonly status?: StatusMatcher;

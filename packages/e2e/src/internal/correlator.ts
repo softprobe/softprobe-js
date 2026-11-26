@@ -4,6 +4,7 @@ import {
   isSpanId,
   isTraceId,
   type BrowserTriggerFilter,
+  type ClientTriggerFilter,
   type SpanId,
   type TraceId,
 } from "../types.js";
@@ -72,15 +73,19 @@ export function mintW3cTraceparent(): {
   };
 }
 
-export interface RecordedBrowserTrigger {
+export interface RecordedClientTrigger {
   readonly traceId: TraceId;
-  readonly spanId: SpanId;
+  readonly spanId?: SpanId;
   readonly headerSource: "preserved" | "minted";
   readonly method: string;
   readonly url: string;
   readonly origin: string;
   readonly pathname: string;
   readonly startedAt: number;
+}
+
+export interface RecordedBrowserTrigger extends RecordedClientTrigger {
+  readonly spanId: SpanId;
 }
 
 function escapeRegexLiteral(text: string): string {
@@ -126,8 +131,8 @@ export function compileTriggerPathMatcher(
 }
 
 export function matchesTriggerFilter(
-  entry: RecordedBrowserTrigger,
-  filter: BrowserTriggerFilter | undefined,
+  entry: RecordedClientTrigger,
+  filter: ClientTriggerFilter | undefined,
 ): boolean {
   if (filter === undefined) return true;
   if (
@@ -335,10 +340,10 @@ export class BrowserAttemptLedger {
   }
 }
 
-export function selectLatestMatchingTrigger(
-  entries: readonly RecordedBrowserTrigger[],
+export function selectLatestMatchingTrigger<T extends RecordedClientTrigger>(
+  entries: readonly T[],
   filter: BrowserTriggerFilter | undefined,
-): RecordedBrowserTrigger | undefined {
+): T | undefined {
   for (let i = entries.length - 1; i >= 0; i -= 1) {
     const candidate = entries[i];
     if (candidate !== undefined && matchesTriggerFilter(candidate, filter)) {

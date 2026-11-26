@@ -6,10 +6,10 @@ For sending OpenCode session telemetry to Softprobe, use [`@softprobe/opencode-p
 
 ## Install
 
-Add the plugin with the OpenCode CLI:
+Add the plugin with the OpenCode CLI. This installs it globally:
 
 ```bash
-opencode plugin @softprobe/opencode-blackbox -g
+opencode plugin add @softprobe/opencode-blackbox
 ```
 
 ## Authenticate
@@ -19,6 +19,8 @@ Authenticate with the `blackbox` MCP server:
 ```bash
 opencode mcp auth blackbox
 ```
+
+If `opencode mcp list` says no servers are configured immediately after setup, run it again after OpenCode starts its service. A `needs authentication` status confirms that `blackbox` is registered.
 
 ## Configuration
 
@@ -30,12 +32,24 @@ To point at another Softprobe Explorer instance, set `BLACKBOX_MCP_URL`:
 export BLACKBOX_MCP_URL="https://explorer-staging.softprobe.ai/mcp"
 ```
 
-Or pass `url` via plugin options in `opencode.json`:
+Or pass `url` in the plugin options in `opencode.json`:
 
 ```json
 {
-  "plugin": [
-    ["@softprobe/opencode-blackbox", { "url": "https://explorer-staging.softprobe.ai/mcp" }]
+  "plugins": [
+    {
+      "package": "@softprobe/opencode-blackbox",
+      "options": {
+        "url": "https://explorer-staging.softprobe.ai/mcp"
+      }
+    }
   ]
 }
+```
+
+To configure the MCP server directly instead, run this from the project where you want to use Blackbox, then authenticate:
+
+```bash
+opencode mcp add blackbox --url https://explorer.softprobe.ai/mcp
+opencode mcp auth blackbox
 ```

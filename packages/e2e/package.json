@@ -15,6 +15,11 @@
       "types": "./dist/playwright.d.ts",
       "import": "./dist/playwright.js",
       "default": "./dist/playwright.js"
+    },
+    "./mobile": {
+      "types": "./dist/mobile.d.ts",
+      "import": "./dist/mobile.js",
+      "default": "./dist/mobile.js"
     }
   },
   "files": [
@@ -40,9 +45,10 @@
     }
   },
   "dependencies": {
+    "@e2e-dev/mobile": "^0.12.9",
     "@e2e-dev/web": "0.16.1",
     "@softprobe/tracing": "*",
-    "e2e": "0.24.0",
+    "e2e": "^0.25.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
