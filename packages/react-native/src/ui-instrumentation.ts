@@ -10,12 +10,20 @@ import {
   type NavigationRouteChangeOptions,
   type ReactNativeActionRecorder,
   type ReactNativeActionRecorderOptions,
+  type ReactNativeResponderProps,
+  type ReactNavigationRouteLike,
+  type ReactNavigationStateLike,
   type RecordedSemanticAction,
   type RecordFillOptions,
   type RecordLongPressOptions,
   type RecordTapOptions,
+  type ResponderPropsOptions,
+  type ResponderTouchEventLike,
   type SemanticTarget,
   type SemanticVerb,
+  type TextInputChangeEventLike,
+  type TextInputHandlersLike,
+  type WrappedTextInputHandlers,
 } from "./types.js";
 
 const UI_ACTION_SPAN_NAME = "softprobe.ui.action";
@@ -793,6 +801,160 @@ export function createReactNativeActionRecorder(
       stopped = true;
       spanOwnerBySpanId.clear();
       notifyIdleIfDone();
+    },
+  };
+}
+
+function isNavigationStateLike(value: unknown): value is ReactNavigationStateLike {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    "routes" in value &&
+    Array.isArray((value as { routes?: unknown }).routes)
+  );
+}
+
+export function getActiveRouteNameFromState(state: unknown): string | undefined {
+  if (!isNavigationStateLike(state) || !state.routes || state.routes.length === 0) {
+    return undefined;
+  }
+
+  const rawIndex = state.index;
+  const resolvedIndex =
+    typeof rawIndex === "number" &&
+    Number.isInteger(rawIndex) &&
+    rawIndex >= 0 &&
+    rawIndex < state.routes.length
+      ? rawIndex
+      : state.routes.length - 1;
+
+  const activeRoute: ReactNavigationRouteLike | undefined = state.routes[resolvedIndex];
+  if (!activeRoute || typeof activeRoute !== "object") {
+    return undefined;
+  }
+
+  if (activeRoute.state) {
+    const nested = getActiveRouteNameFromState(activeRoute.state);
+    if (nested) return nested;
+  }
+
+  if (typeof activeRoute.name === "string" && activeRoute.name.trim()) {
+    return activeRoute.name.trim();
+  }
+  if (typeof activeRoute.path === "string" && activeRoute.path.trim()) {
+    return activeRoute.path.trim();
+  }
+  return undefined;
+}
+
+export function createNavigationStateChangeHandler(
+  actions: Pick<ReactNativeActionRecorder, "onNavigationRouteChange">,
+  options?: NavigationRouteChangeOptions,
+): (state: unknown) => void {
+  return (state: unknown): void => {
+    const routeName = getActiveRouteNameFromState(state);
+    if (!routeName) return;
+    actions.onNavigationRouteChange(routeName, options);
+  };
+}
+
+function extractTouchPoint(
+  event: ResponderTouchEventLike | undefined,
+): { readonly x: number; readonly y: number } | undefined {
+  const native = event?.nativeEvent;
+  if (!native) return undefined;
+  if (typeof native.pageX === "number" && typeof native.pageY === "number") {
+    return { x: native.pageX, y: native.pageY };
+  }
+  if (typeof native.locationX === "number" && typeof native.locationY === "number") {
+    return { x: native.locationX, y: native.locationY };
+  }
+  return undefined;
+}
+
+export function createResponderProps(
+  actions: Pick<ReactNativeActionRecorder, "recordTap">,
+  target: SemanticTarget,
+  options?: ResponderPropsOptions,
+): ReactNativeResponderProps {
+  return {
+    onStartShouldSetResponder(event: ResponderTouchEventLike): boolean {
+      if (options?.onStartShouldSetResponder) {
+        return options.onStartShouldSetResponder(event);
+      }
+      return options?.shouldSetResponder ?? true;
+    },
+    onResponderRelease(event: ResponderTouchEventLike): void {
+      const point = options?.point ?? extractTouchPoint(event);
+      actions.recordTap(target, {
+        ...(point ? { point } : {}),
+        ...(options?.modifiers ? { modifiers: options.modifiers } : {}),
+        ...(options?.endAnchors ? { endAnchors: options.endAnchors } : {}),
+        ...(options?.goneAnchors ? { goneAnchors: options.goneAnchors } : {}),
+      });
+      options?.onResponderRelease?.(event);
+    },
+  };
+}
+
+export function wrapTextInputHandlers<
+  TEvent extends TextInputChangeEventLike = TextInputChangeEventLike,
+>(
+  actions: Pick<ReactNativeActionRecorder, "recordFill">,
+  target: SemanticTarget,
+  handlers?: TextInputHandlersLike<TEvent>,
+): WrappedTextInputHandlers<TEvent> {
+  let latestText: string | undefined;
+  let dirty = false;
+
+  const commitFill = (rawText: string | undefined): void => {
+    if (rawText === undefined) return;
+    dirty = false;
+    actions.recordFill(target, rawText, {
+      ...(handlers?.secureTextEntry !== undefined
+        ? { secureTextEntry: handlers.secureTextEntry }
+        : {}),
+      ...(handlers?.secretSlot !== undefined
+        ? { secretSlot: handlers.secretSlot }
+        : {}),
+      ...(handlers?.replace !== undefined ? { replace: handlers.replace } : {}),
+      ...(handlers?.endAnchors ? { endAnchors: handlers.endAnchors } : {}),
+      ...(handlers?.goneAnchors ? { goneAnchors: handlers.goneAnchors } : {}),
+    });
+  };
+
+  return {
+    onChangeText(text: string): void {
+      latestText = text;
+      dirty = true;
+      if (handlers?.commitOnChange) {
+        commitFill(text);
+      }
+      handlers?.onChangeText?.(text);
+    },
+    onEndEditing(event: TEvent): void {
+      const eventText = event?.nativeEvent?.text;
+      const textToCommit = typeof eventText === "string" ? eventText : latestText;
+      if (dirty || typeof eventText === "string") {
+        commitFill(textToCommit);
+      }
+      handlers?.onEndEditing?.(event);
+    },
+    onSubmitEditing(event: TEvent): void {
+      const eventText = event?.nativeEvent?.text;
+      const textToCommit = typeof eventText === "string" ? eventText : latestText;
+      if (dirty || typeof eventText === "string") {
+        commitFill(textToCommit);
+      }
+      handlers?.onSubmitEditing?.(event);
+    },
+    onBlur(event: TEvent): void {
+      const eventText = event?.nativeEvent?.text;
+      const textToCommit = typeof eventText === "string" ? eventText : latestText;
+      if (dirty) {
+        commitFill(textToCommit);
+      }
+      handlers?.onBlur?.(event);
     },
   };
 }

@@ -1,14 +1,72 @@
-import { afterEach, describe, expect, it } from "vitest";
-import type { Config, PluginInput } from "@opencode-ai/plugin";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import pluginModule, {
   BLACKBOX_MCP_NAME,
   BLACKBOX_SYSTEM_PROMPT,
-  BlackboxPlugin,
   DEFAULT_BLACKBOX_MCP_URL,
   resolveBlackboxMcpUrl,
 } from "./index.js";
 
+type McpServerConfig = {
+  type: "remote";
+  url: string;
+  disabled?: boolean;
+};
+
+type McpEditor = {
+  get(name: string): McpServerConfig | undefined;
+  set(name: string, config: McpServerConfig): void;
+};
+
+type ContextSystemEvent = {
+  system: Array<{ type: "text"; text: string }>;
+};
+
+type ContextHandler = (event: ContextSystemEvent) => void;
+
+type PluginContext = {
+  options: { url?: unknown };
+  mcp: {
+    transform(callback: (editor: McpEditor) => void): Promise<unknown>;
+  };
+  session: {
+    hook(name: "context", callback: ContextHandler): Promise<unknown>;
+  };
+};
+
+type OpenCodePlugin = {
+  id: string;
+  setup(context: PluginContext): Promise<void>;
+};
+
 const originalEnvUrl = process.env.BLACKBOX_MCP_URL;
+const plugin = pluginModule as OpenCodePlugin;
+
+function createPluginContext(input: {
+  options?: PluginContext["options"];
+  existingServer?: McpServerConfig;
+} = {}) {
+  const servers = new Map<string, McpServerConfig>();
+  if (input.existingServer) servers.set(BLACKBOX_MCP_NAME, input.existingServer);
+
+  const editor: McpEditor = {
+    get: (name) => servers.get(name),
+    set: (name, config) => servers.set(name, config),
+  };
+  let contextHandler: ContextHandler | undefined;
+  const transform = vi.fn(async (callback: (editor: McpEditor) => void) => {
+    callback(editor);
+  });
+  const hook = vi.fn(async (_name: "context", callback: ContextHandler) => {
+    contextHandler = callback;
+  });
+  const context: PluginContext = {
+    options: input.options ?? {},
+    mcp: { transform },
+    session: { hook },
+  };
+
+  return { context, servers, transform, hook, getContextHandler: () => contextHandler };
+}
 
 afterEach(() => {
   if (originalEnvUrl === undefined) {
@@ -19,88 +77,84 @@ afterEach(() => {
 });
 
 describe("@softprobe/opencode-blackbox", () => {
-  it("exports OpenCode V1 plugin shape", () => {
+  it("exports the OpenCode v2 plugin definition", () => {
     expect(pluginModule).toEqual({
       id: "softprobe-blackbox",
-      server: BlackboxPlugin,
+      setup: expect.any(Function),
     });
   });
 
-  it("registers the blackbox remote MCP server with the default URL", async () => {
+  it("registers the default remote MCP server through the OpenCode MCP transform", async () => {
     delete process.env.BLACKBOX_MCP_URL;
-    const hooks = await BlackboxPlugin({} as PluginInput);
-    const config: Config = {};
+    const test = createPluginContext();
 
-    await hooks.config?.(config);
+    await plugin.setup(test.context);
 
-    expect(config.mcp?.[BLACKBOX_MCP_NAME]).toEqual({
+    expect(test.transform).toHaveBeenCalledTimes(1);
+    expect(test.servers.get(BLACKBOX_MCP_NAME)).toEqual({
       type: "remote",
       url: DEFAULT_BLACKBOX_MCP_URL,
-      enabled: true,
     });
   });
 
   it("uses BLACKBOX_MCP_URL when set", async () => {
     process.env.BLACKBOX_MCP_URL = "https://explorer-staging.softprobe.ai/mcp";
-    const hooks = await BlackboxPlugin({} as PluginInput);
-    const config: Config = {};
+    const test = createPluginContext();
 
-    await hooks.config?.(config);
+    await plugin.setup(test.context);
 
-    expect(config.mcp?.[BLACKBOX_MCP_NAME]).toEqual({
+    expect(test.servers.get(BLACKBOX_MCP_NAME)).toEqual({
       type: "remote",
       url: "https://explorer-staging.softprobe.ai/mcp",
-      enabled: true,
     });
   });
 
-  it("prefers plugin options.url over BLACKBOX_MCP_URL and ignores blank values", () => {
-    process.env.BLACKBOX_MCP_URL = "   ";
-    expect(resolveBlackboxMcpUrl()).toBe(DEFAULT_BLACKBOX_MCP_URL);
-
+  it("prefers the plugin url option over BLACKBOX_MCP_URL and ignores blank values", async () => {
     process.env.BLACKBOX_MCP_URL = "https://env.example.com/mcp";
     expect(resolveBlackboxMcpUrl({ url: "https://opt.example.com/mcp" })).toBe(
       "https://opt.example.com/mcp",
     );
+    expect(resolveBlackboxMcpUrl({ url: "   " })).toBe(
+      "https://env.example.com/mcp",
+    );
+
+    const test = createPluginContext({ options: { url: "https://opt.example.com/mcp" } });
+    await plugin.setup(test.context);
+
+    expect(test.servers.get(BLACKBOX_MCP_NAME)?.url).toBe(
+      "https://opt.example.com/mcp",
+    );
   });
 
-  it("preserves an existing user-configured blackbox MCP entry", async () => {
-    const hooks = await BlackboxPlugin({} as PluginInput);
-    const customConfig = {
-      type: "remote" as const,
+  it("preserves an existing user-configured blackbox MCP server", async () => {
+    const customServer: McpServerConfig = {
+      type: "remote",
       url: "https://custom.example.com/mcp",
-      enabled: false,
+      disabled: true,
     };
-    const config: Config = {
-      mcp: {
-        [BLACKBOX_MCP_NAME]: customConfig,
-      },
-    };
+    const test = createPluginContext({ existingServer: customServer });
 
-    await hooks.config?.(config);
+    await plugin.setup(test.context);
 
-    expect(config.mcp?.[BLACKBOX_MCP_NAME]).toBe(customConfig);
+    expect(test.servers.get(BLACKBOX_MCP_NAME)).toBe(customServer);
   });
 
-  it("injects Blackbox prompt guidance once into system prompts", async () => {
-    const hooks = await BlackboxPlugin({} as PluginInput);
-    const output = { system: ["base system prompt"] };
-    const transform = hooks["experimental.chat.system.transform"];
+  it("adds Blackbox prompt guidance once to OpenCode context", async () => {
+    const test = createPluginContext();
 
-    expect(transform).toBeDefined();
-    await transform?.(
-      { model: {} as Parameters<NonNullable<typeof transform>>[0]["model"] },
-      output,
-    );
-    await transform?.(
-      { model: {} as Parameters<NonNullable<typeof transform>>[0]["model"] },
-      output,
-    );
+    await plugin.setup(test.context);
 
-    expect(output.system).toEqual([
-      "base system prompt",
-      BLACKBOX_SYSTEM_PROMPT,
-    ]);
+    expect(test.hook).toHaveBeenCalledWith("context", expect.any(Function));
+    const contextHandler = test.getContextHandler();
+    expect(contextHandler).toBeDefined();
+    const event: ContextSystemEvent = {
+      system: [{ type: "text", text: "base system prompt" }],
+    };
+    contextHandler?.(event);
+    contextHandler?.(event);
+
+    expect(event.system).toHaveLength(2);
+    expect(event.system[1]?.text).toBe(BLACKBOX_SYSTEM_PROMPT);
     expect(BLACKBOX_SYSTEM_PROMPT).toContain("get_session_semantic_actions");
     expect(BLACKBOX_SYSTEM_PROMPT).toContain("get_trace");
     expect(BLACKBOX_SYSTEM_PROMPT).toContain("@playwright/test");

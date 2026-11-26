@@ -5,6 +5,7 @@ import {
   SimpleSpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import { instrumentReactNativeFetch } from "./fetch-instrumentation.js";
+import { instrumentReactNativeXhr } from "./xhr-instrumentation.js";
 import {
   FetchOtlpJsonSpanExporter,
   resolveMobileSessionId,
@@ -104,6 +105,21 @@ export function installSoftprobeReactNative(
     target: shouldPatchGlobal ? options.fetchTarget : { fetch: options.fetchImpl ?? fetch },
   });
 
+  const shouldPatchXhr = options.instrumentGlobalXhr ?? true;
+  const xhrHandle = shouldPatchXhr
+    ? instrumentReactNativeXhr({
+        tracer,
+        getSessionId,
+        apiOrigins: options.apiOrigins,
+        baseOrigin: options.baseOrigin,
+        ignoreUrls: options.ignoreUrls,
+        httpBodyCapture: options.httpBodyCapture,
+        redactJsonPaths: options.redactJsonPaths,
+        actionRecorder: actions,
+        target: options.xhrTarget,
+      })
+    : undefined;
+
   let uninstalled = false;
 
   return {
@@ -126,6 +142,7 @@ export function installSoftprobeReactNative(
     async shutdown(): Promise<void> {
       actions.shutdown();
       fetchHandle.uninstall();
+      xhrHandle?.uninstall();
       uninstalled = true;
       await ownedProcessor.shutdown();
       await options.tracerProvider.shutdown?.();
@@ -135,6 +152,7 @@ export function installSoftprobeReactNative(
       uninstalled = true;
       actions.shutdown();
       fetchHandle.uninstall();
+      xhrHandle?.uninstall();
     },
   };
 }
@@ -214,9 +232,14 @@ export {
   type OtlpJsonKeyValue,
 } from "./span-processor.js";
 export { instrumentReactNativeFetch } from "./fetch-instrumentation.js";
+export { instrumentReactNativeXhr } from "./xhr-instrumentation.js";
 export {
+  createNavigationStateChangeHandler,
   createReactNativeActionRecorder,
+  createResponderProps,
   formatMobileActionSummary,
+  getActiveRouteNameFromState,
+  wrapTextInputHandlers,
 } from "./ui-instrumentation.js";
 export {
   BAGGAGE_SESSION_KEY,
@@ -236,7 +259,9 @@ export {
   type InputCaptureMode,
   type InstallSoftprobeReactNativeOptions,
   type InstrumentedFetchHandle,
+  type InstrumentedXhrHandle,
   type InstrumentReactNativeFetchOptions,
+  type InstrumentReactNativeXhrOptions,
   type LaunchArgumentsInput,
   type MobilePlatform,
   type MobileSessionId,
@@ -244,14 +269,24 @@ export {
   type NavigationRouteChangeOptions,
   type ReactNativeActionRecorder,
   type ReactNativeActionRecorderOptions,
+  type ReactNativeResponderProps,
+  type ReactNavigationRouteLike,
+  type ReactNavigationStateLike,
   type RecordedSemanticAction,
   type RecordFillOptions,
   type RecordLongPressOptions,
   type RecordTapOptions,
+  type ResponderPropsOptions,
+  type ResponderTouchEventLike,
   type SemanticAnchorState,
   type SemanticModifierKey,
   type SemanticTarget,
   type SemanticVerb,
   type SoftprobeMobileSpanProcessorOptions,
   type SoftprobeReactNativeHandle,
+  type TextInputChangeEventLike,
+  type TextInputHandlersLike,
+  type WrappedTextInputHandlers,
+  type XmlHttpRequestConstructorLike,
+  type XmlHttpRequestLike,
 } from "./types.js";

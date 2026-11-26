@@ -265,6 +265,100 @@ export interface InstrumentedFetchHandle {
   uninstall(): void;
 }
 
+export interface XmlHttpRequestLike {
+  open(method: string, url: string, async?: boolean, user?: string | null, password?: string | null): void;
+  setRequestHeader(name: string, value: string): void;
+  send(body?: unknown): void;
+  status?: number;
+  response?: unknown;
+  responseText?: string;
+  getResponseHeader?: (name: string) => string | null;
+  getAllResponseHeaders?: () => string;
+  addEventListener?: (type: string, listener: () => void) => void;
+  removeEventListener?: (type: string, listener: () => void) => void;
+  onreadystatechange?: (() => void) | null;
+  readyState?: number;
+}
+
+export interface XmlHttpRequestConstructorLike {
+  readonly prototype: XmlHttpRequestLike;
+}
+
+export interface InstrumentReactNativeXhrOptions {
+  readonly tracer: Tracer | (() => Tracer);
+  readonly getSessionId: () => string | undefined;
+  readonly apiOrigins?: readonly string[];
+  readonly baseOrigin?: string;
+  readonly ignoreUrls?: readonly (string | RegExp)[];
+  readonly httpBodyCapture?: boolean | HttpBodyCaptureOptions;
+  readonly redactJsonPaths?: readonly string[];
+  readonly actionRecorder?: HttpLifecycleObserver;
+  readonly xhrConstructor?: XmlHttpRequestConstructorLike;
+  readonly target?: { XMLHttpRequest?: XmlHttpRequestConstructorLike };
+}
+
+export interface InstrumentedXhrHandle {
+  uninstall(): void;
+}
+
+export interface ReactNavigationRouteLike {
+  readonly name?: string;
+  readonly path?: string;
+  readonly params?: Readonly<Record<string, unknown>>;
+  readonly state?: ReactNavigationStateLike;
+}
+
+export interface ReactNavigationStateLike {
+  readonly index?: number;
+  readonly routes?: readonly ReactNavigationRouteLike[];
+}
+
+export interface ResponderTouchEventLike {
+  readonly nativeEvent?: {
+    readonly locationX?: number;
+    readonly locationY?: number;
+    readonly pageX?: number;
+    readonly pageY?: number;
+  };
+}
+
+export interface ResponderPropsOptions extends RecordTapOptions {
+  readonly shouldSetResponder?: boolean;
+  readonly onStartShouldSetResponder?: (event: ResponderTouchEventLike) => boolean;
+  readonly onResponderRelease?: (event: ResponderTouchEventLike) => void;
+}
+
+export interface ReactNativeResponderProps {
+  readonly onStartShouldSetResponder: (event: ResponderTouchEventLike) => boolean;
+  readonly onResponderRelease: (event: ResponderTouchEventLike) => void;
+}
+
+export interface TextInputChangeEventLike {
+  readonly nativeEvent?: {
+    readonly text?: string;
+  };
+}
+
+export interface TextInputHandlersLike<TEvent = TextInputChangeEventLike> {
+  readonly onChangeText?: (text: string) => void;
+  readonly onEndEditing?: (event: TEvent) => void;
+  readonly onSubmitEditing?: (event: TEvent) => void;
+  readonly onBlur?: (event: TEvent) => void;
+  readonly secureTextEntry?: boolean;
+  readonly secretSlot?: string;
+  readonly replace?: boolean;
+  readonly commitOnChange?: boolean;
+  readonly endAnchors?: readonly SemanticTarget[];
+  readonly goneAnchors?: readonly SemanticTarget[];
+}
+
+export interface WrappedTextInputHandlers<TEvent = TextInputChangeEventLike> {
+  readonly onChangeText: (text: string) => void;
+  readonly onEndEditing: (event: TEvent) => void;
+  readonly onSubmitEditing: (event: TEvent) => void;
+  readonly onBlur: (event: TEvent) => void;
+}
+
 export interface ReactNativeActionRecorderOptions {
   readonly tracer: Tracer | (() => Tracer | undefined);
   readonly platform: MobilePlatform;
@@ -342,8 +436,10 @@ export interface InstallSoftprobeReactNativeOptions {
   readonly quietMs?: number;
   readonly maxSettleMs?: number;
   readonly instrumentGlobalFetch?: boolean;
+  readonly instrumentGlobalXhr?: boolean;
   readonly fetchImpl?: typeof fetch;
   readonly fetchTarget?: { fetch: typeof fetch };
+  readonly xhrTarget?: { XMLHttpRequest?: XmlHttpRequestConstructorLike };
 }
 
 export interface InitSoftprobeReactNativeOptions

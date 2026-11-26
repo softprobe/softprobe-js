@@ -13,13 +13,20 @@ import {
 } from "../../e2e/dist/internal/trigger-source.js";
 import { recordedSemanticActionSchema } from "../../e2e/dist/internal/ui-action-schema.js";
 import {
+  createNavigationStateChangeHandler,
   createReactNativeActionRecorder,
+  createResponderProps,
+  getActiveRouteNameFromState,
   initSoftprobeReactNative,
   installSoftprobeReactNative,
   instrumentReactNativeFetch,
+  instrumentReactNativeXhr,
   serializeReadableSpansToOtlpJson,
   SoftprobeMobileSpanProcessor,
+  wrapTextInputHandlers,
   type RecordedSemanticAction,
+  type XmlHttpRequestConstructorLike,
+  type XmlHttpRequestLike,
 } from "../src/index.js";
 
 function delay(ms: number): Promise<void> {
@@ -709,5 +716,370 @@ describe("@softprobe/react-native OpenTelemetry extensions", () => {
 
     abortController.abort();
     await rn.shutdown();
+  });
+
+  it("instruments XMLHttpRequest with traceparent + baggage propagation, CLIENT spans, header/body redaction, causedTraces linkage, and clean uninstall", async () => {
+    interface CapturedXhrCall {
+      readonly method: string;
+      readonly url: string;
+      readonly headers: Record<string, string>;
+      readonly body: unknown;
+    }
+
+    const observedXhrCalls: CapturedXhrCall[] = [];
+    let nextXhrHandler: ((xhr: MockXmlHttpRequest) => void) | undefined;
+
+    class MockXmlHttpRequest implements XmlHttpRequestLike {
+      method = "";
+      url = "";
+      requestHeaders = new Map<string, string>();
+      status = 0;
+      response: unknown = undefined;
+      responseText = "";
+      readyState = 0;
+      onreadystatechange: (() => void) | null = null;
+      private responseHeaders = new Map<string, string>();
+      private listeners = new Map<string, Set<() => void>>();
+
+      open(method: string, url: string): void {
+        this.method = method;
+        this.url = url;
+        this.requestHeaders = new Map();
+        this.readyState = 1;
+      }
+
+      setRequestHeader(name: string, value: string): void {
+        const lower = name.toLowerCase();
+        const existing = this.requestHeaders.get(lower);
+        this.requestHeaders.set(lower, existing ? `${existing}, ${value}` : value);
+      }
+
+      send(body?: unknown): void {
+        const headersObj = Object.fromEntries(this.requestHeaders.entries());
+        observedXhrCalls.push({
+          method: this.method,
+          url: this.url,
+          headers: headersObj,
+          body,
+        });
+        nextXhrHandler?.(this);
+      }
+
+      complete(
+        status: number,
+        responseText: string,
+        responseHeaders: Record<string, string> = { "content-type": "application/json" },
+      ): void {
+        this.status = status;
+        this.responseText = responseText;
+        this.response = responseText;
+        this.readyState = 4;
+        this.responseHeaders = new Map(
+          Object.entries(responseHeaders).map(([k, v]) => [k.toLowerCase(), v]),
+        );
+        this.onreadystatechange?.();
+        for (const listener of this.listeners.get("loadend") ?? []) {
+          listener();
+        }
+      }
+
+      getResponseHeader(name: string): string | null {
+        return this.responseHeaders.get(name.toLowerCase()) ?? null;
+      }
+
+      getAllResponseHeaders(): string {
+        return [...this.responseHeaders.entries()]
+          .map(([k, v]) => `${k}: ${v}`)
+          .join("\r\n");
+      }
+
+      addEventListener(type: string, listener: () => void): void {
+        let set = this.listeners.get(type);
+        if (!set) {
+          set = new Set();
+          this.listeners.set(type, set);
+        }
+        set.add(listener);
+      }
+
+      removeEventListener(type: string, listener: () => void): void {
+        this.listeners.get(type)?.delete(listener);
+      }
+    }
+
+    const origOpen = MockXmlHttpRequest.prototype.open;
+    const origSetHeader = MockXmlHttpRequest.prototype.setRequestHeader;
+    const origSend = MockXmlHttpRequest.prototype.send;
+
+    const exporter = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(exporter)],
+    });
+
+    const xhrHost: { XMLHttpRequest: XmlHttpRequestConstructorLike } = {
+      XMLHttpRequest: MockXmlHttpRequest,
+    };
+
+    const rn = installSoftprobeReactNative({
+      tracerProvider: provider,
+      platform: "ios",
+      serviceName: "xhr-mobile-app",
+      sessionId: "rn-xhr-session-7",
+      apiOrigins: ["https://api.acme.test"],
+      ignoreUrls: ["https://api.acme.test/health"],
+      httpBodyCapture: {
+        routes: [{ method: "POST", path: "/v1/orders/*" }],
+        redactJsonPaths: ["$.payment.cardNumber"],
+      },
+      fetchImpl: async () => new Response(null, { status: 204 }),
+      instrumentGlobalFetch: false,
+      instrumentGlobalXhr: true,
+      xhrTarget: xhrHost,
+      quietMs: 15,
+    });
+
+    // 1. Trigger an XHR inside recordTap and verify causedTraces + redaction + propagation
+    let activeXhr: MockXmlHttpRequest | undefined;
+    nextXhrHandler = (xhr) => {
+      activeXhr = xhr;
+    };
+
+    rn.actions.recordTap({ testId: "submit_order", role: "button", label: "Submit" });
+
+    const orderXhr = new MockXmlHttpRequest();
+    orderXhr.open("POST", "https://api.acme.test/v1/orders/ord_123");
+    orderXhr.setRequestHeader("Content-Type", "application/json");
+    orderXhr.setRequestHeader("Authorization", "Bearer xhr-secret-jwt");
+    orderXhr.setRequestHeader("baggage", "tenant=acme");
+    orderXhr.send(
+      JSON.stringify({
+        orderId: "ord_123",
+        payment: { cardNumber: "4111222233334444", last4: "4444" },
+      }),
+    );
+
+    expect(activeXhr).toBe(orderXhr);
+    // Action should still be settling while XHR is in-flight
+    expect(rn.actions.hasPendingWork()).toBe(true);
+
+    orderXhr.complete(
+      201,
+      JSON.stringify({ ok: true, token: "server-secret-token", id: "ord_123" }),
+      {
+        "content-type": "application/json",
+        "set-cookie": "sid=xhr-secret-cookie",
+      },
+    );
+
+    await rn.actions.waitForIdle();
+
+    // 2. Ignored URL and non-matching origin should not be instrumented
+    nextXhrHandler = (xhr) => xhr.complete(200, '{"ok":true}');
+    const ignoredXhr = new MockXmlHttpRequest();
+    ignoredXhr.open("GET", "https://api.acme.test/health");
+    ignoredXhr.send();
+
+    const thirdPartyXhr = new MockXmlHttpRequest();
+    thirdPartyXhr.open("GET", "https://other.example.com/ping");
+    thirdPartyXhr.send();
+
+    expect(observedXhrCalls).toHaveLength(3);
+    expect(observedXhrCalls[0]?.headers.traceparent).toMatch(
+      /^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/,
+    );
+    expect(observedXhrCalls[0]?.headers.baggage).toBe(
+      "tenant=acme, sp.session.id=rn-xhr-session-7",
+    );
+    expect(observedXhrCalls[1]?.headers.traceparent).toBeUndefined();
+    expect(observedXhrCalls[2]?.headers.traceparent).toBeUndefined();
+
+    const spans = exporter.getFinishedSpans();
+    const xhrSpan = spans.find((s) => s.name === "HTTP POST");
+    expect(xhrSpan).toBeDefined();
+    expect(xhrSpan?.kind).toBe(SpanKind.CLIENT);
+    expect(xhrSpan?.attributes["http.request.method"]).toBe("POST");
+    expect(xhrSpan?.attributes["url.full"]).toBe("https://api.acme.test/v1/orders/ord_123");
+    expect(xhrSpan?.attributes["url.template"]).toBe("/v1/orders/*");
+    expect(xhrSpan?.attributes["http.response.status_code"]).toBe(201);
+    expect(xhrSpan?.attributes["sp.session.id"]).toBe("rn-xhr-session-7");
+    expect(xhrSpan?.attributes["session.id"]).toBe("rn-xhr-session-7");
+    expect(xhrSpan?.attributes["sp.body.capture.status"]).toBe("captured");
+
+    const serialized = JSON.stringify(serializeReadableSpansToOtlpJson(spans));
+    expect(serialized).not.toContain("xhr-secret-jwt");
+    expect(serialized).not.toContain("4111222233334444");
+    expect(serialized).not.toContain("server-secret-token");
+    expect(serialized).not.toContain("xhr-secret-cookie");
+
+    expect(JSON.parse(String(xhrSpan?.attributes["http.request.body"]))).toEqual({
+      orderId: "ord_123",
+      payment: { cardNumber: "[REDACTED]", last4: "4444" },
+    });
+    expect(JSON.parse(String(xhrSpan?.attributes["http.response.body"]))).toEqual({
+      ok: true,
+      token: "[REDACTED]",
+      id: "ord_123",
+    });
+
+    const uiActionSpan = spans.find((s) => s.name === "softprobe.ui.action");
+    expect(uiActionSpan).toBeDefined();
+    const actionPayload = decodeActionPayload(uiActionSpan?.attributes["sp.ui.action.payload"]);
+    expect(actionPayload.causedTraces).toEqual([
+      {
+        traceId: xhrSpan?.spanContext().traceId,
+        spanId: xhrSpan?.spanContext().spanId,
+        method: "POST",
+        url: "https://api.acme.test/v1/orders/ord_123",
+        urlTemplate: "/v1/orders/*",
+        status: 201,
+      },
+    ]);
+
+    // 3. Uninstall restores original XMLHttpRequest.prototype methods
+    expect(MockXmlHttpRequest.prototype.open).not.toBe(origOpen);
+    rn.uninstall();
+    expect(MockXmlHttpRequest.prototype.open).toBe(origOpen);
+    expect(MockXmlHttpRequest.prototype.setRequestHeader).toBe(origSetHeader);
+    expect(MockXmlHttpRequest.prototype.send).toBe(origSend);
+
+    // Standalone instrumentReactNativeXhr also respects uninstall
+    const standalone = instrumentReactNativeXhr({
+      tracer: provider.getTracer("standalone-xhr"),
+      getSessionId: () => "standalone-session",
+      xhrConstructor: MockXmlHttpRequest,
+    });
+    expect(MockXmlHttpRequest.prototype.send).not.toBe(origSend);
+    standalone.uninstall();
+    expect(MockXmlHttpRequest.prototype.send).toBe(origSend);
+
+    await provider.shutdown();
+  });
+
+  it("extracts React Navigation routes and wraps root responder + TextInput handlers with secureTextEntry redaction", async () => {
+    const exporter = new InMemorySpanExporter();
+    const provider = new BasicTracerProvider({
+      spanProcessors: [
+        new SoftprobeMobileSpanProcessor({
+          platform: "android",
+          serviceName: "nav-helper-app",
+          sessionId: "rn-nav-helper-session",
+        }),
+        new SimpleSpanProcessor(exporter),
+      ],
+    });
+    const actions = createReactNativeActionRecorder({
+      tracer: provider.getTracer("nav-helper"),
+      platform: "android",
+      initialRoute: "Home",
+      quietMs: 10,
+    });
+
+    // Nested React Navigation state extraction
+    expect(
+      getActiveRouteNameFromState({
+        index: 1,
+        routes: [
+          { name: "Home" },
+          {
+            name: "MainTabs",
+            state: {
+              index: 0,
+              routes: [{ name: "CheckoutScreen" }, { name: "ProfileScreen" }],
+            },
+          },
+        ],
+      }),
+    ).toBe("CheckoutScreen");
+    expect(getActiveRouteNameFromState(undefined)).toBeUndefined();
+
+    const onStateChange = createNavigationStateChangeHandler(actions);
+    onStateChange({
+      index: 0,
+      routes: [
+        {
+          name: "RootStack",
+          state: {
+            index: 1,
+            routes: [{ name: "Home" }, { name: "Login" }],
+          },
+        },
+      ],
+    });
+    await actions.waitForIdle();
+
+    // TextInput handler wrapping with secureTextEntry redaction + forwarding
+    const observedTextChanges: string[] = [];
+    let endEditingCalled = false;
+    const passwordRaw = "UltraSecretPass!99";
+
+    const passwordInputProps = wrapTextInputHandlers(
+      actions,
+      { testId: "login_password", role: "textbox", label: "Password" },
+      {
+        secureTextEntry: true,
+        onChangeText: (text) => observedTextChanges.push(text),
+        onEndEditing: () => {
+          endEditingCalled = true;
+        },
+      },
+    );
+
+    passwordInputProps.onChangeText("Ultra");
+    passwordInputProps.onChangeText(passwordRaw);
+    passwordInputProps.onEndEditing({ nativeEvent: { text: passwordRaw } });
+    // Calling onBlur right after onEndEditing should not emit a duplicate fill
+    passwordInputProps.onBlur({});
+    await actions.waitForIdle();
+
+    expect(observedTextChanges).toEqual(["Ultra", passwordRaw]);
+    expect(endEditingCalled).toBe(true);
+
+    // Root responder props wrapping
+    let responderReleased = false;
+    const responderProps = createResponderProps(
+      actions,
+      { testId: "login_submit", role: "button", label: "Sign in" },
+      {
+        onResponderRelease: () => {
+          responderReleased = true;
+        },
+      },
+    );
+
+    expect(responderProps.onStartShouldSetResponder({})).toBe(true);
+    responderProps.onResponderRelease({
+      nativeEvent: { pageX: 142.4, pageY: 518.7 },
+    });
+    await actions.waitForIdle();
+    expect(responderReleased).toBe(true);
+
+    const spans = exporter.getFinishedSpans();
+    const serialized = JSON.stringify(serializeReadableSpansToOtlpJson(spans));
+    expect(serialized).not.toContain(passwordRaw);
+
+    const recorded = spans
+      .filter((s) => s.name === "softprobe.ui.action")
+      .map((s) => decodeActionPayload(s.attributes["sp.ui.action.payload"]));
+
+    expect(recorded).toHaveLength(3);
+    expect(recorded[0]?.verb).toEqual({
+      name: "navigate",
+      url: "/Login",
+      trigger: "pushState",
+    });
+    expect(recorded[1]?.verb).toEqual({
+      name: "fill",
+      target: { testId: "login_password", role: "textbox", label: "Password" },
+      value: { kind: "secret", slot: "PASSWORD" },
+      replace: true,
+    });
+    expect(recorded[2]?.verb).toEqual({
+      name: "click",
+      target: { testId: "login_submit", role: "button", label: "Sign in" },
+      point: { x: 142, y: 519 },
+    });
+
+    actions.shutdown();
+    await provider.shutdown();
   });
 });
