@@ -13,7 +13,10 @@ This repository is part of the Softprobe Blackbox ecosystem alongside public sib
 | [`@softprobe/vercel-ai-sdk`](packages/vercel-ai-sdk) | Vercel AI SDK telemetry |
 | [`@softprobe/opencode-plugin`](packages/opencode-plugin) | OpenCode coding-agent plugin |
 | [`@softprobe/opencode-blackbox`](packages/opencode-blackbox) | OpenCode plugin for Softprobe Blackbox |
+| [`@softprobe/blackbox`](packages/blackbox) | CLI for initializing Softprobe Blackbox telemetry |
+| [`@softprobe/react-native`](packages/react-native) | React Native and Expo telemetry and semantic action capture |
 | [`@softprobe/web-record`](packages/web-record) | Browser session recording (rrweb → OTLP) |
+| [`@softprobe/e2e`](packages/e2e) | Browser and mobile end-to-end testing SDK |
 
 ## Examples
 
