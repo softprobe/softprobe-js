@@ -14,8 +14,16 @@ export type InitOptions = {
   readonly openBrowser: boolean;
 };
 
+export type HookAgent = "cursor" | "claude-code" | "auto";
+
+export type HookOptions = {
+  readonly agent: HookAgent;
+  readonly configPath?: string;
+};
+
 export type CliCommand =
   | { readonly kind: "init"; readonly options: InitOptions }
+  | { readonly kind: "hook"; readonly options: HookOptions }
   | { readonly kind: "help" }
   | { readonly kind: "error"; readonly message: string };
 

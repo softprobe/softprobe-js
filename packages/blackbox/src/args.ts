@@ -2,6 +2,7 @@ import {
   DEFAULT_EXPLORER_URL,
   type CliCommand,
   type ExplorerUrl,
+  type HookAgent,
   type IngestionKey,
   type ProjectName,
 } from "./types.js";
@@ -49,16 +50,22 @@ function readFlagValue(
 
 export function formatHelpText(): string {
   return [
-    "Usage: blackbox init [options]",
+    "Usage: blackbox <command> [options]",
     "",
-    "Initialize Softprobe Blackbox telemetry in the current project.",
+    "Commands:",
+    "  init   Initialize Softprobe Blackbox telemetry in the current project",
+    "  hook   Emit OTLP trajectory spans from coding agent lifecycle hooks (stdin JSON)",
     "",
-    "Options:",
+    "Options for init:",
     `  --explorer-url <url>    Explorer base URL (default: ${DEFAULT_EXPLORER_URL})`,
     "  --ingestion-key <key>   Use an existing ingestion key (skips OAuth login)",
     "  --project <name>        Override inferred project name",
     "  --env-file <path>       Target env file (default: .env)",
     "  --no-open               Print login URL instead of opening a browser",
+    "",
+    "Options for hook:",
+    "  --agent <name>          cursor | claude-code | auto (default: auto)",
+    "  --config <path>         Override agent-telemetry.json path",
     "  -h, --help              Show this help message",
   ].join("\n");
 }
@@ -80,6 +87,8 @@ export function parseCliArgs(
   let projectRaw: string | undefined;
   let envFile = ".env";
   let openBrowser = true;
+  let hookAgentRaw = "auto";
+  let hookConfigPath: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]!;
@@ -88,6 +97,20 @@ export function parseCliArgs(
     }
     if (arg === "--no-open") {
       openBrowser = false;
+      continue;
+    }
+    if (arg === "--agent" || arg.startsWith("--agent=")) {
+      const res = readFlagValue(argv, i, "--agent");
+      if ("error" in res) return { kind: "error", message: res.error };
+      hookAgentRaw = res.value;
+      i = res.nextIndex;
+      continue;
+    }
+    if (arg === "--config" || arg.startsWith("--config=")) {
+      const res = readFlagValue(argv, i, "--config");
+      if ("error" in res) return { kind: "error", message: res.error };
+      hookConfigPath = res.value;
+      i = res.nextIndex;
       continue;
     }
     if (arg === "--explorer-url" || arg.startsWith("--explorer-url=")) {
@@ -135,6 +158,24 @@ export function parseCliArgs(
       continue;
     }
     return { kind: "error", message: `Unexpected argument: ${arg}` };
+  }
+
+  if (command === "hook") {
+    const normalizedAgent = hookAgentRaw.trim().toLowerCase();
+    if (
+      normalizedAgent !== "auto" &&
+      normalizedAgent !== "cursor" &&
+      normalizedAgent !== "claude-code"
+    ) {
+      return { kind: "error", message: `Invalid --agent: ${hookAgentRaw}` };
+    }
+    return {
+      kind: "hook",
+      options: {
+        agent: normalizedAgent as HookAgent,
+        ...(hookConfigPath ? { configPath: hookConfigPath } : {}),
+      },
+    };
   }
 
   if (command !== "init") {
