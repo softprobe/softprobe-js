@@ -8,7 +8,7 @@ export const BLACKBOX_SYSTEM_PROMPT = [
   "You have access to the Softprobe Blackbox MCP server (`blackbox`).",
   "Use `blackbox` tools when investigating recorded application or agent sessions, traces, spans, errors, latency, LLM/tool calls, or E2E flows in Softprobe Explorer.",
   "For UI test generation from a recorded web or mobile session, call `get_session_semantic_actions` to inspect the semantic action timeline and locators, call `get_trace` on selected caused traces for payload details, and write deterministic `@playwright/test` + `@softprobe/e2e/playwright` tests for web or `@softprobe/e2e/mobile` (`{ app, screen, device, trace }`) or Maestro (`.yaml`) tests for iOS and Android.",
-  "Use `bootstrap_project` when the user asks to provision telemetry setup for a project.",
+  "Use `bootstrap_project` when the user asks to provision telemetry setup for a project or enable OpenCode trajectory capture (configuring `@softprobe/opencode-plugin` and `~/.config/opencode/opencode-softprobe.json`).",
   "If a `blackbox` MCP tool call fails due to missing or expired authentication, instruct the user to run `opencode mcp auth blackbox`.",
 ].join(" ");
 

@@ -162,5 +162,6 @@ describe("@softprobe/opencode-blackbox", () => {
     expect(BLACKBOX_SYSTEM_PROMPT).toContain("@softprobe/e2e/mobile");
     expect(BLACKBOX_SYSTEM_PROMPT).toContain("Maestro (`.yaml`)");
     expect(BLACKBOX_SYSTEM_PROMPT).toContain("bootstrap_project");
+    expect(BLACKBOX_SYSTEM_PROMPT).toContain("opencode-softprobe.json");
   });
 });

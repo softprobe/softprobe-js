@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { formatHelpText, parseCliArgs } from "./args.js";
+import { readStdin, runHook } from "./hook.js";
 import { runInit } from "./init.js";
 import { INGESTION_KEY_ENV_VAR } from "./types.js";
 
@@ -14,6 +15,15 @@ async function main(): Promise<void> {
   if (command.kind === "error") {
     console.error(`Error: ${command.message}`);
     process.exitCode = 1;
+    return;
+  }
+
+  if (command.kind === "hook") {
+    const stdinText = await readStdin();
+    const res = await runHook(command.options, stdinText);
+    if (res.stdout) {
+      process.stdout.write(res.stdout);
+    }
     return;
   }
 
